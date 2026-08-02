@@ -1,0 +1,190 @@
+# -*- coding: utf-8 -*-
+"""
+红利数据更新工具（交互式）
+菜单：
+  1. 指数历史行情   —— 增量更新（有缓存则从最后日期增量拉取；无缓存全量）[运行前提醒]
+  2. ETF历史行情    —— 增量更新（场内K线+净值）[运行前提醒]
+  3. 指数成分股     —— 重下载中证官网样本文件 + 重新生成《红利指数与ETF成分股.md》[运行前提醒]
+  4. 全部更新
+  0. 退出
+用法: python update.py
+"""
+import sys, io, os, time
+
+BASE = os.path.dirname(os.path.abspath(__file__))
+SCRIPTS = os.path.join(BASE, "scripts")
+sys.path.insert(0, SCRIPTS)
+
+import _fetch_history as fh
+
+# import后包装stdout（fh的包装对象仍被其模块引用，底层buffer不会被关闭）
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+INDICES = fh.INDICES
+ETFS = fh.ETFS
+
+def ask(msg, default=True):
+    tip = "(y/n) " if default else "(y/N) "
+    while True:
+        r = input(f"⚠️  {msg}{tip}").strip().lower()
+        if r in ("",):
+            return default
+        if r in ("y", "yes"):
+            return True
+        if r in ("n", "no"):
+            return False
+        print("  请输入 y 或 n")
+
+def update_indices(incremental=True):
+    print("\n═══ 指数历史行情更新 ═══")
+    for code, name, src, tcode in INDICES:
+        def fetcher(last_date, src=src, code=code, tcode=tcode):
+            if src == "tencent":
+                return fh.fetch_tencent_kline(tcode, code, start=last_date)
+            if src == "csindex":
+                start = last_date.replace("-", "") if last_date else None
+                return fh.fetch_csindex_perf(code, start=start)
+            return fh.fetch_cnindex_kline(code, start=last_date)
+        try:
+            fh.update_incremental("指数", code, name, fetcher)
+        except Exception as e:
+            print(f"  ❌ [{code} {name}] 失败: {repr(e)[:80]}")
+    print("\n✅ 指数历史更新完成")
+
+def update_etfs():
+    print("\n═══ ETF历史行情更新（场内K线+净值）═══")
+    for code, name, tcode in ETFS:
+        def fetcher(last_date, code=code, tcode=tcode):
+            kline = fh.fetch_tencent_kline(tcode, code, start=last_date)
+            nav = fh.fetch_sina_nav(code, start=last_date)
+            kmap = {r["date"]: r for r in kline}
+            nmap = {r["date"]: r for r in nav}
+            rows = []
+            for d in sorted(set(kmap) | set(nmap)):
+                r = {"date": d}
+                if d in kmap:
+                    r.update({k: v for k, v in kmap[d].items() if k != "date"})
+                if d in nmap:
+                    r["nav"] = nmap[d]["nav"]
+                    r["acc_nav"] = nmap[d]["acc_nav"]
+                rows.append(r)
+            return rows
+        try:
+            fh.update_incremental("ETF", code, name, fetcher)
+        except Exception as e:
+            print(f"  ❌ [{code} {name}] 失败: {repr(e)[:80]}")
+    print("\n✅ ETF历史更新完成")
+
+def export_excel():
+    import pandas as pd
+    from _fetch_history import load_cache
+    COL_CN = {
+        "open": "开盘", "close": "收盘", "high": "最高", "low": "最低",
+        "volume": "成交量", "amount": "成交额", "change": "涨跌额", "changePct": "涨跌幅",
+        "nav": "单位净值", "acc_nav": "累计净值",
+    }
+    print("\n═══ 重新生成 Excel ═══")
+    # 指数
+    idx_rows = {}
+    for code, name, src, tcode in INDICES:
+        c = load_cache("指数", code)
+        if c:
+            idx_rows[code] = {"name": c.get("name", name), "source": src, "rows": c["rows"]}
+    try:
+        with pd.ExcelWriter(os.path.join(BASE, "excel", "指数历史.xlsx"), engine="openpyxl") as w:
+            for code, info in idx_rows.items():
+                rows = info["rows"]
+                if not rows:
+                    continue
+                df = pd.DataFrame(rows)
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.sort_values("date").set_index("date")
+                df = df.rename(columns=COL_CN)
+                df = df[["开盘", "收盘", "最高", "最低", "成交量", "成交额"]]
+                df.index.name = "日期"
+                df.to_excel(w, sheet_name=f"{code} {info['name'][:10]}"[:31])
+    except PermissionError:
+        print("⚠️  excel/指数历史.xlsx 被占用（可能已在Excel中打开），请关闭后重新执行导出")
+    # ETF（先估算成交额并写回缓存）
+    etf_rows = {}
+    for code, name, tcode in ETFS:
+        c = load_cache("ETF", code)
+        if c:
+            fh.fill_etf_amount(c["rows"])
+            fh.save_cache("ETF", code, c)
+            etf_rows[code] = {"name": c.get("name", name), "rows": c["rows"]}
+    try:
+        with pd.ExcelWriter(os.path.join(BASE, "excel", "ETF历史.xlsx"), engine="openpyxl") as w:
+            for code, info in etf_rows.items():
+                rows = info["rows"]
+                if not rows:
+                    continue
+                df = pd.DataFrame(rows)
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.sort_values("date").set_index("date")
+                df = df.rename(columns=COL_CN)
+                if "单位净值" in df.columns:
+                    df = df[["开盘", "收盘", "最高", "最低", "成交量", "成交额", "单位净值", "累计净值"]]
+                df.index.name = "日期"
+                df.to_excel(w, sheet_name=f"{code} {info['name'][:10]}"[:31])
+    except PermissionError:
+        print("⚠️  excel/ETF历史.xlsx 被占用（可能已在Excel中打开），请关闭后重新执行导出")
+    else:
+        print("✅ excel/ETF历史.xlsx 已更新")
+
+def update_components():
+    print("\n═══ 指数成分股更新 ═══")
+    import _gen_components  # scripts/ 已在 sys.path
+    idx = _gen_components.build()
+    # 摘要
+    print("\n更新摘要：")
+    for code in ["000922", "000015", "000821", "000825", "H30269", "930955", "932315", "931468", "H30270", "932368", "000151"]:
+        info = idx.get(code, {})
+        stocks = info.get("stocks") or {}
+        fb = " ⚠️旧数据回退" if info.get("fallback") else ""
+        print(f"  {code} {info.get('name','')}: {len(stocks)}只, 样本截止 {info.get('date_cons','')}{fb}")
+    print("\n⚠️ 请手动核对《红利介绍.md》中相关描述/快照数字是否需要同步（脚本不自动改该文件）。")
+
+def main():
+    print("═" * 50)
+    print("  红利数据更新工具")
+    print("═" * 50)
+    while True:
+        print("""
+请选择要更新的部分：
+  1. 指数历史行情（增量，11只）
+  2. ETF历史行情（增量，11只）
+  3. 指数成分股（重新生成《红利指数与ETF成分股.md》）
+  4. 全部更新
+  0. 退出
+""")
+        ch = input("请输入编号: ").strip()
+        if ch == "0":
+            print("已退出")
+            break
+        if ch == "1":
+            if ask("指数历史将增量拉取11只指数（含中证官网5只，可能较慢），是否继续？"):
+                update_indices()
+                export_excel()
+        elif ch == "2":
+            update_etfs()
+            export_excel()
+        elif ch == "3":
+            if ask("将重新下载中证官网样本文件并重写《红利指数与ETF成分股.md》，是否继续？"):
+                update_components()
+        elif ch == "4":
+            print("\n—— 指数历史 ——")
+            if ask("指数历史将增量拉取11只指数（含中证官网5只，可能较慢），是否更新？"):
+                update_indices()
+            print("\n—— ETF历史 ——")
+            if ask("ETF历史（K线+净值）是否更新？"):
+                update_etfs()
+            export_excel()
+            print("\n—— 成分股 ——")
+            if ask("将重下载样本文件并重写《红利指数与ETF成分股.md》，是否更新？"):
+                update_components()
+        else:
+            print("无效输入")
+
+if __name__ == "__main__":
+    main()
