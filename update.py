@@ -5,7 +5,8 @@
   1. 指数历史行情   —— 增量更新（有缓存则从最后日期增量拉取；无缓存全量）[运行前提醒]
   2. ETF历史行情    —— 增量更新（场内K线+净值）[运行前提醒]
   3. 指数成分股     —— 重下载中证官网样本文件 + 重新生成《红利指数与ETF成分股.md》[运行前提醒]
-  4. 全部更新
+  4. 成分股汇总表   —— 解析成分股md → 行业/行情/股息率 → 缓存 → excel/红利成分股汇总.xlsx
+  5. 全部更新
   0. 退出
 用法: python update.py
 """
@@ -145,6 +146,11 @@ def update_components():
         print(f"  {code} {info.get('name','')}: {len(stocks)}只, 样本截止 {info.get('date_cons','')}{fb}")
     print("\n⚠️ 请手动核对《红利介绍.md》中相关描述/快照数字是否需要同步（脚本不自动改该文件）。")
 
+def update_summary(force=False):
+    print("\n═══ 成分股汇总表更新（解析md→行业/行情/股息率→汇总Excel）═══")
+    import _update_summary
+    _update_summary.run(force=force)
+
 def main():
     print("═" * 50)
     print("  红利数据更新工具")
@@ -155,7 +161,8 @@ def main():
   1. 指数历史行情（增量，11只）
   2. ETF历史行情（增量，11只）
   3. 指数成分股（重新生成《红利指数与ETF成分股.md》）
-  4. 全部更新
+  4. 成分股汇总表（解析md→行业/行情/股息率→缓存→汇总Excel）
+  5. 全部更新
   0. 退出
 """)
         ch = input("请输入编号: ").strip()
@@ -173,6 +180,10 @@ def main():
             if ask("将重新下载中证官网样本文件并重写《红利指数与ETF成分股.md》，是否继续？"):
                 update_components()
         elif ch == "4":
+            msg = "将解析最新成分股md并增量补齐行业/行情/股息率（仅新增股票慢，其余秒级），是否继续？"
+            if ask(msg):
+                update_summary()
+        elif ch == "5":
             print("\n—— 指数历史 ——")
             if ask("指数历史将增量拉取11只指数（含中证官网5只，可能较慢），是否更新？"):
                 update_indices()
@@ -183,6 +194,9 @@ def main():
             print("\n—— 成分股 ——")
             if ask("将重下载样本文件并重写《红利指数与ETF成分股.md》，是否更新？"):
                 update_components()
+            print("\n—— 成分股汇总表 ——")
+            if ask("解析最新成分股md并增量补齐行业/行情/股息率，是否更新？"):
+                update_summary()
         else:
             print("无效输入")
 
