@@ -217,7 +217,7 @@ def gen_excel():
     ws = wb.active
     ws.title = "成分股汇总"
     headers = ["序号", "证券代码", "证券名称", "一级行业", "细分行业", "入选指数/ETF数", "最大权重(%)",
-               "最新价(元)", "当日涨跌幅(%)", "PE(TTM)", "PB", "总市值(亿元)", "近12个月股息率(%)",
+               "最新价(元)", "当日涨跌幅(%)", "PE(TTM)(倍)", "PB(倍)", "总市值(亿元)", "近12个月股息率(%)",
                "近5次分红记录", "主要入选指数及权重(%)", "是否入选20只推荐"]
     head_fill = PatternFill("solid", fgColor="C00000")
     head_font = Font(bold=True, color="FFFFFF", size=11)

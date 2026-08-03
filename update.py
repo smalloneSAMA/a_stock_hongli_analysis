@@ -90,10 +90,29 @@ def update_stocks():
 
 def export_excel():
     import pandas as pd
+    from datetime import datetime
+    from openpyxl import load_workbook
     from _fetch_history import load_cache
-    COL_CN = {
-        "open": "开盘", "close": "收盘", "high": "最高", "low": "最低",
-        "volume": "成交量", "amount": "成交额", "change": "涨跌额", "changePct": "涨跌幅",
+
+    def fmt_dates_file(path):
+        """日期列显示为年月日（保留日期类型，去掉时分秒显示）——导出后独立后处理"""
+        wb = load_workbook(path)
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(min_row=2, min_col=1, max_col=1):
+                for cell in row:
+                    if isinstance(cell.value, datetime):
+                        cell.number_format = "yyyy-mm-dd"
+        wb.save(path)
+    # 展示口径：价格(点/元)、成交量(万手)、成交额(亿元)；单位净值/累计净值不加单位
+    # 原始单位：腾讯 volume=手/amount=元(估算)；中证官网 tradingVol=股/tradingValue=亿元；国证 volume=万手/amount=亿元
+    IDX_COL_CN = {
+        "open": "开盘(点)", "close": "收盘(点)", "high": "最高(点)", "low": "最低(点)",
+        "volume": "成交量(万手)", "amount": "成交额(亿元)",
+    }
+    IDX_DIV = {"tencent": (1e4, 1e8), "csindex": (1e6, 1), "cnindex": (1, 1)}  # (成交量除数, 成交额除数)
+    ETF_COL_CN = {
+        "open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
+        "volume": "成交量(万手)", "amount": "成交额(亿元)",
         "nav": "单位净值", "acc_nav": "累计净值",
     }
     print("\n═══ 重新生成 Excel ═══")
@@ -109,13 +128,17 @@ def export_excel():
                 rows = info["rows"]
                 if not rows:
                     continue
+                vdiv, adiv = IDX_DIV[info["source"]]
                 df = pd.DataFrame(rows)
                 df["date"] = pd.to_datetime(df["date"])
                 df = df.sort_values("date").set_index("date")
-                df = df.rename(columns=COL_CN)
-                df = df[["开盘", "收盘", "最高", "最低", "成交量", "成交额"]]
+                df = df.rename(columns=IDX_COL_CN)
+                df = df[list(IDX_COL_CN.values())]
+                df["成交量(万手)"] = (df["成交量(万手)"] / vdiv).round(2)
+                df["成交额(亿元)"] = (df["成交额(亿元)"] / adiv).round(2)
                 df.index.name = "日期"
                 df.to_excel(w, sheet_name=f"{code} {info['name'][:10]}"[:31])
+        fmt_dates_file(os.path.join(BASE, "excel", "指数历史.xlsx"))
     except PermissionError:
         print("⚠️  excel/指数历史.xlsx 被占用（可能已在Excel中打开），请关闭后重新执行导出")
     # ETF（先估算成交额并写回缓存）
@@ -135,11 +158,14 @@ def export_excel():
                 df = pd.DataFrame(rows)
                 df["date"] = pd.to_datetime(df["date"])
                 df = df.sort_values("date").set_index("date")
-                df = df.rename(columns=COL_CN)
+                df = df.rename(columns=ETF_COL_CN)
+                df["成交量(万手)"] = (df["成交量(万手)"] / 1e4).round(2)
+                df["成交额(亿元)"] = (df["成交额(亿元)"] / 1e8).round(2)
                 if "单位净值" in df.columns:
-                    df = df[["开盘", "收盘", "最高", "最低", "成交量", "成交额", "单位净值", "累计净值"]]
+                    df = df[["开盘(元)", "收盘(元)", "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)", "单位净值", "累计净值"]]
                 df.index.name = "日期"
                 df.to_excel(w, sheet_name=f"{code} {info['name'][:10]}"[:31])
+        fmt_dates_file(os.path.join(BASE, "excel", "ETF历史.xlsx"))
     except PermissionError:
         print("⚠️  excel/ETF历史.xlsx 被占用（可能已在Excel中打开），请关闭后重新执行导出")
     else:

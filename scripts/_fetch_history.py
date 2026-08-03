@@ -226,7 +226,7 @@ def update_incremental(typ, code, name, fetcher):
     merged = [old_rows[k] for k in sorted(old_rows)]
     if typ == "指数":
         merged = [{k: r.get(k) for k in ("date", "open", "close", "high", "low", "volume", "amount")} for r in merged]
-    obj = {"code": code, "name": name, "fetched_at": time.strftime("%Y-%m-%d %H:%M:%S"), "rows": merged}
+    obj = {"code": code, "name": name, "fetched_at": time.strftime("%Y-%m-%d"), "rows": merged}
     save_cache(typ, code, obj)
     print(f"  [{code} {name}] 新增 {n_new}条，累计 {len(merged)}条，最新 {merged[-1]['date']}")
     return n_new, len(merged), merged[-1]["date"]
@@ -254,7 +254,7 @@ def get_or_fetch(typ, code, name, fetcher, refresh):
             return cached
     print(f"  [{code} {name}] 拉取中...")
     rows = fetcher()
-    obj = {"code": code, "name": name, "fetched_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    obj = {"code": code, "name": name, "fetched_at": time.strftime("%Y-%m-%d"),
            "rows": rows}
     save_cache(typ, code, obj)
     print(f"  [{code} {name}] 完成 {len(rows)}条 -> cache/{typ}_{code}.json")
