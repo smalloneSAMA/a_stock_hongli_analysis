@@ -7,12 +7,14 @@
 - 全量：翻页拉取，过滤 2004-01-01 之前数据（上市晚于该日的自然从上市日起）
 - 增量：腾讯 start 参数实测无效（返回最近800条），增量=拉最近800条+字段级合并覆盖，
         等价于刷新最近约3.2年，更早数据保留
+- 分红：东财 RPT_SHAREBONUS_DET 全量分红历史 → cache/分红_{code}.json（原子写，缓存存在跳过）
+- 股息率：Excel 每行 = 除权日在(当日-12个月,当日]内每股派息 ÷ 当日收盘 ×100（口径同汇总表）
 - 缓存：cache/股票_{code}.json，原子写（_fetch_history.save_cache），无缓存全量自愈
 - 成交额：腾讯日K无成交额字段，按 成交量(手)×100×(高+低+收)/3 估算（同ETF口径）
-- Excel：excel/股票历史.xlsx（每只一个sheet）
+- Excel：excel/股票历史.xlsx（每只一个sheet，含股息率(%)列）
 用法: python scripts/_fetch_stock_data.py [--refresh]
 """
-import sys, io, os, json, time, argparse, urllib.request
+import sys, io, os, json, time, argparse, urllib.request, random
 import pandas as pd
 
 if __name__ == "__main__":
@@ -46,6 +48,73 @@ STOCKS = [
 ]
 START = "2004-01-01"  # 最早时间上限
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
+
+# ── 东财限流请求（分红接口用，1s/请求防封）──────────────────────────
+_last = [0.0]
+def em_get(url, timeout=12):
+    wait = 1.0 - (time.time() - _last[0])
+    if wait > 0:
+        time.sleep(wait + random.uniform(0.1, 0.4))
+    req = urllib.request.Request(url, headers={
+        "User-Agent": UA, "Referer": "https://quote.eastmoney.com/"})
+    try:
+        return urllib.request.urlopen(req, timeout=timeout).read().decode()
+    finally:
+        _last[0] = time.time()
+
+# ── 全量分红历史（东财 RPT_SHAREBONUS_DET，每10股税前派息）──────────
+def fetch_dividend(code):
+    """返回 [{ex_date, bonus10}]，按除权日降序（接口默认）；"""
+    url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?"
+           "reportName=RPT_SHAREBONUS_DET&columns=ALL"
+           f"&filter=(SECURITY_CODE%3D%22{code}%22)"
+           "&pageNumber=1&pageSize=50&sortColumns=EX_DIVIDEND_DATE&sortTypes=-1&source=WEB&client=WEB")
+    d = json.loads(em_get(url))
+    rows = (d.get("result") or {}).get("data") or []
+    out = []
+    for r in rows:
+        exdate = str(r.get("EX_DIVIDEND_DATE") or "")[:10]
+        bonus = r.get("PRETAX_BONUS_RMB") or 0
+        if exdate and bonus:
+            out.append({"ex_date": exdate, "bonus10": round(bonus, 3)})
+    return out
+
+def update_dividends():
+    """20只全量分红 → cache/分红_{code}.json（缓存已存在则跳过，删除自愈重拉）"""
+    print("── 全量分红历史（东财，1s/只）──")
+    for code, name, _t in STOCKS:
+        if os.path.exists(fh.cache_path("分红", code)):
+            print(f"  [{code} {name}] 分红缓存已存在，跳过")
+            continue
+        try:
+            rows = fetch_dividend(code)
+            obj = {"code": code, "name": name,
+                   "fetched_at": time.strftime("%Y-%m-%d"), "rows": rows}
+            fh.save_cache("分红", code, obj)   # 原子写
+            print(f"  [{code} {name}] 分红 {len(rows)} 条 -> cache/分红_{code}.json")
+        except Exception as e:
+            print(f"  ❌ [{code} {name}] 分红拉取失败: {repr(e)[:80]}")
+        time.sleep(0.3)
+
+# ── 历史逐日股息率计算 ──────────────────────────────────────────────
+def calc_dividend_yield(rows, div_rows):
+    """每行股息率(%) = 除权日在(当日-12个月, 当日]内的每股派息合计 ÷ 当日收盘 × 100
+    口径与 _成分股汇总.json 的 div_yield_calc 一致（年月差<=12）；窗口内无分红记 0.00"""
+    events = sorted(((r["ex_date"], r["bonus10"] / 10.0) for r in div_rows))
+    out = []
+    for r in rows:
+        d = r["date"]
+        dy, dm = int(d[:4]), int(d[5:7])
+        total = 0.0
+        for ex, per in events:
+            if ex > d:
+                continue
+            ey, em = int(ex[:4]), int(ex[5:7])
+            if (dy - ey) * 12 + (dm - em) <= 12:
+                total += per
+        close = r.get("close") or 0
+        out.append(round(total / close * 100, 2) if close and total else 0.0)
+    return out
 
 # ── 拉取（不复权）───────────────────────────────────────────────
 def fetch_kline(tcode, code, full=True):
@@ -107,13 +176,16 @@ def export_excel():
     # 展示口径：价格(元)、成交量(万手)、成交额(亿元)；腾讯原始 volume=手、amount=元(估算)
     COL_CN = {"open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
               "volume": "成交量(万手)", "amount": "成交额(亿元)"}
+    COLS = ["开盘(元)", "收盘(元)", "股息率(%)", "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)"]
     rows_map = {}
     for code, name, _t in STOCKS:
         c = load_cache("股票", code)
         if c:
             fh.fill_etf_amount(c["rows"])          # 估算成交额（元）
             fh.save_cache("股票", code, c)          # 写回缓存
-            rows_map[code] = {"name": c.get("name", name), "rows": c["rows"]}
+            div = load_cache("分红", code)
+            rows_map[code] = {"name": c.get("name", name), "rows": c["rows"],
+                              "div": div["rows"] if div else []}
     try:
         with pd.ExcelWriter(os.path.join(BASE, "excel", "股票历史.xlsx"), engine="openpyxl") as w:
             for code, info in rows_map.items():
@@ -121,10 +193,11 @@ def export_excel():
                 if not rows:
                     continue
                 df = pd.DataFrame(rows)
+                df["股息率(%)"] = calc_dividend_yield(rows, info["div"])
                 df["date"] = pd.to_datetime(df["date"])
                 df = df.sort_values("date").set_index("date")
                 df = df.rename(columns=COL_CN)
-                df = df[list(COL_CN.values())]
+                df = df[COLS]
                 df["成交量(万手)"] = (df["成交量(万手)"] / 1e4).round(2)
                 df["成交额(亿元)"] = (df["成交额(亿元)"] / 1e8).round(2)
                 df.index.name = "日期"
@@ -137,13 +210,14 @@ def export_excel():
                     if isinstance(cell.value, datetime):
                         cell.number_format = "yyyy-mm-dd"
         wb.save(os.path.join(BASE, "excel", "股票历史.xlsx"))
-        print(f"✅ excel/股票历史.xlsx 已生成（{len(rows_map)} 只，2004-01-01 起，不复权）")
+        print(f"✅ excel/股票历史.xlsx 已生成（{len(rows_map)} 只，2004-01-01 起，不复权，含股息率）")
     except PermissionError:
         print("⚠️  excel/股票历史.xlsx 被占用（可能已在Excel中打开），请关闭后重新执行导出")
 
 # ── 主流程 ──────────────────────────────────────────────────────
 def update_all(refresh=False):
     print("═══ 推荐20只股票历史行情（不复权，2004-01-01起）═══")
+    update_dividends()   # 分红缓存缺失才拉（秒级），删除自愈
     for code, name, tcode in STOCKS:
         if refresh:
             rows = fetch_kline(tcode, code, full=True)

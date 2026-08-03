@@ -80,6 +80,7 @@ def update_etfs():
 
 def update_stocks():
     print("\n═══ 股票历史行情更新（20只，不复权，2004-01-01起）═══")
+    fsd.update_dividends()   # 分红缓存缺失才拉（20只约1分钟），删除自愈
     for code, name, tcode in fsd.STOCKS:
         try:
             fh.update_incremental("股票", code, name, fsd.make_fetcher(tcode, code))
