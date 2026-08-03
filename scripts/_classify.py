@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """东财三级行业 → 一级大类映射 + 输出全部成分股汇总表"""
-import json
+import json, os, sys
 
 # 申万二级/三级行业 → 一级大类（f127 为申万行业分类，带 Ⅱ 罗马数字后缀）
 M = {
@@ -79,6 +79,11 @@ def map_ind(f127):
     return f127  # 保持原名
 
 def main():
+    """预览模式：仅打印行业分布，不写缓存。
+    正式汇总表由 update.py 选项4 → scripts/_update_summary.py build_table() 生成
+    （本文件 main 为旧版逻辑，字段与正式管线不一致，避免覆盖缓存造成不一致）"""
+    if not os.path.exists("cache/_成分股汇总.json"):
+        sys.exit("❌ 缺少 cache/_成分股汇总.json，请先运行 update.py 选项4 生成")
     stock = json.load(open("cache/_成分股汇总.json", encoding="utf-8"))
     rows = []
     for c, s in stock.items():
@@ -94,10 +99,10 @@ def main():
             "idx": sorted([(k, v) for k, v in s["w"].items() if v], key=lambda x: -x[1])[:4],
         })
     rows.sort(key=lambda r: (-r["n"], -r["maxw"]))
-    json.dump(rows, open("cache/_成分股汇总表.json", "w", encoding="utf-8"), ensure_ascii=False)
     print(f"{'代码':<7}{'名称':<10}{'一级行业':<8}{'三级':<10}{'次数':<4}{'最大权重':<7}{'PE':<7}{'PB':<6}{'市值(亿)':<9}")
     for r in rows:
         print(f"{r['code']:<7}{r['name']:<10}{r['ind']:<8}{r['ind3']:<10}{r['n']:<4}{r['maxw']:<7}{str(r['pe']):<7}{str(r['pb']):<6}{r['mcap']:<9.0f}")
+    print("\n⚠️ 预览仅供快速查看；正式汇总表请用 update.py 选项4 生成（含完整 idx[:8]/div_rec 字段）。")
 
 if __name__ == "__main__":
     main()

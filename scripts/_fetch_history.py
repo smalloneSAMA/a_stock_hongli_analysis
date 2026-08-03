@@ -6,7 +6,7 @@
 - 缓存：cache/{类型}_{代码}.json，有缓存直接复用；--refresh 强制重新拉取
 - 输出：excel/指数历史.xlsx、excel/ETF历史.xlsx（每标的一个sheet）
 """
-import sys, io, os, json, time, argparse, urllib.request, requests
+import sys, io, os, json, time, argparse, urllib.request, requests, datetime
 import pandas as pd
 
 if __name__ == "__main__":
@@ -48,7 +48,6 @@ ETFS = [
     ("563700", "红利价值ETF易方达", "sh563700"),
     ("159229", "自由现金流ETF广发", "sz159229"),
 ]
-TODAY = "2026-08-02"
 
 # ── 缓存 ───────────────────────────────────────────────────────────
 def cache_path(typ, code):
@@ -63,8 +62,10 @@ def load_cache(typ, code):
 
 def save_cache(typ, code, obj):
     p = cache_path(typ, code)
-    with open(p, "w", encoding="utf-8") as f:
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False)
+    os.replace(tmp, p)  # 原子写：先写临时文件再替换，防中断损坏缓存
 
 # ── 1. 腾讯K线（全历史或增量，翻页）────────────────────────────
 def fetch_tencent_kline(tcode, code, start=None):
@@ -103,8 +104,8 @@ def fetch_csindex_perf(code, start=None, end=None):
     """start/end: YYYYMMDD，None=最早/最新；返回 [{tradeDate, open, high, low, close, change, changePct, tradingVol, tradingValue}]"""
     url = "https://www.csindex.com.cn/csindex-home/perf/index-perf"
     all_rows = []
-    # 按年分段拉取，避免接口单次数量上限
-    end_year = int((end or "20261231")[:4])
+    # 按年分段拉取，避免接口单次数量上限；end 缺省取今天（接口返回截至当日数据）
+    end_year = int((end or datetime.date.today().strftime("%Y%m%d"))[:4])
     start_year = int((start or "20040101")[:4])
     for y in range(start_year, end_year + 1):
         s = start if y == start_year else f"{y}0101"
@@ -144,7 +145,7 @@ def fetch_cnindex_kline(code, start=None):
     url = "https://hq.cnindex.com.cn/market/market/getIndexDailyDataWithDataFormat"
     all_rows = []
     start_year = int((start or "2012-01-01")[:4])
-    for y in range(start_year, 2027):
+    for y in range(start_year, datetime.date.today().year + 1):
         s = start if y == start_year else f"{y}-01-01"
         params = {"indexCode": code, "startDate": s, "endDate": f"{y}-12-31", "frequency": "day"}
         try:

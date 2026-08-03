@@ -20,6 +20,13 @@ MD = os.path.join(BASE, "红利指数与ETF成分股.md")
 SUMMARY_JSON = os.path.join(CACHE, "_成分股汇总.json")
 TABLE_JSON = os.path.join(CACHE, "_成分股汇总表.json")
 
+def atomic_dump(path, obj):
+    """原子写 JSON：先写 .tmp 再 os.replace，防止写一半中断损坏缓存"""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
 # 20只推荐名单（《红利股票推荐20只.md》）
 FINAL20 = ["600036", "601838", "601088", "601225", "600938", "601857", "600350", "601006",
            "600900", "600795", "000858", "000895", "000651", "000333", "000423", "600566",
@@ -42,6 +49,9 @@ def em_get(url, timeout=8):
 
 # ── 1. 解析成分股md → 基础缓存（name/w/n）────────────────────────────
 def parse_components():
+    if not os.path.exists(MD):
+        print(f"  ❌ 找不到《红利指数与ETF成分股.md》（{MD}），请先运行 update.py 选项3 生成")
+        return {}
     text = open(MD, encoding="utf-8").read()
     sections = re.split(r"^### ", text, flags=re.M)
     stock = {}
@@ -80,7 +90,7 @@ def fetch_industry(codes):
             if fail >= FAIL_LIMIT:
                 print("    !!! 连续失败过多，疑似被封，行业补齐中止")
                 break
-    json.dump(stock, open(SUMMARY_JSON, "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump(SUMMARY_JSON, stock)
     print(f"  [行业] 完成")
 
 # ── 3. 行情（腾讯批量，全量刷新，不封IP）───────────────────────────────
@@ -116,7 +126,7 @@ def fetch_quotes(codes):
         except Exception as e:
             print(f"  [行情] 批次失败: {e}")
         time.sleep(0.3)
-    json.dump(stock, open(SUMMARY_JSON, "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump(SUMMARY_JSON, stock)
     print(f"  [行情] 腾讯批量刷新 {got}/{len(codes)}")
 
 # ── 4. 股息率/分红（datacenter，增量；force 全量）─────────────────────
@@ -166,9 +176,9 @@ def fetch_dividends(codes, force=False):
                 print("    !!! 连续失败过多，疑似被封，分红补齐中止")
                 break
         if (i + 1) % 50 == 0:
-            json.dump(stock, open(SUMMARY_JSON, "w", encoding="utf-8"), ensure_ascii=False)
+            atomic_dump(SUMMARY_JSON, stock)
             print(f"    进度 {i + 1}/{len(todo)}，成功 {done}，已存盘")
-    json.dump(stock, open(SUMMARY_JSON, "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump(SUMMARY_JSON, stock)
     print(f"  [分红] 完成，成功 {done}/{len(todo)}")
 
 # ── 5. 行业归并 + 汇总表缓存 ──────────────────────────────────────────
@@ -192,7 +202,7 @@ def build_table():
             "idx": idx,
         })
     rows.sort(key=lambda r: (r["ind"], -r["n"], -r["maxw"]))
-    json.dump(rows, open(TABLE_JSON, "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump(TABLE_JSON, rows)
     print(f"  [归并] 汇总表缓存 {len(rows)} 只（{len(set(r['ind'] for r in rows))} 个一级行业）")
 
 # ── 6. 生成 excel/红利成分股汇总.xlsx ─────────────────────────────────
@@ -289,26 +299,40 @@ def run(force=False):
     t0 = time.time()
     print("═══ 成分股汇总数据更新 ═══")
     parsed = parse_components()
+    if not parsed:
+        print("  ❌ 无成分股数据可处理，终止本次更新（缓存未做任何改动）")
+        return
     print(f"[1/7] 解析成分股md：{len(parsed)} 只")
+    old = {}
     if os.path.exists(SUMMARY_JSON):
-        old = json.load(open(SUMMARY_JSON, encoding="utf-8"))
+        try:
+            old = json.load(open(SUMMARY_JSON, encoding="utf-8"))
+        except Exception as e:
+            print(f"  ⚠️ 缓存 {SUMMARY_JSON} 损坏（{type(e).__name__}），将基于 md 重建")
+    if old:
         new_codes = [c for c in parsed if c not in old]
         if new_codes:
             print(f"  md 新增 {len(new_codes)} 只：{new_codes}")
         for c, s in parsed.items():
             if c not in old:
                 old[c] = s
-        # 同步：md 中已移除的股票从缓存剔除
+        # 同步：md 中已移除的股票从缓存剔除（带保护：md 解析异常/骤降时禁止清空）
         removed = [c for c in old if c not in parsed]
         if removed:
-            print(f"  md 已移除 {len(removed)} 只：{removed}，从缓存删除")
-            for c in removed:
-                del old[c]
-        json.dump(old, open(SUMMARY_JSON, "w", encoding="utf-8"), ensure_ascii=False)
+            if len(removed) > len(old) // 2:
+                print(f"  ⚠️ 预警：md 解析出 {len(parsed)} 只，但旧缓存有 {len(old)} 只，其中 {len(removed)} 只不在新解析结果中")
+                print(f"     （疑似 md 损坏或解析异常），跳过删除同步，仅保留新增；请人工核对 md 后再更新")
+            else:
+                print(f"  md 已移除 {len(removed)} 只：{removed}，从缓存删除")
+                for c in removed:
+                    del old[c]
+        atomic_dump(SUMMARY_JSON, old)
         print("[2/7] 缓存基础信息已同步")
     else:
-        json.dump(parsed, open(SUMMARY_JSON, "w", encoding="utf-8"), ensure_ascii=False)
-        print("[2/7] 首次生成基础缓存")
+        for c, s in parsed.items():
+            old[c] = s
+        atomic_dump(SUMMARY_JSON, old)
+        print("[2/7] 首次生成基础缓存（或缓存损坏后基于 md 重建）")
     codes = list(parsed.keys())
     print("[3/7] 行业补齐（增量）")
     fetch_industry(codes)
@@ -325,4 +349,5 @@ def run(force=False):
     print("⚠️ 请人工核对《红利股票推荐20只.md》中相关数字/描述是否需要同步（脚本不自动改该文件）。")
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
     run(force="--force" in sys.argv)
