@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """候选池股息率计算：对候选股票拉取分红历史，计算近12个月每股派息/现价"""
-import json, sys, time, random, urllib.request
+import json, sys, time, random, urllib.request, os
 
 sys.stdout.reconfigure(encoding="utf-8")
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0"}
@@ -56,10 +56,13 @@ CANDIDATES = [
     # 计算机/电子
     "002415", "600183",
     # 其他质量成长
-    "300033", "002555", "605117", "600989",
+    "300033", "002555", "605117",
 ]
 
 def main():
+    for p in ("cache/_成分股汇总.json", "cache/_成分股汇总表.json"):
+        if not os.path.exists(p):
+            sys.exit(f"❌ 缺少 {p}，请先运行 update.py 选项4（解析成分股md→行业/行情/股息率→缓存→Excel）")
     stock = json.load(open("cache/_成分股汇总.json", encoding="utf-8"))
     rows = json.load(open("cache/_成分股汇总表.json", encoding="utf-8"))
     row_map = {r["code"]: r for r in rows}
@@ -68,6 +71,7 @@ def main():
     out = []
     for i, c in enumerate(CANDIDATES):
         s = stock.get(c, {})
+        price = s.get("t_price") or s.get("price") or 0
         url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?"
                "reportName=RPT_SHAREBONUS_DET&columns=ALL"
                f"&filter=(SECURITY_CODE%3D%22{c}%22)"
@@ -82,14 +86,13 @@ def main():
                 if exdate and bonus:
                     rec.append((exdate, round(bonus, 3)))
             total12 = 0.0
-            for exdate, bonus in rec:
+            for exdate, bonus10 in rec:
                 try:
                     y, m, _ = map(int, exdate.split("-"))
                     if (today.year - y) * 12 + (today.month - m) <= 12:
-                        total12 += bonus
+                        total12 += bonus10 / 10.0   # PRETAX_BONUS_RMB 为每10股口径，÷10 → 每股
                 except Exception:
                     pass
-            price = s.get("t_price") or s.get("price") or 0
             dy = round(total12 / price * 100, 2) if price and total12 else None
         except Exception as e:
             rec, dy = [], None
@@ -97,7 +100,7 @@ def main():
         out.append({
             "code": c, "name": s.get("name"), "ind": r.get("ind"), "ind3": r.get("ind3"),
             "n": r.get("n"), "maxw": r.get("maxw"), "pe": r.get("pe"), "pb": r.get("pb"),
-            "mcap": r.get("mcap"), "price": price if 'price' in dir() else None,
+            "mcap": r.get("mcap"), "price": price,
             "div_yield": dy, "div_rec": rec[:5],
         })
         if (i + 1) % 10 == 0:

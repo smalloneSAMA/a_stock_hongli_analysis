@@ -145,6 +145,9 @@ def tencent_names(codes):
 
 # ── 6. 从旧md解析成分（下载失败时回退）────────────────────────────
 def parse_old_md_stocks(code):
+    if not os.path.exists(MD):
+        print(f"  ⚠️ {code}: 官网下载失败且旧md不存在（{MD}），无法回退，跳过该指数")
+        return None, ""
     t = open(MD, encoding="utf-8").read()
     m = re.search(rf"^### .+?（{re.escape(code)}）$(.*?)(?=^### |\Z)", t, re.M | re.S)
     if not m:
