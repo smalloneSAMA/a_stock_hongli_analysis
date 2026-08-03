@@ -96,6 +96,77 @@ def update_dividends():
             print(f"  ❌ [{code} {name}] 分红拉取失败: {repr(e)[:80]}")
         time.sleep(0.3)
 
+# ── 财报（东财 RPT_F10_FINANCE_MAINFINADATA，季度累计EPS）──────────
+def fetch_financials(code):
+    """返回 [{report_date, notice_date, eps}]，按报告期降序；EPSJB=基本每股收益(累计口径)"""
+    secucode = code + (".SH" if code.startswith("6") else ".SZ")
+    url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?"
+           "reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
+           f"&filter=(SECUCODE%3D%22{secucode}%22)&pageNumber=1&pageSize=200"
+           "&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB")
+    d = json.loads(em_get(url))
+    rows = (d.get("result") or {}).get("data") or []
+    out = []
+    for r in rows:
+        eps = r.get("EPSJB")
+        rd = str(r.get("REPORT_DATE") or "")[:10]
+        nd = str(r.get("NOTICE_DATE") or "")[:10]
+        if rd and nd and eps:
+            out.append({"report_date": rd, "notice_date": nd, "eps": round(float(eps), 4)})
+    return out
+
+def update_financials():
+    """20只财报 → cache/财报_{code}.json（缓存存在跳过，删除自愈）"""
+    print("── 季度财报（东财，1s/只）──")
+    for code, name, _t in STOCKS:
+        if os.path.exists(fh.cache_path("财报", code)):
+            print(f"  [{code} {name}] 财报缓存已存在，跳过")
+            continue
+        try:
+            rows = fetch_financials(code)
+            obj = {"code": code, "name": name,
+                   "fetched_at": time.strftime("%Y-%m-%d"), "rows": rows}
+            fh.save_cache("财报", code, obj)   # 原子写
+            print(f"  [{code} {name}] 财报 {len(rows)} 条 -> cache/财报_{code}.json")
+        except Exception as e:
+            print(f"  ❌ [{code} {name}] 财报拉取失败: {repr(e)[:80]}")
+        time.sleep(0.3)
+
+# ── 历史 PE 计算 ──────────────────────────────────────────────────
+def calc_pe(rows, fin_rows):
+    """返回 (pe_ttm[], pe_dyn[])。
+    PE = 收盘价 ÷ EPS；TTM = 最新累计EPS − 去年同期累计EPS + 去年年报EPS（累计口径折算）
+    动态 = 最新累计EPS ÷ 报告期季度数 × 4（季度进度年化）；EPS 缺失区间留 None（Excel 空）"""
+    import bisect
+    # 同公告日多条时（如年报与一季报同日公告）取报告期最新的：双键排序
+    fins = sorted(fin_rows, key=lambda x: (x["notice_date"], x["report_date"]))
+    dates = [f["notice_date"] for f in fins]
+    by_yq = {}
+    for f in fins:  # 公告晚的覆盖早的（同报告期以最新公告为准）
+        by_yq[(f["report_date"][:4], f["report_date"][5:10])] = f
+    qmap = {"03-31": 4, "06-30": 2, "09-30": 4.0 / 3, "12-31": 1}
+    pe_ttm, pe_dyn = [], []
+    for r in rows:
+        d = r["date"]
+        close = r.get("close") or 0
+        i = bisect.bisect_right(dates, d) - 1
+        if i < 0 or not close:
+            pe_ttm.append(None); pe_dyn.append(None)
+            continue
+        latest = fins[i]
+        ly, lq = latest["report_date"][:4], latest["report_date"][5:10]
+        same_ly = by_yq.get((str(int(ly) - 1), lq))
+        annual_ly = by_yq.get((str(int(ly) - 1), "12-31"))
+        ttm_eps = None
+        if same_ly and annual_ly:
+            ttm_eps = latest["eps"] - same_ly["eps"] + annual_ly["eps"]
+        elif lq == "12-31":
+            ttm_eps = latest["eps"]   # 最新即年报
+        dyn_eps = latest["eps"] * qmap.get(lq, 1)
+        pe_ttm.append(round(close / ttm_eps, 2) if ttm_eps else None)
+        pe_dyn.append(round(close / dyn_eps, 2) if dyn_eps else None)
+    return pe_ttm, pe_dyn
+
 # ── 历史逐日股息率计算 ──────────────────────────────────────────────
 def calc_dividend_yield(rows, div_rows):
     """每行股息率(%) = 除权日在(当日-12个月, 当日]内的每股派息合计 ÷ 当日收盘 × 100
@@ -176,7 +247,8 @@ def export_excel():
     # 展示口径：价格(元)、成交量(万手)、成交额(亿元)；腾讯原始 volume=手、amount=元(估算)
     COL_CN = {"open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
               "volume": "成交量(万手)", "amount": "成交额(亿元)"}
-    COLS = ["开盘(元)", "收盘(元)", "股息率(%)", "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)"]
+    COLS = ["开盘(元)", "收盘(元)", "股息率(%)", "PE(TTM)(倍)", "PE动(倍)",
+            "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)"]
     rows_map = {}
     for code, name, _t in STOCKS:
         c = load_cache("股票", code)
@@ -184,8 +256,10 @@ def export_excel():
             fh.fill_etf_amount(c["rows"])          # 估算成交额（元）
             fh.save_cache("股票", code, c)          # 写回缓存
             div = load_cache("分红", code)
+            fin = load_cache("财报", code)
             rows_map[code] = {"name": c.get("name", name), "rows": c["rows"],
-                              "div": div["rows"] if div else []}
+                              "div": div["rows"] if div else [],
+                              "fin": fin["rows"] if fin else []}
     try:
         with pd.ExcelWriter(os.path.join(BASE, "excel", "股票历史.xlsx"), engine="openpyxl") as w:
             for code, info in rows_map.items():
@@ -194,6 +268,9 @@ def export_excel():
                     continue
                 df = pd.DataFrame(rows)
                 df["股息率(%)"] = calc_dividend_yield(rows, info["div"])
+                pe_ttm, pe_dyn = calc_pe(rows, info["fin"])
+                df["PE(TTM)(倍)"] = pe_ttm
+                df["PE动(倍)"] = pe_dyn
                 df["date"] = pd.to_datetime(df["date"])
                 df = df.sort_values("date").set_index("date")
                 df = df.rename(columns=COL_CN)
@@ -218,6 +295,7 @@ def export_excel():
 def update_all(refresh=False):
     print("═══ 推荐20只股票历史行情（不复权，2004-01-01起）═══")
     update_dividends()   # 分红缓存缺失才拉（秒级），删除自愈
+    update_financials()  # 财报缓存缺失才拉，删除自愈
     for code, name, tcode in STOCKS:
         if refresh:
             rows = fetch_kline(tcode, code, full=True)
