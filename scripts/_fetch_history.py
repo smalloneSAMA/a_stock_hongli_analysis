@@ -343,5 +343,56 @@ def main():
 
     print("全部完成。缓存目录: cache/ · Excel目录: excel/")
 
+# ── Excel 美化（列宽自适应/冻结首行/筛选/居中）────────────────────
+def beautify_sheet(ws):
+    """单个sheet：列宽按内容显示宽度自适应、冻结首行、开启筛选、全表水平垂直居中，表头加粗浅蓝底。
+    幂等，可重复执行"""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    if ws.max_row < 1 or ws.max_column < 1:
+        return
+    nrow, ncol = ws.max_row, ws.max_column
+
+    def dispw(v):
+        if isinstance(v, datetime.datetime):
+            return 10   # 日期按 yyyy-mm-dd 显示宽度计
+        s = str(v)
+        return sum(2 if ord(ch) > 127 else 1 for ch in s)   # 中文/全角按2字符宽
+
+    widths = [0] * ncol
+    for row in ws.iter_rows(min_row=1, max_row=nrow, max_col=ncol):
+        for cell in row:
+            if cell.value is None:
+                continue
+            w = dispw(cell.value)
+            i = cell.column - 1
+            if w > widths[i]:
+                widths[i] = w
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = min(max(w + 2, 8), 22)
+
+    ws.freeze_panes = "A2"            # 冻结首行
+    ws.auto_filter.ref = f"A1:{get_column_letter(ncol)}{nrow}"   # 开启筛选
+
+    center = Alignment(horizontal="center", vertical="center")
+    hfont = Font(bold=True)
+    hfill = PatternFill("solid", fgColor="D9E1F2")
+    for row in ws.iter_rows(min_row=1, max_row=nrow, max_col=ncol):
+        for cell in row:
+            if cell.value is None:
+                continue
+            cell.alignment = center
+            if cell.row == 1:
+                cell.font = hfont
+                cell.fill = hfill
+
+def beautify_file(path):
+    """打开xlsx逐sheet美化后保存（幂等）"""
+    from openpyxl import load_workbook
+    wb = load_workbook(path)
+    for ws in wb.worksheets:
+        beautify_sheet(ws)
+    wb.save(path)
+
 if __name__ == "__main__":
     main()

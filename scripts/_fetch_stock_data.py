@@ -472,13 +472,14 @@ def export_excel():
                 df["成交额(亿元)"] = (df["成交额(亿元)"] / 1e8).round(2)
                 df.index.name = "日期"
                 df.to_excel(w, sheet_name=f"{code} {info['name'][:10]}"[:31])
-        # 日期列显示为年月日（导出后独立后处理，避免 pandas 保存覆盖格式）
+        # 日期列显示为年月日 + 美化（列宽/冻结首行/筛选/居中）——导出后独立后处理，避免 pandas 保存覆盖格式
         wb = load_workbook(os.path.join(BASE, "excel", "股票历史.xlsx"))
         for ws in wb.worksheets:
             for row in ws.iter_rows(min_row=2, min_col=1, max_col=1):
                 for cell in row:
                     if isinstance(cell.value, datetime):
                         cell.number_format = "yyyy-mm-dd"
+            fh.beautify_sheet(ws)
         wb.save(os.path.join(BASE, "excel", "股票历史.xlsx"))
         print(f"✅ excel/股票历史.xlsx 已生成（{len(rows_map)} 只，2004-01-01 起，不复权，含股息率）")
     except PermissionError:

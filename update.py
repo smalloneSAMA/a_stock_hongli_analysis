@@ -96,14 +96,15 @@ def export_excel():
     from openpyxl import load_workbook
     from _fetch_history import load_cache
 
-    def fmt_dates_file(path):
-        """日期列显示为年月日（保留日期类型，去掉时分秒显示）——导出后独立后处理"""
+    def post_process_file(path):
+        """导出后处理：日期列显示为年月日（保留日期类型）+ 美化（列宽/冻结首行/筛选/居中）"""
         wb = load_workbook(path)
         for ws in wb.worksheets:
             for row in ws.iter_rows(min_row=2, min_col=1, max_col=1):
                 for cell in row:
                     if isinstance(cell.value, datetime):
                         cell.number_format = "yyyy-mm-dd"
+            fh.beautify_sheet(ws)
         wb.save(path)
     # 展示口径：价格(点/元)、成交量(万手)、成交额(亿元)；单位净值/累计净值不加单位
     # 原始单位：腾讯 volume=手/amount=元(估算)；中证官网 tradingVol=股/tradingValue=亿元；国证 volume=万手/amount=亿元
@@ -140,7 +141,7 @@ def export_excel():
                 df["成交额(亿元)"] = (df["成交额(亿元)"] / adiv).round(2)
                 df.index.name = "日期"
                 df.to_excel(w, sheet_name=f"{code} {info['name'][:10]}"[:31])
-        fmt_dates_file(os.path.join(BASE, "excel", "指数历史.xlsx"))
+        post_process_file(os.path.join(BASE, "excel", "指数历史.xlsx"))
     except PermissionError:
         print("⚠️  excel/指数历史.xlsx 被占用（可能已在Excel中打开），请关闭后重新执行导出")
     # ETF（先估算成交额并写回缓存）
@@ -167,7 +168,7 @@ def export_excel():
                     df = df[["开盘(元)", "收盘(元)", "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)", "单位净值", "累计净值"]]
                 df.index.name = "日期"
                 df.to_excel(w, sheet_name=f"{code} {info['name'][:10]}"[:31])
-        fmt_dates_file(os.path.join(BASE, "excel", "ETF历史.xlsx"))
+        post_process_file(os.path.join(BASE, "excel", "ETF历史.xlsx"))
     except PermissionError:
         print("⚠️  excel/ETF历史.xlsx 被占用（可能已在Excel中打开），请关闭后重新执行导出")
     else:
