@@ -157,8 +157,8 @@ def fetch_dividends(codes, force=False):
             total12 = 0.0
             for exdate, bonus10 in rec:
                 try:
-                    y, m, _ = map(int, exdate.split("-"))
-                    if (today.year - y) * 12 + (today.month - m) <= 12:
+                    exd = datetime.date(*map(int, exdate.split("-")))
+                    if exd <= today and (today - exd).days < 365:   # 精确365天自然日窗口
                         total12 += bonus10 / 10.0
                 except Exception:
                     pass
@@ -264,7 +264,7 @@ def gen_excel():
         "1. 成分与权重：《红利指数与ETF成分股.md》解析（精选指数10只+ETF 11只，权重为官方静态快照）",
         "2. 行业：东财个股接口（申万行业分类），一级行业为归并后的申万大类",
         "3. 行情/估值：腾讯财经公开接口",
-        "4. 股息率：东财分红历史接口，近12个月每股派息合计÷最新价（近12个月无派息者记 0.00%）",
+        "4. 股息率：东财分红历史接口，近12个月（精确365天）每股派息合计÷最新价（近12个月无派息者记 0.00%）",
         "5. 入选20只推荐：指《红利股票推荐20只.md》最终组合（每行业≤2只）",
         "", "列说明：",
         "· 入选指数/ETF数：该股票出现在精选池（10只指数+11只ETF，ETF与跟踪指数成分一致）中的个数，最大21",

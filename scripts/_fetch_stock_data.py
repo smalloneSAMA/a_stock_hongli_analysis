@@ -8,7 +8,10 @@
 - 增量：腾讯 start 参数实测无效（返回最近800条），增量=拉最近800条+字段级合并覆盖，
         等价于刷新最近约3.2年，更早数据保留
 - 分红：东财 RPT_SHAREBONUS_DET 全量分红历史 → cache/分红_{code}.json（原子写，缓存存在跳过）
-- 股息率：Excel 每行 = 除权日在(当日-12个月,当日]内每股派息 ÷ 当日收盘 ×100（口径同汇总表）
+- 股息率：Excel 每行 = 除权日在(当日-365天,当日]内每股派息 ÷ 当日收盘 ×100（精确自然日窗口，同东财口径）
+- 财报：东财 RPT_F10_FINANCE_MAINFINADATA → cache/财报_{code}.json（累计归母净利 PARENTNETPROFIT + EPS/BPS/ROE/ROA）
+- 股本：东财 RPT_F10_EH_EQUITY 股本变动历史 → cache/股本_{code}.json（按变动生效日阶梯取当日总股本）
+- PE：总市值(收盘×当日总股本) ÷ 归母净利（TTM/年化），口径同东财行情页；不用"价÷EPS"避免加权股本≠期末股本偏差
 - 缓存：cache/股票_{code}.json，原子写（_fetch_history.save_cache），无缓存全量自愈
 - 成交额：腾讯日K无成交额字段，按 成交量(手)×100×(高+低+收)/3 估算（同ETF口径）
 - Excel：excel/股票历史.xlsx（每只一个sheet，含股息率(%)列）
@@ -98,9 +101,10 @@ def update_dividends():
 
 # ── 财报（东财 RPT_F10_FINANCE_MAINFINADATA，季度累计EPS/每股净资产/ROE/ROA）──
 def fetch_financials(code):
-    """返回 [{report_date, notice_date, eps, bps, roe, roa}]，按报告期降序；
-    EPSJB=基本每股收益(累计)，BPS=每股净资产，ROEJQ=加权净资产收益率(%)，
-    ZZCJLL=总资产净利率(%)（ROA口径）"""
+    """返回 [{report_date, notice_date, eps, np, share, bps, roe, roa}]，按报告期降序；
+    EPSJB=基本每股收益(累计)，PARENTNETPROFIT=归母净利润(元,累计)，
+    TOTAL_SHARE=总股本(股)——注意该字段全历史回填当前值，仅作股本缓存缺失时的回退；
+    BPS=每股净资产，ROEJQ=加权净资产收益率(%)，ZZCJLL=总资产净利率(%)（ROA口径）"""
     secucode = code + (".SH" if code.startswith("6") else ".SZ")
     url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?"
            "reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
@@ -114,22 +118,104 @@ def fetch_financials(code):
         bps = r.get("BPS")
         roe = r.get("ROEJQ")
         roa = r.get("ZZCJLL")
+        np = r.get("PARENTNETPROFIT")   # 归母净利润（元，累计）
+        ts = r.get("TOTAL_SHARE")       # 总股本（股）——全期回填当前值，仅应急回退用
         rd = str(r.get("REPORT_DATE") or "")[:10]
         nd = str(r.get("NOTICE_DATE") or "")[:10]
         if rd and nd and eps:
             out.append({"report_date": rd, "notice_date": nd, "eps": round(float(eps), 4),
+                        "np": round(float(np), 2) if np else None,
+                        "share": int(ts) if ts else None,
                         "bps": round(float(bps), 4) if bps else None,
                         "roe": round(float(roe), 4) if roe else None,     # 0=接口缺失标记，视为无值
                         "roa": round(float(roa), 4) if roa else None})
     return out
 
+# ── 股本变动历史（东财 RPT_F10_EH_EQUITY，按变动生效日阶梯）─────────
+def fetch_share_history(code):
+    """返回 [{date, total_share}]（按生效日升序，总股本=股）。
+    END_DATE=股本变动生效日，TOTAL_SHARES=当日总股本；接口失败回退 F10 股本结构页 lngbbd
+    注意：送转/回购频繁的股票记录可达上千条（如美的每笔回购一条），需翻页拉全"""
+    secucode = code + (".SH" if code.startswith("6") else ".SZ")
+    out, seen = [], set()
+    try:
+        for page in range(1, 21):   # 最多 20页×500=1万条，足够覆盖全部股本变动
+            url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?"
+                   "reportName=RPT_F10_EH_EQUITY&columns=ALL"
+                   f"&filter=(SECUCODE%3D%22{secucode}%22)&pageNumber={page}&pageSize=500"
+                   "&sortColumns=END_DATE&sortTypes=-1&source=WEB&client=WEB")
+            d = json.loads(em_get(url))
+            rows = (d.get("result") or {}).get("data") or []
+            if not rows:
+                break
+            for r in rows:
+                dt = str(r.get("END_DATE") or "")[:10]
+                ts = r.get("TOTAL_SHARES")
+                if dt and ts and dt not in seen:
+                    seen.add(dt)
+                    out.append({"date": dt, "total_share": int(ts)})
+            if len(rows) < 500:
+                break
+            time.sleep(0.3)
+        if out:
+            return sorted(out, key=lambda x: x["date"])
+    except Exception:
+        pass
+    # 回退：F10 股本结构页（lngbbd 可能只回最近约20条）
+    try:
+        market = "SH" if code.startswith("6") else "SZ"
+        url2 = (f"https://emweb.securities.eastmoney.com/PC_HSF10/CapitalStockStructure/"
+                f"PageAjax?code={market}{code}")
+        req = urllib.request.Request(url2, headers={
+            "User-Agent": UA, "Referer": "https://emweb.securities.eastmoney.com/"})
+        d2 = json.loads(urllib.request.urlopen(req, timeout=12).read().decode())
+        out = []
+        for r in sorted(d2.get("lngbbd") or [], key=lambda x: str(x.get("END_DATE") or "")):
+            dt = str(r.get("END_DATE") or "")[:10]
+            ts = r.get("TOTAL_SHARES")
+            if dt and ts:
+                out.append({"date": dt, "total_share": int(ts)})
+        return out
+    except Exception:
+        return []
+
+def update_share_hist():
+    """20只股本变动历史 → cache/股本_{code}.json（缓存存在跳过，删除自愈）"""
+    print("── 股本变动历史（东财 EH_EQUITY，1s/只）──")
+    for code, name, _t in STOCKS:
+        if os.path.exists(fh.cache_path("股本", code)):
+            print(f"  [{code} {name}] 股本缓存已存在，跳过")
+            continue
+        try:
+            rows = fetch_share_history(code)
+            obj = {"code": code, "name": name,
+                   "fetched_at": time.strftime("%Y-%m-%d"), "rows": rows}
+            fh.save_cache("股本", code, obj)
+            print(f"  [{code} {name}] 股本变动 {len(rows)} 条 -> cache/股本_{code}.json")
+        except Exception as e:
+            print(f"  ❌ [{code} {name}] 股本拉取失败: {repr(e)[:80]}")
+        time.sleep(0.3)
+
 def update_financials():
-    """20只财报 → cache/财报_{code}.json（缓存存在跳过，删除自愈）"""
+    """20只财报 → cache/财报_{code}.json（缓存存在且为新版字段则跳过；旧版缺归母净利自动重拉）
+    同时确保股本变动历史缓存存在（update_share_hist）"""
+    update_share_hist()
     print("── 季度财报（东财，1s/只）──")
     for code, name, _t in STOCKS:
+        stale = False
         if os.path.exists(fh.cache_path("财报", code)):
-            print(f"  [{code} {name}] 财报缓存已存在，跳过")
-            continue
+            try:
+                old = json.load(open(fh.cache_path("财报", code), encoding="utf-8"))
+                if not old.get("rows") or "np" not in (old["rows"][0] or {}):
+                    stale = True   # 旧版缓存缺归母净利字段，重拉自愈
+            except Exception:
+                stale = True
+            if not stale:
+                print(f"  [{code} {name}] 财报缓存已存在，跳过")
+                continue
+            print(f"  [{code} {name}] 财报缓存为旧版(缺归母净利)，重拉")
+        else:
+            print(f"  [{code} {name}] 财报缓存缺失，重拉")
         try:
             rows = fetch_financials(code)
             obj = {"code": code, "name": name,
@@ -140,9 +226,9 @@ def update_financials():
             print(f"  ❌ [{code} {name}] 财报拉取失败: {repr(e)[:80]}")
         time.sleep(0.3)
 
-# ── 历史 PE 计算 ──────────────────────────────────────────────────
-def calc_ttm_eps(rows, fin_rows):
-    """每行 TTM EPS：最新累计EPS − 去年同期累计EPS + 去年年报EPS（累计口径折算12个月）"""
+# ── 历史 PE 计算（市值÷归母净利口径，同东财行情页）───────────────────
+def calc_ttm_np(rows, fin_rows):
+    """每行 TTM 归母净利润：最新累计归母净利 − 去年同期累计 + 去年年报（累计口径折算12个月）"""
     import bisect
     fins = sorted(fin_rows, key=lambda x: (x["notice_date"], x["report_date"]))
     dates = [f["notice_date"] for f in fins]
@@ -160,18 +246,42 @@ def calc_ttm_eps(rows, fin_rows):
         ly, lq = latest["report_date"][:4], latest["report_date"][5:10]
         same_ly = by_yq.get((str(int(ly) - 1), lq))
         annual_ly = by_yq.get((str(int(ly) - 1), "12-31"))
-        ttm_eps = None
-        if same_ly and annual_ly:
-            ttm_eps = latest["eps"] - same_ly["eps"] + annual_ly["eps"]
+        ttm_np = None
+        if latest.get("np") is None:
+            pass
+        elif same_ly and annual_ly and same_ly.get("np") is not None and annual_ly.get("np") is not None:
+            ttm_np = latest["np"] - same_ly["np"] + annual_ly["np"]
         elif lq == "12-31":
-            ttm_eps = latest["eps"]   # 最新即年报
-        out.append(ttm_eps)
+            ttm_np = latest["np"]   # 最新即年报
+        out.append(ttm_np)
     return out
 
-def calc_pe(rows, fin_rows):
-    """返回 (pe_ttm[], pe_dyn[])。
-    PE = 收盘价 ÷ EPS；TTM 见 calc_ttm_eps；动态 = 最新累计EPS × 季度年化系数"""
-    ttm = calc_ttm_eps(rows, fin_rows)
+def calc_share(rows, share_rows, fin_rows):
+    """每行当日总股本（股）：股本变动事件阶梯，当日=最近一次变动生效日≤当日的事件值；
+    早于首条事件用首条（上市前无行情行）。share_rows 为空时回退最新已公告财报的
+    TOTAL_SHARE（该字段为接口回填的当前股本，仅应急）"""
+    import bisect
+    share_dates = [s["date"] for s in share_rows] if share_rows else []
+    share_vals = [s["total_share"] for s in share_rows] if share_rows else []
+    fins = sorted(fin_rows, key=lambda x: (x["notice_date"], x["report_date"]))
+    fin_dates = [f["notice_date"] for f in fins]
+    out = []
+    for r in rows:
+        d = r["date"]
+        if share_rows:
+            i = bisect.bisect_right(share_dates, d) - 1
+            out.append(share_vals[i] if i >= 0 else share_vals[0])
+            continue
+        j = bisect.bisect_right(fin_dates, d) - 1
+        out.append(fins[j].get("share") if j >= 0 else None)
+    return out
+
+def calc_pe(rows, fin_rows, share_rows):
+    """返回 (pe_ttm[], pe_dyn[])。口径同东财行情页：
+    PE = 总市值(收盘价 × 当日总股本) ÷ 归母净利润；
+    TTM 净利见 calc_ttm_np；动态净利 = 最新累计归母净利 × 季度年化系数"""
+    ttm = calc_ttm_np(rows, fin_rows)
+    share = calc_share(rows, share_rows, fin_rows)
     import bisect
     fins = sorted(fin_rows, key=lambda x: (x["notice_date"], x["report_date"]))
     dates = [f["notice_date"] for f in fins]
@@ -181,21 +291,23 @@ def calc_pe(rows, fin_rows):
         d = r["date"]
         close = r.get("close") or 0
         i = bisect.bisect_right(dates, d) - 1
-        if i < 0 or not close:
+        np_i = fins[i].get("np") if i >= 0 else None
+        if i < 0 or not close or not share[k] or np_i is None:
             pe_ttm.append(None); pe_dyn.append(None)
             continue
         latest = fins[i]
-        dyn_eps = latest["eps"] * qmap.get(latest["report_date"][5:10], 1)
-        ttm_eps = ttm[k]
-        pe_ttm.append(round(close / ttm_eps, 2) if ttm_eps else None)
-        pe_dyn.append(round(close / dyn_eps, 2) if dyn_eps else None)
+        dyn_np = np_i * qmap.get(latest["report_date"][5:10], 1)
+        mcap = close * share[k]
+        pe_ttm.append(round(mcap / ttm[k], 2) if ttm[k] else None)
+        pe_dyn.append(round(mcap / dyn_np, 2) if dyn_np else None)
     return pe_ttm, pe_dyn
 
-# ── PEG：PE-TTM ÷ TTM EPS 同比增速(%) ──────────────────────────────
-def calc_peg(rows, fin_rows, pe_ttm):
-    """PEG = PE-TTM ÷ G，G = (当日TTM EPS ÷ 一年前TTM EPS − 1) × 100（历史口径）
+# ── PEG：PE-TTM ÷ TTM归母净利同比增速(%) ────────────────────────────
+def calc_peg(rows, fin_rows, share_rows, pe_ttm):
+    """PEG = PE-TTM ÷ G，G = (当日TTM归母净利 ÷ 一年前TTM归母净利 − 1) × 100
+    （净利口径，与市值/净利PE一致；股本变动不影响净利增速）
     G ≤ 0（业绩下滑）或任一缺失 → None（PEG 对负增长无意义）；双指针 O(n)"""
-    ttm = calc_ttm_eps(rows, fin_rows)
+    ttm = calc_ttm_np(rows, fin_rows)
     out = []
     j = 0  # 一年前日期的最大索引（单调不减）
     for i, r in enumerate(rows):
@@ -242,21 +354,21 @@ def calc_ratio(rows, fin_rows, key):
         out.append(round(v, 2) if v is not None else None)
     return out
 
-# ── 历史逐日股息率计算 ──────────────────────────────────────────────
+# ── 历史逐日股息率计算（精确365天自然日窗口）──────────────────────────
 def calc_dividend_yield(rows, div_rows):
-    """每行股息率(%) = 除权日在(当日-12个月, 当日]内的每股派息合计 ÷ 当日收盘 × 100
-    口径与 _成分股汇总.json 的 div_yield_calc 一致（年月差<=12）；窗口内无分红记 0.00"""
-    events = sorted(((r["ex_date"], r["bonus10"] / 10.0) for r in div_rows))
+    """每行股息率(%) = 除权日在(当日-365天, 当日]内的每股派息合计 ÷ 当日收盘 × 100
+    （精确自然日窗口，同东财口径；避免旧"年月差<=12"把12个月+数天的分红多留一个月造成
+    股息率在窗口边缘一天腰斩的悬崖效应）；窗口内无分红记 0.00"""
+    from datetime import date
+    events = sorted(((date(*map(int, r["ex_date"].split("-"))), r["bonus10"] / 10.0) for r in div_rows))
     out = []
     for r in rows:
-        d = r["date"]
-        dy, dm = int(d[:4]), int(d[5:7])
+        d = date(*map(int, r["date"].split("-")))
         total = 0.0
         for ex, per in events:
             if ex > d:
                 continue
-            ey, em = int(ex[:4]), int(ex[5:7])
-            if (dy - ey) * 12 + (dm - em) <= 12:
+            if (d - ex).days < 365:
                 total += per
         close = r.get("close") or 0
         out.append(round(total / close * 100, 2) if close and total else 0.0)
@@ -332,9 +444,11 @@ def export_excel():
             fh.save_cache("股票", code, c)          # 写回缓存
             div = load_cache("分红", code)
             fin = load_cache("财报", code)
+            share = load_cache("股本", code)
             rows_map[code] = {"name": c.get("name", name), "rows": c["rows"],
                               "div": div["rows"] if div else [],
-                              "fin": fin["rows"] if fin else []}
+                              "fin": fin["rows"] if fin else [],
+                              "share": share["rows"] if share else []}
     try:
         with pd.ExcelWriter(os.path.join(BASE, "excel", "股票历史.xlsx"), engine="openpyxl") as w:
             for code, info in rows_map.items():
@@ -343,11 +457,11 @@ def export_excel():
                     continue
                 df = pd.DataFrame(rows)
                 df["股息率(%)"] = calc_dividend_yield(rows, info["div"])
-                pe_ttm, pe_dyn = calc_pe(rows, info["fin"])
+                pe_ttm, pe_dyn = calc_pe(rows, info["fin"], info["share"])
                 df["PE(TTM)(倍)"] = pe_ttm
                 df["PE动(倍)"] = pe_dyn
                 df["PB(倍)"] = calc_pb(rows, info["fin"])
-                df["PEG"] = calc_peg(rows, info["fin"], pe_ttm)
+                df["PEG"] = calc_peg(rows, info["fin"], info["share"], pe_ttm)
                 df["ROE(%)"] = calc_ratio(rows, info["fin"], "roe")
                 df["ROA(%)"] = calc_ratio(rows, info["fin"], "roa")
                 df["date"] = pd.to_datetime(df["date"])
