@@ -96,9 +96,10 @@ def update_dividends():
             print(f"  ❌ [{code} {name}] 分红拉取失败: {repr(e)[:80]}")
         time.sleep(0.3)
 
-# ── 财报（东财 RPT_F10_FINANCE_MAINFINADATA，季度累计EPS）──────────
+# ── 财报（东财 RPT_F10_FINANCE_MAINFINADATA，季度累计EPS + 每股净资产）────
 def fetch_financials(code):
-    """返回 [{report_date, notice_date, eps}]，按报告期降序；EPSJB=基本每股收益(累计口径)"""
+    """返回 [{report_date, notice_date, eps, bps}]，按报告期降序；
+    EPSJB=基本每股收益(累计口径)，BPS=每股净资产(报告期末时点值)"""
     secucode = code + (".SH" if code.startswith("6") else ".SZ")
     url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?"
            "reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
@@ -109,10 +110,12 @@ def fetch_financials(code):
     out = []
     for r in rows:
         eps = r.get("EPSJB")
+        bps = r.get("BPS")
         rd = str(r.get("REPORT_DATE") or "")[:10]
         nd = str(r.get("NOTICE_DATE") or "")[:10]
         if rd and nd and eps:
-            out.append({"report_date": rd, "notice_date": nd, "eps": round(float(eps), 4)})
+            out.append({"report_date": rd, "notice_date": nd, "eps": round(float(eps), 4),
+                        "bps": round(float(bps), 4) if bps else None})
     return out
 
 def update_financials():
@@ -166,6 +169,21 @@ def calc_pe(rows, fin_rows):
         pe_ttm.append(round(close / ttm_eps, 2) if ttm_eps else None)
         pe_dyn.append(round(close / dyn_eps, 2) if dyn_eps else None)
     return pe_ttm, pe_dyn
+
+# ── 历史 PB 计算 ──────────────────────────────────────────────────
+def calc_pb(rows, fin_rows):
+    """PB = 收盘价 ÷ 每股净资产（最新已公告报告期 BPS，时点值）。BPS 缺失留 None"""
+    import bisect
+    fins = sorted(fin_rows, key=lambda x: (x["notice_date"], x["report_date"]))
+    dates = [f["notice_date"] for f in fins]
+    out = []
+    for r in rows:
+        d = r["date"]
+        close = r.get("close") or 0
+        i = bisect.bisect_right(dates, d) - 1
+        bps = fins[i]["bps"] if i >= 0 else None
+        out.append(round(close / bps, 2) if close and bps else None)
+    return out
 
 # ── 历史逐日股息率计算 ──────────────────────────────────────────────
 def calc_dividend_yield(rows, div_rows):
@@ -247,7 +265,7 @@ def export_excel():
     # 展示口径：价格(元)、成交量(万手)、成交额(亿元)；腾讯原始 volume=手、amount=元(估算)
     COL_CN = {"open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
               "volume": "成交量(万手)", "amount": "成交额(亿元)"}
-    COLS = ["开盘(元)", "收盘(元)", "股息率(%)", "PE(TTM)(倍)", "PE动(倍)",
+    COLS = ["开盘(元)", "收盘(元)", "股息率(%)", "PE(TTM)(倍)", "PE动(倍)", "PB(倍)",
             "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)"]
     rows_map = {}
     for code, name, _t in STOCKS:
@@ -271,6 +289,7 @@ def export_excel():
                 pe_ttm, pe_dyn = calc_pe(rows, info["fin"])
                 df["PE(TTM)(倍)"] = pe_ttm
                 df["PE动(倍)"] = pe_dyn
+                df["PB(倍)"] = calc_pb(rows, info["fin"])
                 df["date"] = pd.to_datetime(df["date"])
                 df = df.sort_values("date").set_index("date")
                 df = df.rename(columns=COL_CN)
