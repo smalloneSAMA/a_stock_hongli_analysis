@@ -96,10 +96,11 @@ def update_dividends():
             print(f"  ❌ [{code} {name}] 分红拉取失败: {repr(e)[:80]}")
         time.sleep(0.3)
 
-# ── 财报（东财 RPT_F10_FINANCE_MAINFINADATA，季度累计EPS + 每股净资产）────
+# ── 财报（东财 RPT_F10_FINANCE_MAINFINADATA，季度累计EPS/每股净资产/ROE/ROA）──
 def fetch_financials(code):
-    """返回 [{report_date, notice_date, eps, bps}]，按报告期降序；
-    EPSJB=基本每股收益(累计口径)，BPS=每股净资产(报告期末时点值)"""
+    """返回 [{report_date, notice_date, eps, bps, roe, roa}]，按报告期降序；
+    EPSJB=基本每股收益(累计)，BPS=每股净资产，ROEJQ=加权净资产收益率(%)，
+    ZZCJLL=总资产净利率(%)（ROA口径）"""
     secucode = code + (".SH" if code.startswith("6") else ".SZ")
     url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?"
            "reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
@@ -111,11 +112,15 @@ def fetch_financials(code):
     for r in rows:
         eps = r.get("EPSJB")
         bps = r.get("BPS")
+        roe = r.get("ROEJQ")
+        roa = r.get("ZZCJLL")
         rd = str(r.get("REPORT_DATE") or "")[:10]
         nd = str(r.get("NOTICE_DATE") or "")[:10]
         if rd and nd and eps:
             out.append({"report_date": rd, "notice_date": nd, "eps": round(float(eps), 4),
-                        "bps": round(float(bps), 4) if bps else None})
+                        "bps": round(float(bps), 4) if bps else None,
+                        "roe": round(float(roe), 4) if roe else None,     # 0=接口缺失标记，视为无值
+                        "roa": round(float(roa), 4) if roa else None})
     return out
 
 def update_financials():
@@ -183,6 +188,20 @@ def calc_pb(rows, fin_rows):
         i = bisect.bisect_right(dates, d) - 1
         bps = fins[i]["bps"] if i >= 0 else None
         out.append(round(close / bps, 2) if close and bps else None)
+    return out
+
+# ── 报告期指标（ROE/ROA等）：公告日滚动取最新值（时点阶梯）──────────
+def calc_ratio(rows, fin_rows, key):
+    """每个交易日取最新已公告报告期的 key 值（如 roe/roa）；缺失留 None"""
+    import bisect
+    fins = sorted(fin_rows, key=lambda x: (x["notice_date"], x["report_date"]))
+    dates = [f["notice_date"] for f in fins]
+    out = []
+    for r in rows:
+        d = r["date"]
+        i = bisect.bisect_right(dates, d) - 1
+        v = fins[i].get(key) if i >= 0 else None
+        out.append(round(v, 2) if v is not None else None)
     return out
 
 # ── 历史逐日股息率计算 ──────────────────────────────────────────────
@@ -265,7 +284,7 @@ def export_excel():
     # 展示口径：价格(元)、成交量(万手)、成交额(亿元)；腾讯原始 volume=手、amount=元(估算)
     COL_CN = {"open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
               "volume": "成交量(万手)", "amount": "成交额(亿元)"}
-    COLS = ["开盘(元)", "收盘(元)", "股息率(%)", "PE(TTM)(倍)", "PE动(倍)", "PB(倍)",
+    COLS = ["开盘(元)", "收盘(元)", "股息率(%)", "PE(TTM)(倍)", "PE动(倍)", "PB(倍)", "ROE(%)", "ROA(%)",
             "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)"]
     rows_map = {}
     for code, name, _t in STOCKS:
@@ -290,6 +309,8 @@ def export_excel():
                 df["PE(TTM)(倍)"] = pe_ttm
                 df["PE动(倍)"] = pe_dyn
                 df["PB(倍)"] = calc_pb(rows, info["fin"])
+                df["ROE(%)"] = calc_ratio(rows, info["fin"], "roe")
+                df["ROA(%)"] = calc_ratio(rows, info["fin"], "roa")
                 df["date"] = pd.to_datetime(df["date"])
                 df = df.sort_values("date").set_index("date")
                 df = df.rename(columns=COL_CN)
