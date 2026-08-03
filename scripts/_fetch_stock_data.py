@@ -141,25 +141,20 @@ def update_financials():
         time.sleep(0.3)
 
 # ── 历史 PE 计算 ──────────────────────────────────────────────────
-def calc_pe(rows, fin_rows):
-    """返回 (pe_ttm[], pe_dyn[])。
-    PE = 收盘价 ÷ EPS；TTM = 最新累计EPS − 去年同期累计EPS + 去年年报EPS（累计口径折算）
-    动态 = 最新累计EPS ÷ 报告期季度数 × 4（季度进度年化）；EPS 缺失区间留 None（Excel 空）"""
+def calc_ttm_eps(rows, fin_rows):
+    """每行 TTM EPS：最新累计EPS − 去年同期累计EPS + 去年年报EPS（累计口径折算12个月）"""
     import bisect
-    # 同公告日多条时（如年报与一季报同日公告）取报告期最新的：双键排序
     fins = sorted(fin_rows, key=lambda x: (x["notice_date"], x["report_date"]))
     dates = [f["notice_date"] for f in fins]
     by_yq = {}
     for f in fins:  # 公告晚的覆盖早的（同报告期以最新公告为准）
         by_yq[(f["report_date"][:4], f["report_date"][5:10])] = f
-    qmap = {"03-31": 4, "06-30": 2, "09-30": 4.0 / 3, "12-31": 1}
-    pe_ttm, pe_dyn = [], []
+    out = []
     for r in rows:
         d = r["date"]
-        close = r.get("close") or 0
         i = bisect.bisect_right(dates, d) - 1
-        if i < 0 or not close:
-            pe_ttm.append(None); pe_dyn.append(None)
+        if i < 0:
+            out.append(None)
             continue
         latest = fins[i]
         ly, lq = latest["report_date"][:4], latest["report_date"][5:10]
@@ -170,10 +165,53 @@ def calc_pe(rows, fin_rows):
             ttm_eps = latest["eps"] - same_ly["eps"] + annual_ly["eps"]
         elif lq == "12-31":
             ttm_eps = latest["eps"]   # 最新即年报
-        dyn_eps = latest["eps"] * qmap.get(lq, 1)
+        out.append(ttm_eps)
+    return out
+
+def calc_pe(rows, fin_rows):
+    """返回 (pe_ttm[], pe_dyn[])。
+    PE = 收盘价 ÷ EPS；TTM 见 calc_ttm_eps；动态 = 最新累计EPS × 季度年化系数"""
+    ttm = calc_ttm_eps(rows, fin_rows)
+    import bisect
+    fins = sorted(fin_rows, key=lambda x: (x["notice_date"], x["report_date"]))
+    dates = [f["notice_date"] for f in fins]
+    qmap = {"03-31": 4, "06-30": 2, "09-30": 4.0 / 3, "12-31": 1}
+    pe_ttm, pe_dyn = [], []
+    for k, r in enumerate(rows):
+        d = r["date"]
+        close = r.get("close") or 0
+        i = bisect.bisect_right(dates, d) - 1
+        if i < 0 or not close:
+            pe_ttm.append(None); pe_dyn.append(None)
+            continue
+        latest = fins[i]
+        dyn_eps = latest["eps"] * qmap.get(latest["report_date"][5:10], 1)
+        ttm_eps = ttm[k]
         pe_ttm.append(round(close / ttm_eps, 2) if ttm_eps else None)
         pe_dyn.append(round(close / dyn_eps, 2) if dyn_eps else None)
     return pe_ttm, pe_dyn
+
+# ── PEG：PE-TTM ÷ TTM EPS 同比增速(%) ──────────────────────────────
+def calc_peg(rows, fin_rows, pe_ttm):
+    """PEG = PE-TTM ÷ G，G = (当日TTM EPS ÷ 一年前TTM EPS − 1) × 100（历史口径）
+    G ≤ 0（业绩下滑）或任一缺失 → None（PEG 对负增长无意义）；双指针 O(n)"""
+    ttm = calc_ttm_eps(rows, fin_rows)
+    out = []
+    j = 0  # 一年前日期的最大索引（单调不减）
+    for i, r in enumerate(rows):
+        if pe_ttm[i] is None or ttm[i] is None:
+            out.append(None)
+            continue
+        d = r["date"]
+        target = f"{int(d[:4]) - 1:04d}-{d[5:10]}"   # 去年同月同日
+        while j + 1 < i and rows[j + 1]["date"] <= target:
+            j += 1
+        if j >= i or rows[j]["date"] > target or ttm[j] is None or ttm[j] <= 0:
+            out.append(None)
+            continue
+        g = (ttm[i] / ttm[j] - 1) * 100
+        out.append(round(pe_ttm[i] / g, 2) if g > 0 else None)
+    return out
 
 # ── 历史 PB 计算 ──────────────────────────────────────────────────
 def calc_pb(rows, fin_rows):
@@ -284,7 +322,7 @@ def export_excel():
     # 展示口径：价格(元)、成交量(万手)、成交额(亿元)；腾讯原始 volume=手、amount=元(估算)
     COL_CN = {"open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
               "volume": "成交量(万手)", "amount": "成交额(亿元)"}
-    COLS = ["开盘(元)", "收盘(元)", "股息率(%)", "PE(TTM)(倍)", "PE动(倍)", "PB(倍)", "ROE(%)", "ROA(%)",
+    COLS = ["开盘(元)", "收盘(元)", "股息率(%)", "PE(TTM)(倍)", "PE动(倍)", "PB(倍)", "PEG", "ROE(%)", "ROA(%)",
             "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)"]
     rows_map = {}
     for code, name, _t in STOCKS:
@@ -309,6 +347,7 @@ def export_excel():
                 df["PE(TTM)(倍)"] = pe_ttm
                 df["PE动(倍)"] = pe_dyn
                 df["PB(倍)"] = calc_pb(rows, info["fin"])
+                df["PEG"] = calc_peg(rows, info["fin"], pe_ttm)
                 df["ROE(%)"] = calc_ratio(rows, info["fin"], "roe")
                 df["ROA(%)"] = calc_ratio(rows, info["fin"], "roa")
                 df["date"] = pd.to_datetime(df["date"])
