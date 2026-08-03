@@ -6,7 +6,8 @@
   2. ETF历史行情    —— 增量更新（场内K线+净值）[运行前提醒]
   3. 指数成分股     —— 重下载中证官网样本文件 + 重新生成《红利指数与ETF成分股.md》[运行前提醒]
   4. 成分股汇总表   —— 解析成分股md → 行业/行情/股息率 → 缓存 → excel/红利成分股汇总.xlsx
-  5. 全部更新
+  5. 股票历史行情   —— 推荐20只股票日线（不复权，2004-01-01起）[首次全量较慢]
+  6. 全部更新
   0. 退出
 用法: python update.py
 """
@@ -17,6 +18,7 @@ SCRIPTS = os.path.join(BASE, "scripts")
 sys.path.insert(0, SCRIPTS)
 
 import _fetch_history as fh
+import _fetch_stock_data as fsd
 
 # import后包装stdout（fh的包装对象仍被其模块引用，底层buffer不会被关闭）
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -75,6 +77,16 @@ def update_etfs():
         except Exception as e:
             print(f"  ❌ [{code} {name}] 失败: {repr(e)[:80]}")
     print("\n✅ ETF历史更新完成")
+
+def update_stocks():
+    print("\n═══ 股票历史行情更新（20只，不复权，2004-01-01起）═══")
+    for code, name, tcode in fsd.STOCKS:
+        try:
+            fh.update_incremental("股票", code, name, fsd.make_fetcher(tcode, code))
+        except Exception as e:
+            print(f"  ❌ [{code} {name}] 失败: {repr(e)[:80]}")
+    fsd.export_excel()
+    print("\n✅ 股票历史更新完成")
 
 def export_excel():
     import pandas as pd
@@ -162,7 +174,8 @@ def main():
   2. ETF历史行情（增量，11只）
   3. 指数成分股（重新生成《红利指数与ETF成分股.md》）
   4. 成分股汇总表（解析md→行业/行情/股息率→缓存→汇总Excel）
-  5. 全部更新
+  5. 股票历史行情（20只推荐股，不复权，2004-01-01起）
+  6. 全部更新
   0. 退出
 """)
         ch = input("请输入编号: ").strip()
@@ -184,6 +197,10 @@ def main():
             if ask(msg):
                 update_summary()
         elif ch == "5":
+            msg = "将增量更新20只推荐股历史行情（首次全量约2-3分钟），是否继续？"
+            if ask(msg):
+                update_stocks()
+        elif ch == "6":
             print("\n—— 指数历史 ——")
             if ask("指数历史将增量拉取11只指数（含中证官网5只，可能较慢），是否更新？"):
                 update_indices()
@@ -197,6 +214,9 @@ def main():
             print("\n—— 成分股汇总表 ——")
             if ask("解析最新成分股md并增量补齐行业/行情/股息率，是否更新？"):
                 update_summary()
+            print("\n—— 股票历史 ——")
+            if ask("20只推荐股历史行情（2004年起，首次全量约2-3分钟）是否更新？"):
+                update_stocks()
         else:
             print("无效输入")
 
