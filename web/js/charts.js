@@ -119,6 +119,7 @@ export function createKlineChart(el, opts) {
     const xAxisIndex = [0, 1];
     option = {
       animationDuration: 420,
+      animationDurationUpdate: 0,   // dataZoom 拖动时不播放过渡动画（防卡顿）
       animationEasing: 'cubicOut',
       backgroundColor: 'transparent',
       textStyle: { fontFamily: "'Fira Code','Consolas',monospace", color: C.text2 },
@@ -183,6 +184,7 @@ export function createKlineChart(el, opts) {
     }));
     option = {
       animationDuration: 420,
+      animationDurationUpdate: 0,   // dataZoom 拖动时不播放过渡动画（防卡顿）
       animationEasing: 'cubicOut',
       backgroundColor: 'transparent',
       textStyle: { fontFamily: "'Fira Code','Consolas',monospace", color: C.text2 },
@@ -237,11 +239,10 @@ export function createKlineChart(el, opts) {
       dataZoom: dataZoomBase.map((z, i) => ({ ...z, xAxisIndex: [0, 1, 2] })),
       series: [
         {
-          name: 'K线', type: 'candlestick', data: klines,
+          name: 'K线', type: 'candlestick', data: klines, sampling: 'lttb',
           itemStyle: {
             color: C.up, color0: C.down, borderColor: C.up, borderColor0: C.down,
             borderWidth: 1,
-            shadowBlur: 6, shadowColor: 'rgba(246,70,93,0.25)',
           },
         },
         ...(maCount ? [
