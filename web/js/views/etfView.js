@@ -38,6 +38,7 @@ export default {
       chartUnit: '元',
       subControl: 'none',
       showMA: false,              // ETF：去掉 MA5/MA20/MA60 均线
+      showOHLC: false,            // ETF：浮动面板去掉 开盘/最高/最低 字段
       // 净值 overlay 已按用户要求移除（不叠加单位/累计净值线）
       quoteExtra: (obj, rows) => {
         let nav = null, acc = null;

@@ -121,10 +121,11 @@ export function buildHistoryView(container, cfg) {
 
     if (state.chart) { state.chart.dispose(); }
     const chartApi = createKlineChart(chartBox.querySelector('.chart'), {
-      dates: k.dates, klines: k.klines, volumes: k.volumes, amounts: k.amounts, chgN: k.chgN,
+      dates: k.dates, klines: k.klines, volumes: k.volumes, amounts: k.amounts, chgN: k.chgN, indData: ind,
       unit, subUnit: subDefs?.[0]?.unit || '',
       mode: cfg.chartType || 'candlestick',
       showMA: cfg.showMA !== false,   // 默认开 MA；ETF 视图关
+      showOHLC: cfg.showOHLC !== false,   // 默认显示 开盘/最高/最低；ETF 视图关
       overlay: cfg.overlay ? cfg.overlay(rows, ind) : null,   // 主图右轴叠加（ETF 净值 / 股票指标曲线）
     });
     state.chart = chartApi;

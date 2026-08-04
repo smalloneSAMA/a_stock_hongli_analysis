@@ -13,14 +13,14 @@ const columns = [
   { key: 'name', label: '证券名称', align: 'left', sortable: true, cmp: (a, b) => a.localeCompare(b, 'zh') },
   { key: 'ind', label: '一级行业', align: 'left', sortable: true, cmp: (a, b) => a.localeCompare(b, 'zh') },
   { key: 'ind3', label: '细分行业', align: 'left', sortable: true, cmp: (a, b) => a.localeCompare(b, 'zh') },
-  { key: 'n', label: '入选指数/ETF数', sortable: true, fmt: (v) => (v == null ? '—' : String(v)) },
-  { key: 'maxw', label: '最大权重(%)', sortable: true, fmt: fmt2 },
-  { key: 'price', label: '最新价(元)', sortable: true, fmt: fmt2 },
-  { key: 'change_pct', label: '当日涨跌幅(%)', sortable: true, fmt: fmtPct, color: (v) => dirOf(v) },
-  { key: 'pe', label: 'PE(TTM)(倍)', sortable: true, fmt: fmt2 },
-  { key: 'pb', label: 'PB(倍)', sortable: true, fmt: fmt2 },
-  { key: 'mcap', label: '总市值(亿元)', sortable: true, fmt: (v) => (v == null ? '—' : fmt0(v)) },
-  { key: 'div_yield', label: '近12个月股息率(%)', sortable: true, fmt: fmt2, color: (v) => (v > 0 ? 'brand' : 'flat') },
+  { key: 'n', label: '入选指数/ETF数', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : String(v)) },
+  { key: 'maxw', label: '最大权重(%)', align: 'center', sortable: true, fmt: fmt2 },
+  { key: 'price', label: '最新价(元)', align: 'center', sortable: true, fmt: fmt2 },
+  { key: 'change_pct', label: '当日涨跌幅(%)', align: 'center', sortable: true, fmt: fmtPct, color: (v) => dirOf(v) },
+  { key: 'pe', label: 'PE(TTM)(倍)', align: 'center', sortable: true, fmt: fmt2 },
+  { key: 'pb', label: 'PB(倍)', align: 'center', sortable: true, fmt: fmt2 },
+  { key: 'mcap', label: '总市值(亿元)', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : fmt0(v)) },
+  { key: 'div_yield', label: '近12个月股息率(%)', align: 'center', sortable: true, fmt: fmt2, color: (v) => (v > 0 ? 'brand' : 'flat') },
   { key: 'div_rec', label: '近5次分红记录', align: 'left', fmt: (v) => (v && v.length ? v.slice(0, 5).map(([d, b]) => `${d}派${b}元/10股`).join('；') : '近12个月无派息记录') },
   { key: 'idx', label: '主要入选指数及权重(%)', align: 'left', fmt: (v) => (v && v.length ? v.slice(0, 8).map(([n, w]) => (w == null ? `${n}(权重未公开)` : `${n} ${w}%`)).join('；') : '—') },
   { key: '_rec', label: '入选20只推荐', align: 'center', fmt: (v) => (v ? '是' : '否') },
@@ -60,7 +60,7 @@ export default {
       const avgDy = dyVals.length ? dyVals.reduce((a, b) => a + b, 0) / dyVals.length : 0;
       const maxDy = dyVals.length ? Math.max(...dyVals) : 0;
       const maxDyStock = dyVals.length ? rows.find(r => r.div_yield === maxDy) : null;
-      const recCount = rows.filter(r => r._rec).length;
+      const recCount = base.filter(r => r._rec).length;   // 用 base（含 _rec），rows 为原始数据无此字段
 
       const stats = el('div', { class: 'stat-row' },
         statCard('成分股总数', String(rows.length), `${rows.length} 只`),

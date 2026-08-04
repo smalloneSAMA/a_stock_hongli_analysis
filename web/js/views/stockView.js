@@ -58,6 +58,7 @@ export default {
       chartUnit: '元',
       subControl: 'none',
       showMA: false,              // 股票：去掉 MA5/MA20/MA60 均线
+      showOHLC: false,            // 股票：浮动面板去掉 开盘/最高/最低 字段
       withIndicator: true,   // 加载指标数据供主图叠加曲线使用
       // 主图右轴叠加 6 条指标曲线（默认关闭，点击图例展开查看；与 K 线同图）
       overlay: (rows, ind) => ind ? INDICATORS.filter(d => d.key !== 'dy').map(d => ({

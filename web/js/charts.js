@@ -35,8 +35,9 @@ function chgArr(klines) {
  * 返回 { chart, setRange(range), setSubSeries(defs|null), dispose }
  */
 export function createKlineChart(el, opts) {
-  const { dates, klines, volumes, amounts = [], chgN = [], unit = '', subUnit = '', mode = 'candlestick', showMA = true } = opts;
+  const { dates, klines, volumes, amounts = [], chgN = [], indData = null, unit = '', subUnit = '', mode = 'candlestick', showMA = true, showOHLC = true } = opts;
   const maCount = showMA ? 3 : 0;   // MA5/MA20/MA60 数量（函数级作用域：setSubSeries 需要访问）
+  const overlay = opts.overlay || [];
   const chg = chgArr(klines);
   const closes = klines.map(k => k[1]);
 
@@ -175,7 +176,6 @@ export function createKlineChart(el, opts) {
     };
   } else {
     /* ── candlestick 模式：K线 + MA(可关) + 成交量 + 副图（默认）；支持主图右轴叠加 overlay 折线（净值） ── */
-    const overlay = opts.overlay || [];
     const overlaySeries = overlay.map((d, i) => ({
       name: d.name, type: 'line', xAxisIndex: 0, yAxisIndex: 3, data: d.data,
       symbol: 'none', smooth: true, connectNulls: false, sampling: 'lttb', z: 9,
@@ -199,12 +199,14 @@ export function createKlineChart(el, opts) {
           const rows = [
             `<div style="font-weight:700;font-size:12.5px;margin-bottom:5px">${d}</div>`,
             '<div style="border-top:1px solid #334155;margin-bottom:4px"></div>',
-            tipRow('开盘', k[0].toFixed(2)),
-            tipRow('收盘', k[1].toFixed(2)),
-            tipRow('最高', k[3].toFixed(2)),
-            tipRow('最低', k[2].toFixed(2)),
-            tipRow('涨跌', c == null ? '—' : (c >= 0 ? '+' : '') + c.toFixed(2) + '%', c == null ? '#94A3B8' : (c >= 0 ? C.up : C.down)),
           ];
+          if (showOHLC) rows.push(tipRow('开盘', k[0].toFixed(2)));
+          rows.push(tipRow('收盘', k[1].toFixed(2)));
+          if (showOHLC) {
+            rows.push(tipRow('最高', k[3].toFixed(2)));
+            rows.push(tipRow('最低', k[2].toFixed(2)));
+          }
+          rows.push(tipRow('涨跌', c == null ? '—' : (c >= 0 ? '+' : '') + c.toFixed(2) + '%', c == null ? '#94A3B8' : (c >= 0 ? C.up : C.down)));
           if (volumes[i] != null) rows.push(tipRow('成交量', volumes[i].toFixed(0) + ' 万手'));
           rows.push(tipRow('成交额', amounts[i] == null ? '—' : amounts[i].toFixed(2) + ' 亿元'));
           // N 交易日涨跌幅（缓存行 chg30/chg60/chg90，存在才显示；交易日口径）
@@ -215,8 +217,20 @@ export function createKlineChart(el, opts) {
               if (v != null) rows.push(tipRow(nDays[k] + '日涨跌', (v >= 0 ? '+' : '') + v.toFixed(2) + '%', v >= 0 ? C.up : C.down));
             }
           }
+          // 估值/盈利指标（股票 indData，存在才显示）
+          if (indData && indData[i]) {
+            const x = indData[i];
+            const defs = [
+              ['PE-TTM', x.pe_ttm, ' 倍'], ['PE动', x.pe_dyn, ' 倍'], ['PB', x.pb, ' 倍'],
+              ['PEG', x.peg, ''], ['ROE', x.roe, '%'], ['ROA', x.roa, '%'],
+            ];
+            for (const [k, v, u] of defs) {
+              if (v != null) rows.push(tipRow(k, v.toFixed(2) + u));
+            }
+          }
           for (const p of params) {
             if (p.seriesType !== 'candlestick' && p.seriesType !== 'bar') {
+              if (indData && ['PE-TTM', 'PE(动)', 'PB', 'PEG', 'ROE', 'ROA'].includes(p.seriesName)) continue;   // 指标曲线已在固定字段行显示，避免重复
               rows.push(tipRow(`${p.marker} ${p.seriesName}`, p.value == null ? '—' : Number(p.value).toFixed(2)));
             }
           }
@@ -265,6 +279,51 @@ export function createKlineChart(el, opts) {
   chart.setOption(option);
   chart.on('datazoom', onZoomHandler);
 
+  /* ── 键盘 ←/→ 移动光标（十字线+浮动面板跟随；移出可视窗口时自动平移窗口）──
+     · 首次按键：从鼠标 hover 位置开始（无 hover 时从最新日期）
+     · 左键点击图表任意位置：光标立即锚定到该日期，方向键从锚定点开始移动 */
+  let keyIdx = -1;
+  let mouseIdx = -1;   // 鼠标 hover 的日期索引（键盘未启动时更新）
+  const n = dates.length;
+  const pixelToIdx = (px, py) => {
+    const r = chart.convertFromPixel({ seriesIndex: 0 }, [px, py]);
+    if (r && Array.isArray(r) && typeof r[0] === 'number') {
+      return Math.max(0, Math.min(n - 1, Math.round(r[0])));
+    }
+    return -1;
+  };
+  chart.getZr().on('mousemove', (e) => {
+    if (keyIdx < 0) {   // 键盘尚未开始移动时，跟随鼠标 hover（移动中不打断，防鼠标抖动）
+      const i = pixelToIdx(e.offsetX, e.offsetY);
+      if (i >= 0) mouseIdx = i;
+    }
+  });
+  chart.getZr().on('click', (e) => {
+    const i = pixelToIdx(e.offsetX, e.offsetY);
+    if (i >= 0) { keyIdx = i; chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: i }); }   // 点击锚定：光标立即显示在该日期
+  });
+  const kbdMove = (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;   // 输入框聚焦时不干扰
+    e.preventDefault();
+    if (!n) return;
+    if (keyIdx < 0) keyIdx = mouseIdx >= 0 ? mouseIdx : n - 1;   // 从鼠标所在日期开始，无鼠标位置时从最新日期
+    const next = e.key === 'ArrowRight' ? keyIdx + 1 : keyIdx - 1;
+    if (next < 0 || next >= n) return;
+    keyIdx = next;
+    const z = chart.getOption().dataZoom[0] || {};
+    const s = Math.round((z.start ?? 0) / 100 * (n - 1));
+    const en = Math.round((z.end ?? 100) / 100 * (n - 1));
+    const span = Math.max(1, en - s);
+    let dz = null;
+    if (next > en) dz = { startValue: dates[next - span], endValue: dates[next] };
+    else if (next < s) dz = { startValue: dates[next], endValue: dates[Math.min(n - 1, next + span)] };
+    if (dz) chart.dispatchAction({ type: 'dataZoom', ...dz });
+    chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: keyIdx });
+  };
+  window.addEventListener('keydown', kbdMove);
+
   // 兜底：若容器尚未布局（宽高为 0，如隐藏/未挂载），下一帧校准一次，避免空白
   if (!el.clientWidth || !el.clientHeight) {
     requestAnimationFrame(() => { chart.resize(); });
@@ -299,7 +358,7 @@ export function createKlineChart(el, opts) {
   }
 
   window.addEventListener('resize', () => { chart.resize(); });
-  return { chart, setRange, setDateRange, onZoom, setSubSeries, dispose: () => { chart.dispose(); } };
+  return { chart, setRange, setDateRange, onZoom, setSubSeries, dispose: () => { window.removeEventListener('keydown', kbdMove); chart.dispose(); } };
 }
 
 /* 环形图（行业分布） */
@@ -309,6 +368,7 @@ export function createDonut(el, data, { title = '' } = {}) {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'item',
+      appendToBody: true,   // 挂到 body 顶层（DOM 层），永不裁剪，左侧扇区 hover 也完整可见
       formatter: (p) => `${p.name}：${p.value} 只（${p.percent.toFixed(1)}%）`,
       backgroundColor: 'rgba(10,16,30,0.94)', borderColor: '#334155', textStyle: { color: '#E2E8F0', fontSize: 12 },
     },
@@ -316,9 +376,13 @@ export function createDonut(el, data, { title = '' } = {}) {
     title: { text: title, left: 6, top: 4, textStyle: { color: C.text3, fontSize: 12, fontWeight: 600 } },
     color: ['#22D3EE', '#FBBF24', '#818CF8', '#F6465D', '#34D399', '#F472B6', '#60A5FA', '#F87171', '#A3E635', '#2DD4BF', '#C084FC', '#FB923C', '#94A3B8'],
     series: [{
-      type: 'pie', radius: ['52%', '74%'], center: ['34%', '54%'],
+      type: 'pie', radius: ['44%', '62%'], center: ['36%', '50%'],
       avoidLabelOverlap: true, itemStyle: { borderColor: '#0F172A', borderWidth: 2 },
-      label: { show: false }, emphasis: { label: { show: true, fontSize: 13, fontWeight: 700, color: '#F8FAFC', formatter: '{b}\n{c}只' } },
+      label: { show: false },
+      emphasis: {
+        scaleSize: 6,          // 扇区放大作为 hover 反馈
+        label: { show: false },   // 不再用 canvas 内文字（左侧扇区会溢出被裁剪），信息由 tooltip 展示
+      },
       data,
     }],
   });
