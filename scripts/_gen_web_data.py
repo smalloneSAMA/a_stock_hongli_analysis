@@ -93,12 +93,20 @@ def build_manifest():
         else:
             print(f"  ⚠️ ETF {code} {name}: 无缓存，请先运行 update.py 选项2")
         close, chg = quote_of(rows)
+        # 净值涨跌：最近两个披露日期的单位净值（净值披露频率可能低于交易日）
         nav = acc = None
+        nav_chg = None
         for r in reversed(rows):
             if r.get("nav") is not None:
-                nav = r.get("nav"); acc = r.get("acc_nav"); break
+                if nav is None:
+                    nav = r["nav"]; acc = r.get("acc_nav")
+                elif nav_chg is None:
+                    nav_chg = round((nav - r["nav"]) / r["nav"] * 100, 2)
+            if nav is not None and nav_chg is not None:
+                break
         etfs.append({"code": code, "name": name, "last": last_date(rows), "n": len(rows),
-                     "last_close": close, "last_chg": chg, "last_nav": nav, "last_acc": acc})
+                     "last_close": close, "last_chg": chg, "last_nav": nav, "last_acc": acc,
+                     "last_nav_chg": nav_chg})
 
     for code, name, tcode in fsd.STOCKS:
         c = fh.load_cache("股票", code)

@@ -433,14 +433,17 @@ def export_excel():
     from _fetch_history import load_cache
     # 展示口径：价格(元)、成交量(万手)、成交额(亿元)；腾讯原始 volume=手、amount=元(估算)
     COL_CN = {"open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
-              "volume": "成交量(万手)", "amount": "成交额(亿元)"}
+              "volume": "成交量(万手)", "amount": "成交额(亿元)",
+              "chg30": "30日涨跌(%)", "chg60": "60日涨跌(%)", "chg90": "90日涨跌(%)"}
     COLS = ["开盘(元)", "收盘(元)", "股息率(%)", "PE(TTM)(倍)", "PE动(倍)", "PB(倍)", "PEG", "ROE(%)", "ROA(%)",
-            "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)"]
+            "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)",
+            "30日涨跌(%)", "60日涨跌(%)", "90日涨跌(%)"]
     rows_map = {}
     for code, name, _t in STOCKS:
         c = load_cache("股票", code)
         if c:
             fh.fill_etf_amount(c["rows"])          # 估算成交额（元）
+            fh.fill_chg_n(c["rows"])               # 30/60/90 交易日涨跌幅（交易日口径）
             fh.save_cache("股票", code, c)          # 写回缓存
             div = load_cache("分红", code)
             fin = load_cache("财报", code)

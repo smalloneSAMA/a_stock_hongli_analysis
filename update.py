@@ -111,12 +111,14 @@ def export_excel():
     IDX_COL_CN = {
         "open": "开盘(点)", "close": "收盘(点)", "high": "最高(点)", "low": "最低(点)",
         "volume": "成交量(万手)", "amount": "成交额(亿元)",
+        "chg30": "30日涨跌(%)", "chg60": "60日涨跌(%)", "chg90": "90日涨跌(%)",
     }
     IDX_DIV = {"tencent": (1e4, 1e8), "csindex": (1e6, 1), "cnindex": (1, 1)}  # (成交量除数, 成交额除数)
     ETF_COL_CN = {
         "open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
         "volume": "成交量(万手)", "amount": "成交额(亿元)",
         "nav": "单位净值", "acc_nav": "累计净值",
+        "chg30": "30日涨跌(%)", "chg60": "60日涨跌(%)", "chg90": "90日涨跌(%)",
     }
     print("\n═══ 重新生成 Excel ═══")
     # 指数
@@ -124,6 +126,8 @@ def export_excel():
     for code, name, src, tcode in INDICES:
         c = load_cache("指数", code)
         if c:
+            fh.fill_chg_n(c["rows"])   # 30/60/90 交易日涨跌幅（交易日口径）
+            fh.save_cache("指数", code, c)
             idx_rows[code] = {"name": c.get("name", name), "source": src, "rows": c["rows"]}
     try:
         with pd.ExcelWriter(os.path.join(BASE, "excel", "指数历史.xlsx"), engine="openpyxl") as w:
@@ -137,6 +141,9 @@ def export_excel():
                 df = df.sort_values("date").set_index("date")
                 df = df.rename(columns=IDX_COL_CN)
                 df = df[list(IDX_COL_CN.values())]
+                # 全 None 列会被推断为 object，强制数值化（腾讯源指数无成交额→NaN）
+                df["成交量(万手)"] = pd.to_numeric(df["成交量(万手)"], errors="coerce")
+                df["成交额(亿元)"] = pd.to_numeric(df["成交额(亿元)"], errors="coerce")
                 df["成交量(万手)"] = (df["成交量(万手)"] / vdiv).round(2)
                 df["成交额(亿元)"] = (df["成交额(亿元)"] / adiv).round(2)
                 df.index.name = "日期"
@@ -150,6 +157,7 @@ def export_excel():
         c = load_cache("ETF", code)
         if c:
             fh.fill_etf_amount(c["rows"])
+            fh.fill_chg_n(c["rows"])   # 30/60/90 交易日涨跌幅（交易日口径）
             fh.save_cache("ETF", code, c)
             etf_rows[code] = {"name": c.get("name", name), "rows": c["rows"]}
     try:
@@ -162,10 +170,13 @@ def export_excel():
                 df["date"] = pd.to_datetime(df["date"])
                 df = df.sort_values("date").set_index("date")
                 df = df.rename(columns=ETF_COL_CN)
+                df["成交量(万手)"] = pd.to_numeric(df["成交量(万手)"], errors="coerce")
+                df["成交额(亿元)"] = pd.to_numeric(df["成交额(亿元)"], errors="coerce")
                 df["成交量(万手)"] = (df["成交量(万手)"] / 1e4).round(2)
                 df["成交额(亿元)"] = (df["成交额(亿元)"] / 1e8).round(2)
                 if "单位净值" in df.columns:
-                    df = df[["开盘(元)", "收盘(元)", "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)", "单位净值", "累计净值"]]
+                    df = df[["开盘(元)", "收盘(元)", "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)",
+                             "单位净值", "累计净值", "30日涨跌(%)", "60日涨跌(%)", "90日涨跌(%)"]]
                 df.index.name = "日期"
                 df.to_excel(w, sheet_name=f"{code} {info['name'][:10]}"[:31])
         post_process_file(os.path.join(BASE, "excel", "ETF历史.xlsx"))

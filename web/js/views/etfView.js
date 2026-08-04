@@ -31,16 +31,14 @@ export default {
       kind: 'etf',
       title: '精选ETF',
       items: m.etfs.map(i => ({
-        code: i.code, name: i.name, price: i.last_close, chg: i.last_chg,
-        subHtml: i.last_nav == null ? null : el('span', { class: 'txt-3', style: 'font-size:10.5px' }, `净值 ${fmt2(i.last_nav)}`),
+        code: i.code, name: i.name,
+        price: i.last_nav,          // 主数字：最新单位净值
+        chg: i.last_nav_chg,        // 净值涨跌幅（红涨绿跌，与指数面板同构）
       })),
       chartUnit: '元',
       subControl: 'none',
-      // 净值叠加到主图（右侧净值轴）：累计净值实线琥珀（含分红收益），单位净值虚线灰（贴近价格作对照）
-      overlay: (rows) => [
-        { name: '单位净值', data: rows.map(r => r.nav ?? null), color: '#94A3B8', dash: true },
-        { name: '累计净值', data: rows.map(r => r.acc_nav ?? null), color: '#FBBF24' },
-      ],
+      showMA: false,              // ETF：去掉 MA5/MA20/MA60 均线
+      // 净值 overlay 已按用户要求移除（不叠加单位/累计净值线）
       quoteExtra: (obj, rows) => {
         let nav = null, acc = null;
         for (let i = rows.length - 1; i >= 0; i--) {

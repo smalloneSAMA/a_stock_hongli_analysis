@@ -245,6 +245,19 @@ def fill_etf_amount(rows):
             n += 1
     return rows
 
+
+def fill_chg_n(rows, ns=(30, 60, 90)):
+    """逐行计算 N 个交易日前收盘涨跌幅(%)并写回行（键 chg30/chg60/chg90，交易日口径）；
+    前 N 日不足或收盘缺失置 None。供 ETF/指数等历史行使用，前端 tooltip 与 Excel 同口径"""
+    closes = [r.get("close") for r in rows]
+    for i, r in enumerate(rows):
+        if not r.get("close"):
+            continue
+        for n in ns:
+            j = i - n
+            r[f"chg{n}"] = round((r["close"] / closes[j] - 1) * 100, 2) if j >= 0 and closes[j] else None
+    return rows
+
 # ── 主流程 ────────────────────────────────────────────────────────
 def get_or_fetch(typ, code, name, fetcher, refresh):
     if not refresh:

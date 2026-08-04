@@ -7,7 +7,7 @@ import { el, renderTickerList, renderTable, skeleton, errorBox, emptyState, fmt2
 import { loadJSON, klineUrl, indiUrl } from '../data.js';
 import { createKlineChart } from '../charts.js';
 
-const D = { volume: 1e4, amount: 1e8 };  // ETF/股票：手→万手，元→亿元
+const D = { volume: 1e4, amount: 1e8 };  // 默认除数：ETF/股票（腾讯源）手→万手、元→亿元
 
 async function loadTickerObj(kind, code) {
   const obj = await loadJSON(klineUrl(kind, code));
@@ -15,15 +15,21 @@ async function loadTickerObj(kind, code) {
   return obj;
 }
 
-function prepareKline(rows, { vdiv = 1, adiv = 1 } = {}) {
+function prepareKline(rows, { vdiv = D.volume, adiv = D.amount } = {}) {
+  /* 单位换算：manifest 的 vdiv/adiv 已是「原始单位→万手/亿元」的完整除数（与 update.py
+     export_excel 同口径，见 scripts/_gen_web_data.py IDX_DIV），直接相除，不得再乘 D。
+     腾讯源（ETF/股票）：volume=手→÷1e4=万手，amount=元(估算)→÷1e8=亿元
+     中证官网：tradingVol=股→÷1e6=万手，tradingValue=亿元→÷1
+     国证官网：volume=万手→÷1，amount=亿元→÷1 */
   const dates = [], klines = [], volumes = [], amounts = [];
+  const chgN = [30, 60, 90].map(n => rows.map(r => r['chg' + n] ?? null));
   for (const r of rows) {
     dates.push(r.date);
     klines.push([r.open ?? 0, r.close ?? 0, r.low ?? 0, r.high ?? 0]);
-    volumes.push(r.volume == null ? null : r.volume / (vdiv * D.volume));
-    amounts.push(r.amount == null ? null : r.amount / (adiv * D.amount));
+    volumes.push(r.volume == null ? null : r.volume / vdiv);
+    amounts.push(r.amount == null ? null : r.amount / adiv);
   }
-  return { dates, klines, volumes, amounts };
+  return { dates, klines, volumes, amounts, chgN };
 }
 
 export function buildHistoryView(container, cfg) {
@@ -70,18 +76,17 @@ export function buildHistoryView(container, cfg) {
       const obj = await loadTickerObj(kinds[cfg.kind], item.code);
       const rows = obj.rows;
 
-      /* 副图数据（股票指标） */
+      /* 指标数据（股票主图叠加曲线用；副图模式已弃用，保留 subControl 分支兼容） */
       let subDefs = null;
       let ind = null;
-      if (cfg.subControl === 'indicator') {
+      if (cfg.subControl === 'indicator' || cfg.withIndicator) {
         try {
           ind = await loadJSON(indiUrl(item.code));
         } catch { ind = null; }
-        if (ind && ind.length === rows.length) {
+        if (!ind || ind.length !== rows.length) ind = null;
+        if (ind && cfg.subControl === 'indicator') {
           const opt = cfg.indicatorOptions[0];
           subDefs = [{ name: opt.label, data: ind.map(x => x[opt.key] ?? null), color: opt.color, unit: opt.unit }];
-        } else {
-          ind = null;
         }
       }
 
@@ -116,10 +121,11 @@ export function buildHistoryView(container, cfg) {
 
     if (state.chart) { state.chart.dispose(); }
     const chartApi = createKlineChart(chartBox.querySelector('.chart'), {
-      dates: k.dates, klines: k.klines, volumes: k.volumes,
+      dates: k.dates, klines: k.klines, volumes: k.volumes, amounts: k.amounts, chgN: k.chgN,
       unit, subUnit: subDefs?.[0]?.unit || '',
       mode: cfg.chartType || 'candlestick',
-      overlay: cfg.overlay ? cfg.overlay(rows) : null,   // 主图右轴叠加（ETF 净值）
+      showMA: cfg.showMA !== false,   // 默认开 MA；ETF 视图关
+      overlay: cfg.overlay ? cfg.overlay(rows, ind) : null,   // 主图右轴叠加（ETF 净值 / 股票指标曲线）
     });
     state.chart = chartApi;
     if (subDefs) chartApi.setSubSeries(subDefs);

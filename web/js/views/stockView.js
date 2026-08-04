@@ -56,8 +56,13 @@ export default {
       title: '推荐20只',
       items,
       chartUnit: '元',
-      subControl: 'indicator',
-      indicatorOptions: INDICATORS,
+      subControl: 'none',
+      showMA: false,              // 股票：去掉 MA5/MA20/MA60 均线
+      withIndicator: true,   // 加载指标数据供主图叠加曲线使用
+      // 主图右轴叠加 6 条指标曲线（默认关闭，点击图例展开查看；与 K 线同图）
+      overlay: (rows, ind) => ind ? INDICATORS.filter(d => d.key !== 'dy').map(d => ({
+        name: d.label, data: ind.map(x => x[d.key] ?? null), color: d.color, unit: d.unit, visible: false,
+      })) : null,
       chartNote: () => [
         el('span', {}, '不复权真实价格（前复权早期价格会因分红为负，故不用）'),
         el('span', {}, '股息率：除权日在(当日-365天,当日]内每股派息÷收盘×100（同东财口径）'),

@@ -35,7 +35,8 @@ function chgArr(klines) {
  * 返回 { chart, setRange(range), setSubSeries(defs|null), dispose }
  */
 export function createKlineChart(el, opts) {
-  const { dates, klines, volumes, unit = '', subUnit = '', mode = 'candlestick' } = opts;
+  const { dates, klines, volumes, amounts = [], chgN = [], unit = '', subUnit = '', mode = 'candlestick', showMA = true } = opts;
+  const maCount = showMA ? 3 : 0;   // MA5/MA20/MA60 数量（函数级作用域：setSubSeries 需要访问）
   const chg = chgArr(klines);
   const closes = klines.map(k => k[1]);
 
@@ -49,12 +50,18 @@ export function createKlineChart(el, opts) {
   const tooltipBase = {
     trigger: 'axis', axisPointer: { type: 'cross' },
     backgroundColor: 'rgba(10,16,30,0.94)', borderColor: '#334155', borderWidth: 1,
-    padding: [8, 12], textStyle: { color: '#E2E8F0', fontSize: 12 },
+    padding: [10, 14], textStyle: { color: '#E2E8F0', fontSize: 12 },
   };
+
+  /* 浮动面板行：一行一个字段（字段名左对齐、值右对齐） */
+  const tipRow = (k, v, color) =>
+    '<div style="display:flex;justify-content:space-between;gap:18px;line-height:1.9;white-space:nowrap">'
+    + `<span style="color:#94A3B8">${k}</span>`
+    + `<b style="font-weight:600;color:${color || '#E2E8F0'}">${v}</b></div>`;
 
   const dataZoomBase = [
     // 仅保留 slider 拖拉条：滚轮缩放（inside）已按用户要求移除
-    { type: 'slider', bottom: 2, height: 16, borderColor: 'rgba(51,65,85,0.5)', backgroundColor: 'rgba(15,23,42,0.5)', fillerColor: 'rgba(34,211,238,0.12)', handleStyle: { color: '#22D3EE' }, moveHandleStyle: { color: '#22D3EE' }, textStyle: { color: C.text3, fontSize: 9 }, dataBackground: { lineStyle: { color: '#334155' }, areaStyle: { color: 'rgba(51,65,85,0.25)' } }, minValueSpan: 20 },
+    { type: 'slider', bottom: 2, height: 16, borderColor: 'rgba(51,65,85,0.5)', backgroundColor: 'rgba(15,23,42,0.5)', fillerColor: 'rgba(251,191,36,0.14)', handleStyle: { color: '#FBBF24' }, moveHandleStyle: { color: '#FBBF24' }, textStyle: { color: C.text3, fontSize: 9 }, dataBackground: { lineStyle: { color: '#334155' }, areaStyle: { color: 'rgba(51,65,85,0.25)' } }, minValueSpan: 20 },
   ];
 
   const zoomDispatch = (start, end) => {
@@ -122,11 +129,21 @@ export function createKlineChart(el, opts) {
           const i = params[0].dataIndex;
           const c = chg[i];
           const rows = [
-            `<div style="font-weight:700;margin-bottom:4px">${dates[i]}</div>`,
-            `收盘 <b style="float:right;margin-left:18px">${closes[i].toFixed(2)} ${unit}</b><br>`,
-            `涨跌 <b style="float:right;margin-left:18px;color:${c == null ? C.text2 : (c >= 0 ? C.up : C.down)}">${c == null ? '—' : (c >= 0 ? '+' : '') + c.toFixed(2) + '%'}</b>`,
+            `<div style="font-weight:700;font-size:12.5px;margin-bottom:5px">${dates[i]}</div>`,
+            '<div style="border-top:1px solid #334155;margin-bottom:4px"></div>',
+            tipRow('收盘', `${closes[i].toFixed(2)} ${unit}`),
+            tipRow('涨跌', c == null ? '—' : (c >= 0 ? '+' : '') + c.toFixed(2) + '%', c == null ? '#94A3B8' : (c >= 0 ? C.up : C.down)),
           ];
-          if (volumes[i] != null) rows.push(`成交量 <b style="float:right;margin-left:18px">${volumes[i].toFixed(0)}</b>`);
+          if (volumes[i] != null) rows.push(tipRow('成交量', volumes[i].toFixed(0) + ' 万手'));
+          rows.push(tipRow('成交额', amounts[i] == null ? '—' : amounts[i].toFixed(2) + ' 亿元'));
+          // N 交易日涨跌幅（缓存行 chg30/chg60/chg90，存在才显示；交易日口径）
+          if (chgN.length) {
+            const nDays = [30, 60, 90];
+            for (let k = 0; k < chgN.length; k++) {
+              const v = chgN[k][i];
+              if (v != null) rows.push(tipRow(nDays[k] + '日涨跌', (v >= 0 ? '+' : '') + v.toFixed(2) + '%', v >= 0 ? C.up : C.down));
+            }
+          }
           return rows.join('');
         },
       },
@@ -143,20 +160,20 @@ export function createKlineChart(el, opts) {
       series: [
         {
           name: '收盘', type: 'line', data: closes, symbol: 'none', smooth: true, sampling: 'lttb', z: 6,
-          lineStyle: { color: C.accent, width: 1.8, shadowBlur: 8, shadowColor: 'rgba(34,211,238,0.4)' },
+          lineStyle: { color: C.brand, width: 1.6 },
           areaStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(34,211,238,0.26)' },
-              { offset: 1, color: 'rgba(34,211,238,0.01)' },
+              { offset: 0, color: 'rgba(251,191,36,0.20)' },
+              { offset: 1, color: 'rgba(251,191,36,0.01)' },
             ]),
           },
         },
-        { name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volumes, barMaxWidth: 5, sampling: 'lttb', itemStyle: { color: 'rgba(34,211,238,0.35)' } },
+        { name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volumes, barMaxWidth: 5, sampling: 'lttb', itemStyle: { color: 'rgba(251,191,36,0.30)' } },
       ],
       legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['收盘', '成交量'] },
     };
   } else {
-    /* ── candlestick 模式：K线 + MA + 成交量 + 副图（默认）；支持主图右轴叠加 overlay 折线（净值） ── */
+    /* ── candlestick 模式：K线 + MA(可关) + 成交量 + 副图（默认）；支持主图右轴叠加 overlay 折线（净值） ── */
     const overlay = opts.overlay || [];
     const overlaySeries = overlay.map((d, i) => ({
       name: d.name, type: 'line', xAxisIndex: 0, yAxisIndex: 3, data: d.data,
@@ -178,17 +195,27 @@ export function createKlineChart(el, opts) {
           const d = dates[i];
           const c = chg[i];
           const rows = [
-            `<div style="font-weight:700;margin-bottom:4px">${d}</div>`,
-            `开 <b style="float:right;margin-left:18px">${k[0].toFixed(2)}</b><br>`,
-            `收 <b style="float:right;margin-left:18px">${k[1].toFixed(2)}</b>`,
-            `高 <b style="float:right;margin-left:18px">${k[3].toFixed(2)}</b><br>`,
-            `低 <b style="float:right;margin-left:18px">${k[2].toFixed(2)}</b>`,
-            `涨跌 <b style="float:right;margin-left:18px;color:${c == null ? C.text2 : (c >= 0 ? C.up : C.down)}">${c == null ? '—' : (c >= 0 ? '+' : '') + c.toFixed(2) + '%'}</b>`,
+            `<div style="font-weight:700;font-size:12.5px;margin-bottom:5px">${d}</div>`,
+            '<div style="border-top:1px solid #334155;margin-bottom:4px"></div>',
+            tipRow('开盘', k[0].toFixed(2)),
+            tipRow('收盘', k[1].toFixed(2)),
+            tipRow('最高', k[3].toFixed(2)),
+            tipRow('最低', k[2].toFixed(2)),
+            tipRow('涨跌', c == null ? '—' : (c >= 0 ? '+' : '') + c.toFixed(2) + '%', c == null ? '#94A3B8' : (c >= 0 ? C.up : C.down)),
           ];
-          if (volumes[i] != null) rows.push(`量 <b style="float:right;margin-left:18px">${(volumes[i]).toFixed(0)}</b>`);
+          if (volumes[i] != null) rows.push(tipRow('成交量', volumes[i].toFixed(0) + ' 万手'));
+          rows.push(tipRow('成交额', amounts[i] == null ? '—' : amounts[i].toFixed(2) + ' 亿元'));
+          // N 交易日涨跌幅（缓存行 chg30/chg60/chg90，存在才显示；交易日口径）
+          if (chgN.length) {
+            const nDays = [30, 60, 90];
+            for (let k = 0; k < chgN.length; k++) {
+              const v = chgN[k][i];
+              if (v != null) rows.push(tipRow(nDays[k] + '日涨跌', (v >= 0 ? '+' : '') + v.toFixed(2) + '%', v >= 0 ? C.up : C.down));
+            }
+          }
           for (const p of params) {
             if (p.seriesType !== 'candlestick' && p.seriesType !== 'bar') {
-              rows.push(`${p.marker}${p.seriesName} <b style="float:right;margin-left:18px">${p.value == null ? '—' : Number(p.value).toFixed(2)}</b>`);
+              rows.push(tipRow(`${p.marker} ${p.seriesName}`, p.value == null ? '—' : Number(p.value).toFixed(2)));
             }
           }
           return rows.join('');
@@ -199,7 +226,7 @@ export function createKlineChart(el, opts) {
         { left: 62, right: 14, top: '76%', height: '9%' },
         { left: 62, right: 14, top: '76%', height: '12%', show: false },
       ],
-      xAxis: [0, 1, 2].map((g) => ({ type: 'category', data: dates, gridIndex: g, boundaryGap: true, ...axisBase, axisLabel: { ...axisBase.axisLabel, show: g === 2 }, splitLine: { show: false } })),
+      xAxis: [0, 1, 2].map((g) => ({ type: 'category', data: dates, gridIndex: g, boundaryGap: true, ...axisBase, axisLabel: { ...axisBase.axisLabel, show: g === 1 }, splitLine: { show: false } })),
       yAxis: [
         { gridIndex: 0, scale: true, position: 'left', axisLabel: { color: C.text3, fontSize: 10.5 }, splitLine: { lineStyle: { color: C.split } }, axisLine: { show: false }, axisTick: { show: false }, name: unit, nameTextStyle: { color: C.text3, fontSize: 10, padding: [0, 0, 0, 28] } },
         { gridIndex: 1, scale: true, splitNumber: 2, axisLabel: { show: false }, splitLine: { show: false }, axisLine: { show: false } },
@@ -217,9 +244,11 @@ export function createKlineChart(el, opts) {
             shadowBlur: 6, shadowColor: 'rgba(246,70,93,0.25)',
           },
         },
-        { name: 'MA5', ...MA_STYLE, data: ma(closes, 5), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma5 } },
-        { name: 'MA20', ...MA_STYLE, data: ma(closes, 20), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma20 } },
-        { name: 'MA60', ...MA_STYLE, data: ma(closes, 60), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma60 } },
+        ...(maCount ? [
+          { name: 'MA5', ...MA_STYLE, data: ma(closes, 5), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma5 } },
+          { name: 'MA20', ...MA_STYLE, data: ma(closes, 20), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma20 } },
+          { name: 'MA60', ...MA_STYLE, data: ma(closes, 60), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma60 } },
+        ] : []),
         {
           name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volumes,
           itemStyle: { color: (p) => (klines[p.dataIndex][1] >= klines[p.dataIndex][0] ? C.volUp : C.volDown) },
@@ -227,7 +256,7 @@ export function createKlineChart(el, opts) {
         },
         ...overlaySeries,
       ],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', 'MA5', 'MA20', 'MA60', ...overlay.map(d => d.name)] },
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60'] : []), ...overlay.map(d => d.name)], selected: { ...Object.fromEntries(overlay.map(d => [d.name, d.visible !== false])) } },
     };
   }
 
@@ -248,15 +277,23 @@ export function createKlineChart(el, opts) {
       symbol: 'none', smooth: true, connectNulls: false, sampling: 'lttb', z: 8,
       lineStyle: { width: i === 0 ? 1.8 : 1.3, color: d.color }, itemStyle: { color: d.color },
     })) : [];
+    // 主图系列：K线 + MA（若有）+ 成交量；成交量位置随 maCount 偏移
+    const volSeries = option.series[1 + maCount];
     chart.setOption({
       grid: [
         { left: 62, right: 14, top: 30, height: defs ? '48%' : '62%' },
         { left: 62, right: 14, top: defs ? '62%' : '76%', height: '9%' },
         { left: 62, right: 14, top: '76%', height: '12%', show: !!defs },
       ],
+      // 日期标签跟随最底部可见 grid：无副图→成交量 grid1 显示；有副图→grid1 隐藏、副图 grid2 显示
+      xAxis: [
+        { axisLabel: { show: false } },
+        { axisLabel: { show: defs ? false : true } },
+        { axisLabel: { show: !!defs } },
+      ],
       yAxis: [{}, {}, { name: defs && defs[0] ? defs[0].unit || '' : '' }],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', 'MA5', 'MA20', 'MA60', ...(defs ? defs.map(d => d.name) : [])] },
-      series: [...option.series.slice(0, 4), option.series[4], ...series],
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60'] : []), ...(defs ? defs.map(d => d.name) : [])] },
+      series: [option.series[0], ...(maCount ? option.series.slice(1, 1 + maCount) : []), volSeries, ...series],
     }, { replaceMerge: ['series', 'legend'] });
   }
 
