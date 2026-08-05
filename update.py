@@ -213,6 +213,8 @@ def update_web():
     gwd.build_stock_indicators()
     gwd.build_components()
     gwd.build_summary()
+    import _fetch_etf_holdings as feh
+    feh.main()   # ETF季报持仓（980092 股息率估算、159201 持仓成分）
     import _gen_analysis as ga
     ga.main()   # S1 股息率反推（重建 analysis_dy.json）→ S3/S4 因子打分与点位锚（analysis.json）
     import _fetch_cnindex_components as fcc

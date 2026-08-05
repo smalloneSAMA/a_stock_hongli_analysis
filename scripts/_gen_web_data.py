@@ -266,6 +266,41 @@ def build_components():
         src = out["by_index"].get(track)
         if track and src and src.get("n") and (src.get("note") or "").startswith("国证官网"):
             out["by_etf"][code] = dict(src)
+    # ETF 自身季报持仓覆盖（159229→932368 无行情/成分源）：真实持仓+占净值比+个股股息率
+    for code, name, _t in fh.ETFS:
+        p = os.path.join(BASE, "cache", f"ETF持仓_{code}.json")
+        if not os.path.exists(p):
+            continue
+        try:
+            h = json.load(open(p, encoding="utf-8"))
+            rows = [{"code": r["code"], "name": r["name"], "weight": r["pct"],
+                     "ind": tmap.get(r["code"], {}).get("ind", ""),
+                     "ind3": tmap.get(r["code"], {}).get("ind3", ""),
+                     "div_yield": r.get("dy")} for r in h.get("rows", [])]
+            rows = [r for r in rows if r["weight"] and r["weight"] >= 0.5]   # 剔除打新碎股
+            if rows:
+                out["by_etf"][code] = {"name": name, "n": len(rows), "stocks": rows,
+                                        "note": f"ETF季报前十大持仓（{h.get('report_date', '')}），占净值比"}
+                print(f"  📥 {code} {name}: ETF季报持仓覆盖 {len(rows)} 只（{h.get('report_date', '')}）")
+        except Exception as e:
+            print(f"  ⚠️ {code} 持仓读取失败: {e}")
+    # 980092 前十大补个股股息率（来自 ETF 持仓行的 dy，供成分表展示）
+    cc = out["by_index"].get("980092")
+    if cc and cc.get("stocks"):
+        dy_map = {}
+        for _code, _n, _t in fh.ETFS:
+            p = os.path.join(BASE, "cache", f"ETF持仓_{_code}.json")
+            if os.path.exists(p):
+                for r in json.load(open(p, encoding="utf-8")).get("rows", []):
+                    if r.get("dy"):
+                        dy_map.setdefault(r["code"], r["dy"])
+        n0 = sum(1 for s in cc["stocks"] if s["div_yield"] is not None)
+        for s in cc["stocks"]:
+            if s["div_yield"] is None and s["code"] in dy_map:
+                s["div_yield"] = dy_map[s["code"]]
+        n1 = sum(1 for s in cc["stocks"] if s["div_yield"] is not None)
+        if n1 > n0:
+            print(f"  📥 980092 成分股息率补全：{n0} → {n1} 只（ETF持仓行）")
     atomic_dump(os.path.join(WEB_DATA, "components.json"), out)
     ok = sum(1 for v in out["by_index"].values() if v["n"]) + sum(1 for v in out["by_etf"].values() if v["n"])
     print(f"  ✅ components.json：指数{len(out['by_index'])}只 / ETF{len(out['by_etf'])}只，有成分的 {ok} 只")

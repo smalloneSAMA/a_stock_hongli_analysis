@@ -277,7 +277,7 @@ bt_path = os.path.join(BASE, "web", "data", "backtest.json")
 check("backtest.json 存在", os.path.exists(bt_path))
 bt = json.load(open(bt_path, encoding="utf-8"))
 check("order==[85,90,95]", bt["order"] == [85, 90, 95])
-check("三档各42标的（精选池）", all(len(bt["by_p"][str(p)]) == 42 for p in (85, 90, 95)))
+check("三档各362标的（全量）", all(len(bt["by_p"][str(p)]) == 362 for p in (85, 90, 95)))
 check("summary 键齐全", all(k in bt["summary"]["90"] for k in ("n", "pos6", "pos12", "avg6", "avg12", "idx6", "idx12", "stk6", "stk12")))
 # 与 docs/回测报告.md 结论数字一致（p90 avg6/avg12）
 rep = open(os.path.join(BASE, "docs", "回测报告.md"), encoding="utf-8").read()

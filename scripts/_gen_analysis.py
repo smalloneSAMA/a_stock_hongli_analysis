@@ -257,12 +257,43 @@ def build_from_close(typ, code, name, series_rows, dy0, n_parts):
     }
 
 
+def load_etf_dy_est(code):
+    """ETF 自身季报持仓加权股息率估算：cache/ETF持仓_{code}.json（_fetch_etf_holdings 产物）
+    返回 dy0 或 None"""
+    p = os.path.join(BASE, "cache", f"ETF持仓_{code}.json")
+    if not os.path.exists(p):
+        return None
+    h = json.load(open(p, encoding="utf-8"))
+    rows = [r for r in h.get("rows", []) if r.get("dy")]
+    wsum = sum(r["pct"] for r in rows)
+    return round(sum(r["pct"] * r["dy"] for r in rows) / wsum, 4) if wsum else None
+
+
+def load_est_dy0(code):
+    """指数股息率估算（成分无 dy 时）：cache/成分_{code}_股息率.json（ETF季报持仓加权）"""
+    p = os.path.join(BASE, "cache", f"成分_{code}_股息率.json")
+    if not os.path.exists(p):
+        return None
+    return json.load(open(p, encoding="utf-8")).get("dy0")
+
+
 def build_index_etf(typ, code, name, stocks, index_info=None):
-    """指数：加权 dy0 反推；ETF：直接复用跟踪指数的 dy 序列（净值反推有分红增长漂移，
-    2019年 nav=1.0 基准会把历史 dy 系统性高估 → 用指数序列，ETF 区间分析=跟踪指数分析）"""
+    """指数：加权 dy0 反推；ETF：跟踪指数序列优先（净值反推有分红增长漂移），
+    跟踪指数无数据时用 ETF 自身季报持仓估算（159229→932368 无行情缓存）"""
     if typ == "ETF":
         if index_info is None or index_info.get("dy0") is None:
-            return {"code": code, "name": name, "type": typ, "dy0": None, "note": "跟踪指数无股息率数据"}
+            est = load_etf_dy_est(code)
+            if est is None:
+                return {"code": code, "name": name, "type": typ, "dy0": None, "note": "跟踪指数无股息率数据且无持仓估算"}
+            c = load_cache("ETF", code)
+            if c is None or not c.get("rows"):
+                return {"code": code, "name": name, "type": typ, "dy0": None, "note": "无行情缓存"}
+            rows = c["rows"]
+            px_rows = [(r["date"], r.get("nav") or r["close"]) for r in rows]
+            r = build_from_close("ETF", code, name, px_rows, est, 0)
+            r["note"] = "股息率为ETF季报持仓加权估算"
+            r["track"] = ETF_TRACK.get(code)
+            return r
         r = dict(index_info)
         r.update({"code": code, "name": name, "type": typ, "track": index_info["code"]})
         return r
@@ -270,6 +301,10 @@ def build_index_etf(typ, code, name, stocks, index_info=None):
     c = load_cache(typ, code)
     if c is None or not c.get("rows"):
         return {"code": code, "name": name, "type": typ, "dy0": None, "note": "无行情缓存"}
+    if dy0 is None:
+        est = load_est_dy0(code)   # 成分无 dy 时用 ETF 季报持仓估算（980092）
+        if est is not None:
+            dy0, n_parts = est, 0
     if dy0 is None:
         return {"code": code, "name": name, "type": typ, "dy0": None, "note": "成分股息率缺失"}
     rows = c["rows"]
