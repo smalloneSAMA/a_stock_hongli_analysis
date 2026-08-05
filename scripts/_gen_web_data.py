@@ -241,22 +241,31 @@ def build_components():
     for code, name, _t in fh.ETFS:
         out["by_etf"][code] = build_one(name)
 
-    # 精选池外的国证指数（980092）：从 cache/成分_{code}.json 补充（国证官网 sample-detail 接口）
+    # 国证官网缓存覆盖（980092 等：md 解析因权重缺失/部分收录会退化，国证源成分完整 + 股息率补全）
     for code, name, _src, _t in fh.INDICES:
-        if out["by_index"].get(code, {}).get("n"):
-            continue
         p = os.path.join(BASE, "cache", f"成分_{code}.json")
         if not os.path.exists(p):
             continue
         try:
             cc = json.load(open(p, encoding="utf-8"))
+            # 股息率：从汇总表（东财近12月口径）按 code 匹配补全——供区间分析加权 dy0 与前端成分表展示
+            tmap = {r["code"]: r for r in json.load(open(t_path, encoding="utf-8"))}
             stocks = [{"code": s["code"], "name": s["name"], "weight": s.get("weight"),
-                       "ind": s.get("ind", ""), "ind3": s.get("ind3", ""), "div_yield": None} for s in cc.get("stocks", [])]
+                       "ind": s.get("ind", ""), "ind3": s.get("ind3", ""),
+                       "div_yield": tmap.get(s["code"], {}).get("div_yield")} for s in cc.get("stocks", [])]
+            n_dy = sum(1 for x in stocks if x["div_yield"] is not None)
             out["by_index"][code] = {"name": cc.get("name", name), "n": len(stocks), "stocks": stocks,
                                       "note": f"国证官网成分（{cc.get('sample_date', '')}），仅前十大权重公开"}
-            print(f"  📥 {code} {cc.get('name', name)}: 国证官网补充 {len(stocks)} 只（{cc.get('sample_date', '')}）")
+            print(f"  📥 {code} {cc.get('name', name)}: 国证官网覆盖 {len(stocks)} 只（含股息率 {n_dy} 只）（{cc.get('sample_date', '')}）")
         except Exception as e:
             print(f"  ⚠️ {code} 成分缓存读取失败: {e}")
+    # ETF 跟踪国证指数（如 159201→980092）：md 解析仅部分收录，直接复用指数国证源（完整成分 + 股息率）
+    import _gen_analysis as ga
+    for code, name, _t in fh.ETFS:
+        track = ga.ETF_TRACK.get(code)
+        src = out["by_index"].get(track)
+        if track and src and src.get("n") and (src.get("note") or "").startswith("国证官网"):
+            out["by_etf"][code] = dict(src)
     atomic_dump(os.path.join(WEB_DATA, "components.json"), out)
     ok = sum(1 for v in out["by_index"].values() if v["n"]) + sum(1 for v in out["by_etf"].values() if v["n"])
     print(f"  ✅ components.json：指数{len(out['by_index'])}只 / ETF{len(out['by_etf'])}只，有成分的 {ok} 只")

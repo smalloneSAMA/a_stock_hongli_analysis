@@ -16,6 +16,7 @@ sys.stdout.reconfigure(encoding="utf-8")   # 不换对象，import 无副作用�
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
+import _fetch_stock_data as fsd
 
 WINDOW = 1250                       # 5年交易日滚动窗口
 HORIZONS = (21, 63, 126, 252)       # 1/3/6/12 个月（交易日）
@@ -181,7 +182,7 @@ def build_report(results_by_p, order=(85, 90, 95)):
     return "\n".join(lines) + "\n"
 
 
-def main(only=None, p_buy=None):
+def main(only=None, p_buy=None, full=False):
     data = load_analysis()
     order = (p_buy,) if p_buy else (85, 90, 95)
     results_by_p = {}
@@ -192,6 +193,9 @@ def main(only=None, p_buy=None):
             if info.get("dy0") is None:
                 continue
             if only and code != only:
+                continue
+            # 默认仅回测精选池（11指数+11ETF+20推荐股票）；--full 才覆盖全部股票池（307只，较慢）
+            if not full and info["type"] == "股票" and code not in {c for c, _, _ in fsd.STOCKS}:
                 continue
             r = run_backtest(code, info, p_buy=p)
             results.append(r)
@@ -248,5 +252,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="只回测单个代码")
     ap.add_argument("--p", type=int, default=None, help="单档回测（默认三档 p85/90/95）")
+    ap.add_argument("--full", action="store_true", help="回测全部股票池（默认仅精选池42只）")
     args = ap.parse_args()
-    main(only=args.only, p_buy=args.p)
+    main(only=args.only, p_buy=args.p, full=args.full)

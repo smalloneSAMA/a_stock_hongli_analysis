@@ -190,7 +190,7 @@ def build_table():
     for c, s in stock.items():
         maxw = max([w for w in s["w"].values() if w], default=0)
         idx = sorted([(k, v) for k, v in s["w"].items() if v], key=lambda x: -x[1])[:8]
-        if not idx:   # 权重全部未公开的（如932368/000151成分）
+        if not idx:   # 权重全部未公开的（如980092/000151成分）
             idx = [[k, None] for k in s["w"].keys()]
         rows.append({
             "code": c, "name": s["name"], "ind3": s.get("industry", ""),

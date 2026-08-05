@@ -193,7 +193,7 @@ def update_components():
     idx = _gen_components.build()
     # 摘要
     print("\n更新摘要：")
-    for code in ["000922", "000015", "000821", "000825", "H30269", "930955", "932315", "931468", "H30270", "932368", "000151"]:
+    for code in ["000922", "000015", "000821", "000825", "H30269", "930955", "932315", "931468", "H30270", "980092", "000151"]:
         info = idx.get(code, {})
         stocks = info.get("stocks") or {}
         fb = " ⚠️旧数据回退" if info.get("fallback") else ""

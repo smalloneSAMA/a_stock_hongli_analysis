@@ -2,7 +2,7 @@
 """
 指数成分股更新：重新下载中证官网样本文件 → 解析 → 重新生成《红利指数与ETF成分股.md》
 - 9只中证指数：oss-ch 官方 cons/closeweight Excel（下载失败则用旧md数据回退并标注）
-- 932368：东财成分表 + 中证官网十大权重 + 腾讯名称
+- 980092：国证官网样本详情接口缓存（cache/成分_980092.json，_fetch_cnindex_components.py 生成）
 - 000151：东财成分表 + 腾讯名称
 用法: python _gen_components.py [--force]
 """
@@ -32,8 +32,8 @@ INDEX_META = {
     "932315": ("中证全指红利质量", "连续分红、股息率较高且盈利持续性较好的50只证券"),
     "931468": ("中证红利质量", "红利质量另一编制口径"),
     "H30270": ("中证红利价值", "高股息基础上挑选低PE/低PB股票，深度价值"),
-    "932368": ("中证800自由现金流", "从中证800样本空间中选取自由现金流率较高、现金流稳定且盈利质量好的50只证券"),
     "000151": ("上证国有企业红利", "从沪市国有企业中选取股息率较高的50只证券（官网样本文件未公开，东财成分表口径30只）"),
+    "980092": ("国证自由现金流", "剔除成交额后20%、金融/房地产行业及近12季度ROE稳定性后10%的证券，选取近一年自由现金流率最高的100只；季度调样、单只权重上限10%（国证官网口径，权重仅前十大公开）"),
 }
 ETF_META = [
     ("512890", "红利低波ETF华泰柏瑞", "H30269", "核心", "348亿"),
@@ -46,11 +46,11 @@ ETF_META = [
     ("159209", "红利质量ETF招商", "932315", "互补", "24亿"),
     ("159758", "华夏中证红利质量ETF", "931468", "观察", "16亿"),
     ("563700", "红利价值ETF易方达", "H30270", "观察", "4.3亿"),
-    ("159229", "自由现金流ETF广发", "932368", "观察", "1.8亿"),
+    ("159201", "自由现金流ETF华夏", "980092", "核心", "173亿"),
 ]
 TRACK_NAME = {"H30269": "中证红利低波动", "000922": "中证红利", "930955": "红利低波动100",
               "000825": "中证央企红利", "000151": "上证国有企业红利", "932315": "中证全指红利质量",
-              "931468": "中证红利质量", "H30270": "中证红利价值", "932368": "中证800自由现金流"}
+              "931468": "中证红利质量", "H30270": "中证红利价值", "980092": "国证自由现金流"}
 
 # ── 1. 下载中证官网样本文件 ───────────────────────────────────────
 def download_xls(code, kind):
@@ -189,16 +189,27 @@ def build():
         print("⚠️  中证官网样本文件全部下载失败（oss风控），本次不重写md，请稍后重试或检查网络。")
         return idx
 
-    print("═══ 步骤2/3：932368 / 000151 ═══")
-    for code in ["932368", "000151"]:
+    print("═══ 步骤2/3：980092（国证缓存）/ 000151（东财）═══")
+    # 980092：国证官网样本详情接口缓存（_fetch_cnindex_components.py 生成）
+    cc_path = os.path.join(BASE, "cache", "成分_980092.json")
+    if os.path.exists(cc_path):
+        cc = json.load(open(cc_path, encoding="utf-8"))
+        stocks = {x["code"]: {"name": x["name"], "weight": x.get("weight")} for x in cc.get("stocks", [])}
+        idx["980092"] = {"name": INDEX_META["980092"][0], "desc": INDEX_META["980092"][1],
+                         "date_cons": cc.get("sample_date", ""), "date_weight": "前十大公开",
+                         "stocks": stocks, "fallback": False}
+        print(f"  980092 国证自由现金流: {len(stocks)}只 (国证官网，样本 {cc.get('sample_date', '')})")
+    else:
+        print("  ⚠️ 980092: 缺少 cache/成分_980092.json，请先运行 _fetch_cnindex_components.py")
+    # 000151：东财成分表
+    for code in ["000151"]:
         members = fetch_em_members(code)
         names = tencent_names(members) if members else {}
-        top10 = fetch_top10(code) if code == "932368" else {}
         stocks = {}
         for c in members:
-            stocks[c] = {"name": names.get(c, ""), "weight": top10.get(c)}
+            stocks[c] = {"name": names.get(c, ""), "weight": None}
         idx[code] = {"name": INDEX_META[code][0], "desc": INDEX_META[code][1],
-                     "date_cons": "2026-07-31", "date_weight": "2026-07-31" if top10 else "未公开",
+                     "date_cons": "2026-07-31", "date_weight": "未公开",
                      "stocks": stocks, "fallback": False}
         print(f"  {code} {idx[code]['name']}: {len(stocks)}只 (东财成分表)")
         time.sleep(1.5)
@@ -210,7 +221,7 @@ def build():
     out.append(f"> **数据日期：{datetime.date.today().strftime('%Y-%m-%d')}** · 对应《红利介绍.md》精选池（指数10只 + ETF 11只）")
     out.append(">")
     out.append("> **数据来源**：")
-    out.append("> - 指数成分股：中证指数官网（csindex.com.cn）官方样本/权重文件（成分截止 2026-07-31，权重按 2026-06-30 收盘计算）；中证800自由现金流 932368 为东方财富指数成分表（2026-07-31）叠加中证官网十大权重")
+    out.append("> - 指数成分股：中证指数官网（csindex.com.cn）官方样本/权重文件（成分截止 2026-07-31，权重按 2026-06-30 收盘计算）；国证自由现金流 980092 为国证指数官网样本详情接口（仅前十大权重公开）；上证国有企业红利 000151 为东方财富指数成分表")
     out.append("> - ETF持仓：ETF实际持仓与跟踪指数成分股一致（合同约定），直接采用跟踪指数成分股列示")
     out.append("> - 注：上证国有企业红利(000151) 官网样本文件未公开，采用东方财富指数成分表（30只，可能不完整，官方为50只）")
     out.append(">")
@@ -221,7 +232,7 @@ def build():
     out.append("")
     out.append("## 一、精选指数成分股（10只 + 1只辅助）")
     out.append("")
-    for code in ["000922", "000015", "000821", "000825", "H30269", "930955", "932315", "931468", "H30270", "932368", "000151"]:
+    for code in ["000922", "000015", "000821", "000825", "H30269", "930955", "932315", "931468", "H30270", "980092", "000151"]:
         info = idx[code]
         stocks = info["stocks"] or {}
         note = f"> {info['desc']} · **样本数：{len(stocks)} 只** · 样本截止 {info['date_cons']}"
@@ -234,7 +245,7 @@ def build():
         if info["fallback"]:
             note += " · ⚠️ 本次官网文件下载失败，为上次数据"
         src = "中证指数官网官方样本文件" if code in CSINDICES else (
-            "东方财富数据中心指数成分表 + 中证官网十大权重（932368）" if code == "932368" else "东方财富数据中心指数成分表（官网样本文件未公开）")
+            "国证指数官网样本详情接口（sample-detail/detail，权重仅前十大公开）" if code == "980092" else "东方财富数据中心指数成分表（官网样本文件未公开）")
         out.append(f"### {info['name']}（{code}）")
         out.append("")
         out.append(note)
@@ -260,8 +271,8 @@ def build():
         stocks = info["stocks"] or {}
         tname = TRACK_NAME[track]
         wnote = ""
-        if track == "932368":
-            wnote = "；权重为中证官网披露的十大权重，其余未公开"
+        if track == "980092":
+            wnote = "；权重为国证官网披露的前十大权重，其余未公开"
         out.append(f"### {name}（{code}）")
         out.append("")
         out.append(f"> 池：{pool} · 规模约{scale} · 跟踪指数：**{tname}（{track}）**")
@@ -296,7 +307,7 @@ def build():
         dw = idx[code]["date_weight"]
         date_str = f"成分 {dc} / 权重 {dw}" if i == 0 else "同上"
         out.append(f"| {nm} | {code} | 中证指数官网样本文件 `{code}cons.xls` | 中证官网权重文件 `{code}closeweight.xls` | {date_str} |")
-    out.append(f"| 中证800自由现金流 | 932368 | 东方财富数据中心指数成分表（`RPT_INDEX_COMPONENT`，官网样本文件未公开） | 中证官网十大权重接口（`/index/weight/top10new/932368`） | 2026-07-31 |")
+    out.append("| 国证自由现金流 | 980092 | 国证指数官网样本详情接口（`sample-detail/detail`） | 官网仅披露前十大权重 | " + (idx.get("980092", {}).get("date_cons") or "") + " |")
     out.append("| 上证国有企业红利 | 000151 | 东方财富数据中心指数成分表（`RPT_INDEX_COMPONENT`，官网样本文件未公开，仅30只） | 未公开 | 2026-07-31 |")
     out.append("")
     out.append("**中证指数官网文件抓取路径**：指数详情页数据接口 `csindex-home/indexInfo/index-details-data?fileLang=2&indexCode={code}` 返回样本文件下载链接 → `https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/{code}cons.xls`（成分）与 `.../closeweight/{code}closeweight.xls`（权重）。")
@@ -316,7 +327,7 @@ def build():
     out.append("## 附：数据说明与风险提示")
     out.append("")
     out.append("1. **指数成分**：9只中证指数来自中证指数官网官方样本文件（cons/closeweight），样本为最新定期调整后生效样本；权重按官网惯例滞后一个月发布。")
-    out.append("2. **中证800自由现金流(932368)**：官网样本文件未公开，成分取自东方财富指数成分表；权重为中证官网披露的十大权重，其余未公开。")
+    out.append("2. **国证自由现金流(980092)**：官网仅披露前十大权重，其余未公开；成分来自国证指数官网样本详情接口。")
     out.append("3. **ETF持仓说明**：ETF为指数基金，实际持仓与跟踪指数成分股一致（存在极小跟踪误差），故直接以跟踪指数全部成分股作为其持仓构成列示。")
     out.append("4. **上证国有企业红利(000151)**：官网样本文件未公开，此处为东方财富指数成分表（官方为50只，可能不完整）。")
     out.append("5. **权重说明**：指数权重随季度调整与市场涨跌变动，本表为静态快照。")
@@ -325,6 +336,7 @@ def build():
 
     # 附录：非精选池国证指数成分（cache/成分_*.json，国证官网 sample-detail 接口）
     comp_files = sorted(glob.glob(os.path.join(BASE, "cache", "成分_*.json")))
+    comp_files = [fp for fp in comp_files if os.path.basename(fp)[len("成分_"):-5] not in idx]   # 已收录的（980092）不进附录
     if comp_files:
         out.append("---")
         out.append("")
