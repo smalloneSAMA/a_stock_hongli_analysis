@@ -27,9 +27,11 @@ export function indiUrl(code) {
 }
 
 export const COMPONENTS_URL = '/web/data/components.json';
+export const ANALYSIS_URL = '/web/data/analysis.json';
 
 export const MANIFEST_URL = '/web/data/manifest.json';
 export const SUMMARY_URL = '/web/data/summary.json';
+export const BACKTEST_URL = '/web/data/backtest.json';
 
 export function has(url) {
   return cache.has(url);

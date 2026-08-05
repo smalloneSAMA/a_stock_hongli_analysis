@@ -296,6 +296,38 @@ button { font-family: inherit; }
 .dp-close:hover { color: var(--text); background: rgba(148, 163, 184, 0.1); }
 .chart-box { position: relative; padding: 6px var(--space-3) var(--space-2); }
 .comp-panel { padding: 6px var(--space-3) var(--space-2); }
+
+/* ── 区间分析面板（S6）── */
+.analysis-panel { padding: 6px var(--space-3) var(--space-2); display: grid; grid-template-columns: 340px 1fr; gap: var(--space-3); }
+.ana-dash { display: flex; flex-direction: column; gap: 10px; }
+.ana-card { background: rgba(30, 41, 59, 0.35); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+.ana-score-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ana-score { font-size: 40px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.ana-band { font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 999px; }
+.band-buy { color: #FCA5A5; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); }
+.band-build { color: #FDBA74; background: rgba(249, 115, 22, 0.12); border: 1px solid rgba(249, 115, 22, 0.4); }
+.band-hold { color: #CBD5E1; background: rgba(100, 116, 139, 0.15); border: 1px solid rgba(100, 116, 139, 0.4); }
+.band-sell { color: #86EFAC; background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.4); }
+.band-sell2 { color: #6EE7B7; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); }
+.ana-dy { font-size: 12.5px; color: var(--text-3); display: flex; flex-direction: column; gap: 3px; margin-top: 8px; }
+.ana-dy b { color: var(--text); font-size: 15px; }
+.ana-preset { display: flex; gap: 6px; margin-top: 10px; }
+.ana-factors { display: flex; flex-direction: column; gap: 6px; }
+.ana-frow { display: grid; grid-template-columns: 96px 74px 1fr 44px 46px 52px; align-items: center; gap: 10px; font-size: 12.5px; padding: 7px 10px; background: rgba(30, 41, 59, 0.3); border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 8px; }
+.ana-fname { color: var(--text-2); }
+.ana-fval { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+.ana-bar { height: 7px; border-radius: 4px; background: rgba(2, 6, 23, 0.6); overflow: hidden; position: relative; }
+.ana-bar i { position: absolute; top: 0; left: 0; bottom: 0; border-radius: 4px; background: linear-gradient(90deg, #10B981, #F59E0B 55%, #EF4444); }
+.ana-fpct { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); }
+.ana-fw { text-align: center; color: var(--text-3); }
+.ana-fscore { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.ana-tip { grid-column: 1 / -1; font-size: 11.5px; color: var(--text-3); line-height: 1.7; padding: 4px 2px; }
+
+/* ── 回测报告页（S8）── */
+.bt-head { padding: 4px 2px 2px; }
+.bt-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 12px 2px; }
+.bt-cell { background: rgba(30, 41, 59, 0.35); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.bt-val { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
 .chart { width: 100%; height: 480px; }
 .chart.chart-short { height: 400px; }
 .chart-note { padding: 0 var(--space-5) var(--space-3); color: var(--text-3); font-size: 11.5px; display: flex; gap: 14px; flex-wrap: wrap; }

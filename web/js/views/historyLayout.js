@@ -4,10 +4,17 @@
          内存缓存保证切换秒开 */
 
 import { el, renderTickerList, renderTable, skeleton, errorBox, emptyState, fmt2, fmtPct, dirOf, dailyChg, attachDatePicker } from './common.js';
-import { loadJSON, klineUrl, indiUrl, COMPONENTS_URL } from '../data.js';
+import { loadJSON, klineUrl, indiUrl, COMPONENTS_URL, ANALYSIS_URL } from '../data.js';
 import { createKlineChart, createDonut } from '../charts.js';
 
 const D = { volume: 1e4, amount: 1e8 };  // 默认除数：ETF/股票（腾讯源）手→万手、元→亿元
+
+/* 懒加载共享缓存：analysis.json（区间分析面板 + S7 图表锚线/dy副图共用） */
+let analysisCache = null;
+async function loadAnalysis() {
+  if (!analysisCache) analysisCache = await loadJSON(ANALYSIS_URL);
+  return analysisCache;
+}
 
 async function loadTickerObj(kind, code) {
   const obj = await loadJSON(klineUrl(kind, code));
@@ -53,6 +60,40 @@ export function buildHistoryView(container, cfg) {
   let state = { code: null, chart: null, range: 'all', view: 'chart' };
   /* 每只标的的视图状态记忆：{range, from, to, view}（切换标的不重置） */
   const codeState = {};
+
+  /* S7 图表叠加：区间锚线（主图虚线）+ 股息率副图（近5年曲线 + 90/10分位线） */
+  const applyAnalysisOverlay = (chartApi, rows, code) => {
+    loadAnalysis().then((an) => {
+      if (state.chart !== chartApi) return;   // 已切换标的/重新渲染，丢弃过期回调
+      const ent = an.by_code[code];
+      if (!ent || !ent.anchors) return;
+      chartApi.addAnchorLines([
+        { value: ent.anchors.buy, label: `买入锚 ${fmt2(ent.anchors.buy)}（${ent.anchors.dist_buy >= 0 ? '+' : ''}${fmt2(ent.anchors.dist_buy)}%）`, color: '#F6465D' },
+        { value: ent.anchors.sell, label: `卖出锚 ${fmt2(ent.anchors.sell)}（${ent.anchors.dist_sell >= 0 ? '+' : ''}${fmt2(ent.anchors.dist_sell)}%）`, color: '#34D399' },
+      ]);
+      /* dy 副图：ETF 用后端序列（K线为场内价、锚为指数点位，量纲不同无法重算）；指数/股票前端重算 dy_t = dyNow×closeNow/close_t */
+      const dyNow = ent.factors.dy && ent.factors.dy.v;
+      const closeNow = ent.factors.price && ent.factors.price.v;
+      if (dyNow == null || closeNow == null) return;
+      const n = rows.length;
+      const data = new Array(n).fill(null);
+      if (ent.dy_series) {
+        const m = new Map(ent.dy_series);
+        for (let i = 0; i < n; i++) data[i] = m.get(rows[i].date) ?? null;
+      } else {
+        const win = Math.min(1250, n);
+        for (let i = n - win; i < n; i++) {
+          const c = rows[i].close;
+          data[i] = c ? Number((dyNow * closeNow / c).toFixed(4)) : null;
+        }
+      }
+      const ml = [];
+      if (ent.dy_p90 != null) ml.push({ value: ent.dy_p90, label: '90分位 ' + ent.dy_p90.toFixed(2), color: '#F6465D' });
+      if (ent.dy_p10 != null) ml.push({ value: ent.dy_p10, label: '10分位 ' + ent.dy_p10.toFixed(2), color: '#34D399' });
+      chartApi.setSubSeries([{ name: '股息率', data, color: '#FBBF24', unit: '%', markLines: ml }]);
+    }).catch(() => { /* 分析数据加载失败不影响图表 */ });
+  };
+
   const panel = layout.querySelector('.ticker-panel');
   const mainCard = layout.querySelector('.main-card');
 
@@ -125,6 +166,8 @@ export function buildHistoryView(container, cfg) {
 
     /* 成分股面板（图表/成分股 切换按钮触发；复用成分股汇总板块的展示方式） */
     const compBox = el('div', { class: 'comp-panel', style: 'display:none' });
+    /* 区间分析面板（S6：仪表盘 + 因子表 + 三档切换，数据 web/data/analysis.json） */
+    const analysisBox = el('div', { class: 'analysis-panel', style: 'display:none' });
 
     /* 标的简介条（cfg.intros[code] → {intro, note}，插在报价头与图表之间） */
     const intro = cfg.intros ? cfg.intros[item.code] : null;
@@ -134,7 +177,7 @@ export function buildHistoryView(container, cfg) {
     const note = el('div', { class: 'chart-note' }, cfg.chartNote(obj, rows));
 
     // ⚠️ 必须先挂载到 DOM 再初始化 ECharts：容器未挂载时尺寸为 0，canvas 缓冲为 0×0 会空白
-    mainCard.append(chartBox, compBox, tableBox, note);
+    mainCard.append(chartBox, compBox, analysisBox, tableBox, note);
     if (intro) {
       const introBar = el('div', { class: 'intro-bar' },
         el('div', { class: 'intro-text' }, intro.intro),
@@ -153,12 +196,14 @@ export function buildHistoryView(container, cfg) {
     });
     state.chart = chartApi;
     if (subDefs) chartApi.setSubSeries(subDefs);
+    /* S7：图表视图叠加区间锚线 + 股息率副图（analysis 数据可用时） */
+    applyAnalysisOverlay(chartApi, rows, item.code);
 
     /* 预设时间范围按钮（点击 → setRange → datazoom 事件 → onZoom 联动 UI） */
     const rangeApi = rangeGroup();
     /* 自定义起止日期：手动文本输入（YYYY-MM-DD），旁显上下限 */
     const dateRangeApi = dateRangeGroup();
-    const vsGroup = cfg.compView === false ? null : viewSwitchGroup();   // 股票视图不需要成分股切换
+    const vsGroup = viewSwitchGroup();   // 全部视图都有切换（股票：图表|区间分析；指数/ETF：图表|成分股|区间分析）
 
     const head = el('div', { class: 'chart-head' },
       el('div', {},
@@ -181,20 +226,26 @@ export function buildHistoryView(container, cfg) {
     rangeApi.setActive(st.range || 'all');
     state.range = st.range || 'all';
     if (st.from || st.to) chartApi.setDateRange(st.from || null, st.to || null);
-    if (vsGroup && st.view === 'comp') vsGroup.setView('comp');
+    if (vsGroup && st.view && st.view !== 'chart') vsGroup.setView(st.view);
 
-    /* 图表 ↔ 成分股 切换按钮组 */
+    /* 图表 ↔ 成分股 ↔ 区间分析 切换按钮组（股票视图无成分股：cfg.compView === false） */
     let compDonut = null;
     function viewSwitchGroup() {
       const g = el('div', { class: 'seg-group', role: 'group', 'aria-label': '视图切换' });
       const btns = [];
+      const views = cfg.compView === false
+        ? [['chart', '图表'], ['analysis', '区间分析']]
+        : [['chart', '图表'], ['comp', '成分股'], ['analysis', '区间分析']];
       const setView = (view) => {
         state.view = view;
         for (const [v, b] of btns) b.classList.toggle('active', v === view);
-        if (view === 'chart') { chartBox.style.display = ''; compBox.style.display = 'none'; }
-        else { chartBox.style.display = 'none'; compBox.style.display = ''; renderComponents(); }
+        chartBox.style.display = view === 'chart' ? '' : 'none';
+        compBox.style.display = view === 'comp' ? '' : 'none';
+        analysisBox.style.display = view === 'analysis' ? '' : 'none';
+        if (view === 'comp') renderComponents();
+        if (view === 'analysis') renderAnalysis();
       };
-      for (const [v, label] of [['chart', '图表'], ['comp', '成分股']]) {
+      for (const [v, label] of views) {
         const b = el('button', { class: 'seg-btn' + (v === 'chart' ? ' active' : ''), onclick: () => setView(v) }, label);
         btns.push([v, b]);
         g.append(b);
@@ -255,6 +306,92 @@ export function buildHistoryView(container, cfg) {
       } catch (err) {
         compBox.innerHTML = '';
         compBox.append(errorBox(`成分股数据加载失败：${err.message}`, () => { delete compBox.dataset.loaded; renderComponents(); }));
+      }
+    }
+
+    /* ── 区间分析视图（S6）：仪表盘 + 因子明细表 + 三档切换（本地算分）── */
+    const F_UNIT = { dy: '%', price: '', trend: '%', sent: '%', pe: '', pb: '', peg: '' };
+    const bandOf = (s) => (s <= 25 ? '买入区间' : s <= 45 ? '逐步建仓' : s <= 65 ? '持有' : s <= 80 ? '逐步卖出' : '卖出区间');
+    const bandCls = (b) => ({ '买入区间': 'band-buy', '逐步建仓': 'band-build', '持有': 'band-hold', '逐步卖出': 'band-sell', '卖出区间': 'band-sell2' }[b] || 'band-hold');
+    async function renderAnalysis() {
+      if (analysisBox.dataset.loaded === item.code) return;   // 同一标的不重复加载
+      analysisBox.dataset.loaded = item.code;
+      analysisBox.innerHTML = '';
+      analysisBox.append(skeleton({ style: 'min-height:420px' }));
+      try {
+        const an = await loadAnalysis();
+        const data = an.by_code[item.code] || null;
+        analysisBox.innerHTML = '';
+        if (!data) {
+          analysisBox.append(emptyState('暂无区间分析', '该标的缺少股息率数据（成分股息率未收录），无法计算买卖区间'));
+          return;
+        }
+        const sysKey = data.type === '股票' ? 'B' : 'A';
+        const scoreOf = (pname) => {
+          const w = an.presets[pname][sysKey];
+          let s = 0, tot = 0;
+          for (const k in w) {
+            const f = data.factors[k];
+            if (f && f.pct != null) { s += f.pct * w[k]; tot += w[k]; }
+          }
+          return tot ? s / tot : null;
+        };
+        const dash = el('div', { class: 'ana-dash' },
+          el('div', { class: 'ana-card' },
+            el('div', { class: 'ana-score-row' },
+              el('span', { class: 'ana-score' }, '—'),
+              el('span', { class: 'ana-band band-hold' }, '—')),
+            el('div', { class: 'ana-preset' },
+              ['稳健', '均衡', '进取'].map(p => el('button', { class: 'seg-btn' + (p === '均衡' ? ' active' : ''), onclick: () => { setPreset(p); } }, p))),
+            el('div', { class: 'ana-dy' },
+              el('span', {}, '股息率 ', el('b', {}, fmt2(data.factors.dy.v) + '%'), ' · 近5年分位 ', el('b', {}, fmt2(data.factors.dy.pct))),
+              el('span', { class: 'txt-3' }, '分位为贵贱度：0=最便宜，100=最贵（股息率分位已反向）'))),
+          el('div', { class: 'ana-card' },
+            el('div', { class: 'ana-factors' }),
+            el('div', { class: 'ana-tip' },
+              '打分 = Σ(因子分位 × 权重) ÷ 权重和；≤25 买入 / ≤45 建仓 / ≤65 持有 / ≤80 止盈 / >80 卖出。',
+              data.anchors ? ` 买入锚 ${fmt2(data.anchors.buy)}（${data.anchors.dist_buy >= 0 ? '+' : ''}${fmt2(data.anchors.dist_buy)}%）、卖出锚 ${fmt2(data.anchors.sell)}（${data.anchors.dist_sell >= 0 ? '+' : ''}${fmt2(data.anchors.dist_sell)}%）` : '')));
+        const frowBox = dash.querySelector('.ana-factors');
+        const scoreEl = dash.querySelector('.ana-score');
+        const bandEl = dash.querySelector('.ana-band');
+        const setPreset = (pname) => {
+          const w = an.presets[pname][sysKey];
+          for (const b of dash.querySelectorAll('.ana-preset .seg-btn')) b.classList.toggle('active', b.textContent === pname);
+          const s = scoreOf(pname);
+          const band = bandOf(s);
+          scoreEl.textContent = fmt2(s);
+          bandEl.textContent = band;
+          bandEl.className = 'ana-band ' + bandCls(band);
+          /* 因子行刷新（权重/得分随档位） */
+          for (const k in w) {
+            const f = data.factors[k];
+            if (!f) continue;
+            const row = frowBox.querySelector(`[data-k="${k}"]`);
+            if (!row) continue;
+            row.querySelector('.ana-fw').textContent = w[k] + '%';
+            row.querySelector('.ana-fscore').textContent = f.pct == null ? '—' : fmt2(f.pct * w[k] / 100);
+          }
+        };
+        /* 因子明细表 */
+        const order = sysKey === 'B' ? ['pe', 'pb', 'dy', 'price', 'trend', 'peg'] : ['dy', 'price', 'trend', 'sent'];
+        for (const k of order) {
+          const f = data.factors[k];
+          if (!f) continue;
+          const w0 = an.presets['均衡'][sysKey];
+          const row = el('div', { class: 'ana-frow', 'data-k': k },
+            el('span', { class: 'ana-fname' }, f.name),
+            el('span', { class: 'ana-fval' }, f.v == null ? '—' : fmt2(f.v) + (F_UNIT[k] || '')),
+            el('div', { class: 'ana-bar' }, el('i', { style: 'width:' + (f.pct == null ? 0 : f.pct) + '%' })),
+            el('span', { class: 'ana-fpct' }, f.pct == null ? '—' : fmt2(f.pct)),
+            el('span', { class: 'ana-fw' }, w0[k] + '%'),
+            el('span', { class: 'ana-fscore' }, f.pct == null ? '—' : fmt2(f.pct * w0[k] / 100)));
+          frowBox.append(row);
+        }
+        analysisBox.append(dash);
+        setPreset('均衡');
+      } catch (err) {
+        analysisBox.innerHTML = '';
+        analysisBox.append(errorBox(`区间分析加载失败：${err.message}`, () => { delete analysisBox.dataset.loaded; renderAnalysis(); }));
       }
     }
 

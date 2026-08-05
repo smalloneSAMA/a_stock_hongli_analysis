@@ -206,16 +206,20 @@ def update_summary(force=False):
     _update_summary.run(force=force)
 
 def update_web():
-    """前端数据包：web/data/ 四件套 + 国证指数成分（缓存/Excel/md 附录随 _gen_components 生成）"""
-    print("\n═══ 前端数据包更新（web/data/ + 国证成分）═══")
+    """前端数据包：web/data/ 四件套 + 买卖区间分析（S1反推+S3/S4打分） + 国证指数成分"""
+    print("\n═══ 前端数据包更新（web/data/ + 区间分析 + 国证成分）═══")
     import _gen_web_data as gwd
     gwd.build_manifest()
     gwd.build_stock_indicators()
     gwd.build_components()
     gwd.build_summary()
+    import _gen_analysis as ga
+    ga.main()   # S1 股息率反推（重建 analysis_dy.json）→ S3/S4 因子打分与点位锚（analysis.json）
     import _fetch_cnindex_components as fcc
     fcc.main()
-    print("\n⚠️ 请人工核对《红利介绍.md》中相关描述/快照数字是否需要同步（脚本不自动改该文件）。")
+    print("\n⚠️ 提示：回测报告（web/data/backtest.json + docs/回测报告.md）为研究产物，")
+    print("   需手动运行 python scripts/_backtest_analysis.py 更新（约1分钟，数据更新后建议重跑）。")
+    print("⚠️ 请人工核对《红利介绍.md》中相关描述/快照数字是否需要同步（脚本不自动改该文件）。")
     print("✅ 前端数据包更新完成（刷新浏览器即可看到新数据）")
 
 def update_fin_refresh():

@@ -2,7 +2,7 @@
 
 import { loadJSON, MANIFEST_URL } from './data.js';
 
-const VIEWS = ['index', 'etf', 'stock', 'summary'];
+const VIEWS = ['index', 'etf', 'stock', 'summary', 'backtest'];
 
 const viewEl = document.getElementById('view');
 const dateEl = document.getElementById('data-date');

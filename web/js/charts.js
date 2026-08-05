@@ -116,6 +116,8 @@ export function createKlineChart(el, opts) {
 
   /* ── line 模式：收盘折线 + 成交量 ── */
   let option;
+  /* S7 区间锚线（买入红/卖出绿虚线），line/candlestick 共用 */
+  const anchorLines = opts.anchorLines || [];
   if (mode === 'line') {
     const xAxisIndex = [0, 1];
     option = {
@@ -169,6 +171,17 @@ export function createKlineChart(el, opts) {
               { offset: 1, color: 'rgba(251,191,36,0.01)' },
             ]),
           },
+          ...(anchorLines.length ? {
+            markLine: {
+              silent: true, symbol: 'none', z: 7,
+              label: { position: 'insideEndTop', fontSize: 10, formatter: (p) => p.name },
+              data: anchorLines.map(a => ({
+                yAxis: a.value, name: a.label,
+                lineStyle: { color: a.color, type: 'dashed', width: 1 },
+                label: { color: a.color },
+              })),
+            },
+          } : {}),
         },
         { name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volumes, barMaxWidth: 5, sampling: 'lttb', itemStyle: { color: 'rgba(251,191,36,0.30)' } },
       ],
@@ -258,6 +271,17 @@ export function createKlineChart(el, opts) {
             color: C.up, color0: C.down, borderColor: C.up, borderColor0: C.down,
             borderWidth: 1,
           },
+          ...(anchorLines.length ? {
+            markLine: {
+              silent: true, symbol: 'none', z: 7,
+              label: { position: 'insideEndTop', fontSize: 10, formatter: (p) => p.name },
+              data: anchorLines.map(a => ({
+                yAxis: a.value, name: a.label,
+                lineStyle: { color: a.color, type: 'dashed', width: 1 },
+                label: { color: a.color },
+              })),
+            },
+          } : {}),
         },
         ...(maCount ? [
           { name: 'MA5', ...MA_STYLE, data: ma(closes, 5), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma5 } },
@@ -352,16 +376,51 @@ export function createKlineChart(el, opts) {
     requestAnimationFrame(() => { chart.resize(); });
   }
 
-  /* 副图（指标/净值）：仅 candlestick 模式；line 模式为空操作 */
+  /* 副图（指标/净值/股息率）：line 与 candlestick 模式均支持。defs 支持 markLines（分位线） */
   function setSubSeries(defs) {
-    if (mode !== 'candlestick') return;
     const series = defs ? defs.map((d, i) => ({
       name: d.name, type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: d.data,
       symbol: 'none', smooth: true, connectNulls: false, sampling: 'lttb', z: 8,
       lineStyle: { width: i === 0 ? 1.8 : 1.3, color: d.color }, itemStyle: { color: d.color },
+      ...(d.markLines ? {
+        markLine: {
+          silent: true, symbol: 'none',
+          label: { fontSize: 10, formatter: (p) => p.name },
+          data: d.markLines.map(m => ({
+            yAxis: m.value, name: m.label,
+            lineStyle: { color: m.color, type: 'dashed', width: 1 },
+            label: { color: m.color },
+          })),
+        },
+      } : {}),
     })) : [];
+    const volSeries = option.series[1];
+    if (mode === 'line') {
+      const cur = chart.getOption();   // 取当前主系列（含 addAnchorLines 合并的 markLine）
+      chart.setOption({
+        grid: [
+          { left: 62, right: 14, top: 30, height: defs ? '48%' : '58%' },
+          { left: 62, right: 14, top: defs ? '62%' : '74%', height: '12%' },
+          { left: 62, right: 14, top: '76%', height: '12%', show: !!defs },
+        ],
+        xAxis: [
+          { axisLabel: { show: false } },
+          { axisLabel: { show: defs ? false : true } },
+          { axisLabel: { show: !!defs } },
+        ],
+        yAxis: [{}, {}, { name: defs && defs[0] ? defs[0].unit || '' : '' }],
+        dataZoom: option.dataZoom.map((z) => ({ ...z, xAxisIndex: [0, 1, 2] })),
+        legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['收盘', '成交量', ...(defs ? defs.map(d => d.name) : [])] },
+        series: [cur.series[0], volSeries, ...series],
+      }, { replaceMerge: ['series', 'legend'] });
+      return;
+    }
+    if (mode !== 'candlestick') return;
     // 主图系列：K线 + MA（若有）+ 成交量；成交量位置随 maCount 偏移
-    const volSeries = option.series[1 + maCount];
+    const cur = chart.getOption();   // 取当前主系列（含 addAnchorLines 合并的 markLine）
+    const mainSeries = cur.series[0];
+    const maSeries = maCount ? cur.series.slice(1, 1 + maCount) : [];
+    const volSeries2 = cur.series[1 + maCount];
     chart.setOption({
       grid: [
         { left: 62, right: 14, top: 30, height: defs ? '48%' : '62%' },
@@ -376,12 +435,31 @@ export function createKlineChart(el, opts) {
       ],
       yAxis: [{}, {}, { name: defs && defs[0] ? defs[0].unit || '' : '' }],
       legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60'] : []), ...(defs ? defs.map(d => d.name) : [])] },
-      series: [option.series[0], ...(maCount ? option.series.slice(1, 1 + maCount) : []), volSeries, ...series],
+      series: [mainSeries, ...maSeries, volSeries2, ...series],
     }, { replaceMerge: ['series', 'legend'] });
   }
 
   window.addEventListener('resize', () => { chart.resize(); });
-  return { chart, setRange, setDateRange, onZoom, setSubSeries, dispose: () => { window.removeEventListener('keydown', kbdMove); chart.dispose(); } };
+
+  /* S7 锚线（数据可用后异步叠加）：list = [{value, label, color}]，line/candlestick 通用 */
+  function addAnchorLines(list) {
+    if (!list || !list.length) return;
+    chart.setOption({
+      series: [{
+        markLine: {
+          silent: true, symbol: 'none', z: 7,
+          label: { position: 'insideEndTop', fontSize: 10, formatter: (p) => p.name },
+          data: list.map(a => ({
+            yAxis: a.value, name: a.label,
+            lineStyle: { color: a.color, type: 'dashed', width: 1 },
+            label: { color: a.color },
+          })),
+        },
+      }],
+    });
+  }
+
+  return { chart, setRange, setDateRange, onZoom, setSubSeries, addAnchorLines, dispose: () => { window.removeEventListener('keydown', kbdMove); chart.dispose(); } };
 }
 
 /* 环形图（行业分布） */
