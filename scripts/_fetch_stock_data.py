@@ -82,11 +82,11 @@ def fetch_dividend(code):
             out.append({"ex_date": exdate, "bonus10": round(bonus, 3)})
     return out
 
-def update_dividends():
-    """20只全量分红 → cache/分红_{code}.json（缓存已存在则跳过，删除自愈重拉）"""
+def update_dividends(refresh=False):
+    """20只全量分红 → cache/分红_{code}.json（缓存已存在则跳过，删除自愈重拉；refresh=True 强制重拉）"""
     print("── 全量分红历史（东财，1s/只）──")
     for code, name, _t in STOCKS:
-        if os.path.exists(fh.cache_path("分红", code)):
+        if not refresh and os.path.exists(fh.cache_path("分红", code)):
             print(f"  [{code} {name}] 分红缓存已存在，跳过")
             continue
         try:
@@ -179,11 +179,11 @@ def fetch_share_history(code):
     except Exception:
         return []
 
-def update_share_hist():
-    """20只股本变动历史 → cache/股本_{code}.json（缓存存在跳过，删除自愈）"""
+def update_share_hist(refresh=False):
+    """20只股本变动历史 → cache/股本_{code}.json（缓存存在跳过；refresh=True 强制重拉）"""
     print("── 股本变动历史（东财 EH_EQUITY，1s/只）──")
     for code, name, _t in STOCKS:
-        if os.path.exists(fh.cache_path("股本", code)):
+        if not refresh and os.path.exists(fh.cache_path("股本", code)):
             print(f"  [{code} {name}] 股本缓存已存在，跳过")
             continue
         try:
@@ -196,14 +196,14 @@ def update_share_hist():
             print(f"  ❌ [{code} {name}] 股本拉取失败: {repr(e)[:80]}")
         time.sleep(0.3)
 
-def update_financials():
+def update_financials(refresh=False):
     """20只财报 → cache/财报_{code}.json（缓存存在且为新版字段则跳过；旧版缺归母净利自动重拉）
-    同时确保股本变动历史缓存存在（update_share_hist）"""
-    update_share_hist()
+    同时确保股本变动历史缓存存在（update_share_hist）；refresh=True 强制全量重拉"""
+    update_share_hist(refresh=refresh)
     print("── 季度财报（东财，1s/只）──")
     for code, name, _t in STOCKS:
-        stale = False
-        if os.path.exists(fh.cache_path("财报", code)):
+        stale = refresh
+        if os.path.exists(fh.cache_path("财报", code)) and not refresh:
             try:
                 old = json.load(open(fh.cache_path("财报", code), encoding="utf-8"))
                 if not old.get("rows") or "np" not in (old["rows"][0] or {}):
@@ -488,11 +488,45 @@ def export_excel():
     except PermissionError:
         print("⚠️  excel/股票历史.xlsx 被占用（可能已在Excel中打开），请关闭后重新执行导出")
 
+def check_financials():
+    """检测 20 只分红/财报是否有更新（如新财报公告/新除权日）：
+    拉最新数据与缓存对比（分红比最新除权日，财报比最新公告日），有变化则写回缓存。
+    每只约 2 个请求（东财限流 1s），共约 40-60s；适合季度末/定期执行。"""
+    print("── 分红/财报更新检测（东财，2s/只，约1分钟）──")
+    updated = []
+    for code, name, _t in STOCKS:
+        for typ, key, fetch in (("分红", "ex_date", fetch_dividend), ("财报", "notice_date", fetch_financials)):
+            try:
+                rows = fetch(code)
+                p = fh.cache_path(typ, code)
+                changed = not os.path.exists(p)
+                if not changed:
+                    old = json.load(open(p, encoding="utf-8"))
+                    old_rows = old.get("rows", [])
+                    new_v = rows[0].get(key) if rows else None
+                    old_v = old_rows[0].get(key) if old_rows else None
+                    changed = new_v != old_v or len(rows) != len(old_rows)
+                if changed:
+                    fh.save_cache(typ, code, {"code": code, "name": name,
+                                              "fetched_at": time.strftime("%Y-%m-%d"), "rows": rows})
+                    updated.append(f"{typ} {code} {name}（{len(rows)}条）")
+            except Exception as e:
+                print(f"  ❌ [{code} {name}] {typ}检测失败: {repr(e)[:60]}")
+            time.sleep(0.3)
+    if updated:
+        print(f"  📦 更新 {len(updated)} 项：{'；'.join(updated)}")
+    else:
+        print("  ✅ 分红/财报均无更新")
+    return updated
+
 # ── 主流程 ──────────────────────────────────────────────────────
-def update_all(refresh=False):
+def update_all(refresh=False, refresh_fin=False):
     print("═══ 推荐20只股票历史行情（不复权，2004-01-01起）═══")
-    update_dividends()   # 分红缓存缺失才拉（秒级），删除自愈
-    update_financials()  # 财报缓存缺失才拉，删除自愈
+    if refresh_fin:
+        check_financials()
+        return
+    update_dividends(refresh=refresh)   # 分红缓存缺失才拉（秒级），删除自愈；refresh 强制重拉
+    update_financials(refresh=refresh)  # 财报缓存缺失才拉，删除自愈
     for code, name, tcode in STOCKS:
         if refresh:
             rows = fetch_kline(tcode, code, full=True)
@@ -511,5 +545,6 @@ def update_all(refresh=False):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--refresh", action="store_true", help="忽略缓存，全量重拉")
+    ap.add_argument("--refresh-fin", action="store_true", help="检测分红/财报更新（对比最新除权日/公告日，有变化才写缓存）")
     args = ap.parse_args()
-    update_all(refresh=args.refresh)
+    update_all(refresh=args.refresh, refresh_fin=args.refresh_fin)

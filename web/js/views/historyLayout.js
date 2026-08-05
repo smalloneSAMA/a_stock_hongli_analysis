@@ -207,6 +207,7 @@ export function buildHistoryView(container, cfg) {
       { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
       { key: 'name', label: '名称', align: 'left', sortable: true },
       { key: 'ind', label: '一级行业', align: 'left', sortable: true },
+      { key: 'ind3', label: '二级行业', align: 'left', sortable: true, fmt: (v) => (v ? v : '—') },
       { key: 'weight', label: '权重(%)', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
       { key: 'div_yield', label: '股息率(%)', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
     ];

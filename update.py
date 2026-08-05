@@ -7,7 +7,9 @@
   3. 指数成分股     —— 重下载中证官网样本文件 + 重新生成《红利指数与ETF成分股.md》[运行前提醒]
   4. 成分股汇总表   —— 解析成分股md → 行业/行情/股息率 → 缓存 → excel/红利成分股汇总.xlsx
   5. 股票历史行情   —— 推荐20只股票日线（不复权，2004-01-01起）[首次全量较慢]
-  6. 全部更新
+  6. 全部更新       —— 依次执行上述 + 分红/财报检测 + 前端数据包
+  7. 前端数据包     —— web/data/（manifest/components/summary/股票指标）+ 国证指数成分（缓存/Excel）
+  8. 分红/财报检测   —— 对比最新除权日/公告日，有更新才写缓存（季度末定期执行）
   0. 退出
 用法: python update.py
 """
@@ -203,6 +205,25 @@ def update_summary(force=False):
     import _update_summary
     _update_summary.run(force=force)
 
+def update_web():
+    """前端数据包：web/data/ 四件套 + 国证指数成分（缓存/Excel/md 附录随 _gen_components 生成）"""
+    print("\n═══ 前端数据包更新（web/data/ + 国证成分）═══")
+    import _gen_web_data as gwd
+    gwd.build_manifest()
+    gwd.build_stock_indicators()
+    gwd.build_components()
+    gwd.build_summary()
+    import _fetch_cnindex_components as fcc
+    fcc.main()
+    print("\n⚠️ 请人工核对《红利介绍.md》中相关描述/快照数字是否需要同步（脚本不自动改该文件）。")
+    print("✅ 前端数据包更新完成（刷新浏览器即可看到新数据）")
+
+def update_fin_refresh():
+    print("\n═══ 分红/财报更新检测（季度末/定期执行）═══")
+    fsd.check_financials()
+    fsd.export_excel()   # 指标列（股息率/PE等）依赖财报，检测后重导出
+    print("✅ 分红/财报检测完成")
+
 def main():
     print("═" * 50)
     print("  红利数据更新工具")
@@ -216,6 +237,8 @@ def main():
   4. 成分股汇总表（解析md→行业/行情/股息率→缓存→汇总Excel）
   5. 股票历史行情（20只推荐股，不复权，2004-01-01起）
   6. 全部更新
+  7. 前端数据包（web/展示数据 + 国证指数成分）
+  8. 分红/财报更新检测（季度末定期执行）
   0. 退出
 """)
         ch = input("请输入编号: ").strip()
@@ -257,6 +280,19 @@ def main():
             print("\n—— 股票历史 ——")
             if ask("20只推荐股历史行情（2004年起，首次全量约2-3分钟）是否更新？"):
                 update_stocks()
+            print("\n—— 分红/财报检测 ——")
+            if ask("检测20只分红/财报是否有更新（约1分钟），是否执行？"):
+                update_fin_refresh()
+            print("\n—— 前端数据包 ——")
+            if ask("重新生成前端数据包（web/data/ + 国证成分，约10秒），是否执行？"):
+                update_web()
+        elif ch == "7":
+            if ask("重新生成前端数据包（web/data/ + 国证成分，约10秒），是否继续？"):
+                update_web()
+        elif ch == "8":
+            msg = "将检测20只分红/财报更新（东财，约1分钟；有变化才写缓存），是否继续？"
+            if ask(msg):
+                update_fin_refresh()
         else:
             print("无效输入")
 

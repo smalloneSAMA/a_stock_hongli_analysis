@@ -6,7 +6,7 @@
 - 000151：东财成分表 + 腾讯名称
 用法: python _gen_components.py [--force]
 """
-import sys, io, os, json, re, time, glob, requests, pandas as pd, urllib.request
+import sys, io, os, json, re, time, glob, datetime, requests, pandas as pd, urllib.request
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -207,7 +207,7 @@ def build():
     out = []
     out.append("# 红利指数与ETF成分股一览")
     out.append("")
-    out.append("> **数据日期：2026-08-02** · 对应《红利介绍.md》精选池（指数10只 + ETF 11只）")
+    out.append(f"> **数据日期：{datetime.date.today().strftime('%Y-%m-%d')}** · 对应《红利介绍.md》精选池（指数10只 + ETF 11只）")
     out.append(">")
     out.append("> **数据来源**：")
     out.append("> - 指数成分股：中证指数官网（csindex.com.cn）官方样本/权重文件（成分截止 2026-07-31，权重按 2026-06-30 收盘计算）；中证800自由现金流 932368 为东方财富指数成分表（2026-07-31）叠加中证官网十大权重")

@@ -43,12 +43,11 @@ export default {
         el('div', { class: 'desc' }, '《红利股票推荐20只》· 不复权日线 2004-01-01 起 · 逐日指标与 excel/股票历史.xlsx 同口径')),
       el('div', { class: 'txt-3', style: 'font-size:12px' }, '数据日期 ' + m.data_date)));
 
-    /* 列表信息全部来自 manifest（含最新价/涨跌/股息率），K线与指标选中后按需加载 */
+    /* 列表信息全部来自 manifest（含最新价/涨跌/股息率/一二级行业），K线与指标选中后按需加载 */
     const items = m.stocks.map((s) => ({
       code: s.code, name: s.name, price: s.last_close, chg: s.last_chg,
-      subHtml: s.last_dy == null
-        ? el('span', { class: 'txt-3', style: 'font-size:10.5px' }, '无指标数据')
-        : el('span', { class: 'txt-brand', style: 'font-size:10.5px;font-weight:600' }, `股息率 ${fmt2(s.last_dy)}%`),
+      subHtml: el('span', { class: 'txt-3', style: 'font-size:10.5px' },
+        (s.ind || '—') + ' · 股息率 ' + (s.last_dy == null ? '—' : fmt2(s.last_dy) + '%')),
     }));
 
     buildHistoryView(container, {
@@ -71,6 +70,10 @@ export default {
         el('span', {}, 'PE = 总市值(收盘×当日总股本) ÷ 归母净利（TTM/年化）；PEG = PE-TTM ÷ TTM净利同比增速'),
         el('span', {}, '成交额按 量×100×(高+低+收)/3 估算；单位：万手 / 亿元'),
       ],
+      quoteExtra: (obj, rows, item) => {
+        const s = m.stocks.find(x => x.code === obj.code) || {};
+        return (s.ind || '—') + ' · ' + (s.ind3 || '—');
+      },
       columns,
       buildTableRows: (rows, k, ind) => rows.map((r, i) => ({
         日期: r.date, 开盘: r.open, 收盘: r.close,

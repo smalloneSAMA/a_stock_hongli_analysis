@@ -123,6 +123,11 @@ def build_manifest():
                        "last_close": close, "last_chg": chg})
 
     # 股票列表补最新股息率（读已生成的指标文件末行）
+    # 行业（一二级）：_成分股汇总表.json（东财 f127 申万细分 → map_ind 归并）
+    t_path = os.path.join(BASE, "cache", "_成分股汇总表.json")
+    ind_map = {}
+    if os.path.exists(t_path):
+        ind_map = {r["code"]: r for r in json.load(open(t_path, encoding="utf-8"))}
     for s in stocks:
         p = os.path.join(WEB_DATA, "stocks", f"{s['code']}.json")
         if os.path.exists(p):
@@ -133,6 +138,9 @@ def build_manifest():
             except Exception:
                 pass
         s.setdefault("last_dy", None)
+        t = ind_map.get(s["code"], {})
+        s["ind"] = t.get("ind", "")
+        s["ind3"] = t.get("ind3", "")
 
     manifest = {
         "data_date": max(dates) if dates else "",
@@ -206,7 +214,8 @@ def build_components():
                 continue
             t = tmap.get(c, {})
             rows.append({"code": c, "name": s.get("name", ""), "weight": w,
-                         "ind": t.get("ind", ""), "div_yield": s.get("div_yield_calc")})
+                         "ind": t.get("ind", ""), "ind3": t.get("ind3", ""),
+                         "div_yield": s.get("div_yield_calc")})
         rows.sort(key=lambda r: -(r["weight"] or 0))
         return {"name": name, "n": len(rows), "stocks": rows}
 
@@ -226,7 +235,7 @@ def build_components():
         try:
             cc = json.load(open(p, encoding="utf-8"))
             stocks = [{"code": s["code"], "name": s["name"], "weight": s.get("weight"),
-                       "ind": s.get("ind", ""), "div_yield": None} for s in cc.get("stocks", [])]
+                       "ind": s.get("ind", ""), "ind3": s.get("ind3", ""), "div_yield": None} for s in cc.get("stocks", [])]
             out["by_index"][code] = {"name": cc.get("name", name), "n": len(stocks), "stocks": stocks,
                                       "note": f"国证官网成分（{cc.get('sample_date', '')}），仅前十大权重公开"}
             print(f"  📥 {code} {cc.get('name', name)}: 国证官网补充 {len(stocks)} 只（{cc.get('sample_date', '')}）")
