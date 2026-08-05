@@ -104,6 +104,12 @@ export function createKlineChart(el, opts) {
     zoomDispatch(si / (n - 1) * 100, ei / (n - 1) * 100);
   }
 
+  /* 当前 dataZoom 可见窗口（百分比 0-100） */
+  function getZoom() {
+    const z = chart.getOption().dataZoom[0] || {};
+    return { start: z.start ?? 0, end: z.end ?? 100 };
+  }
+
   /* slider 拖动/范围变更回调：cb(startPct, endPct)；返回取消函数 */
   let zoomCbs = [];
   const onZoomHandler = (p) => {
@@ -483,7 +489,7 @@ export function createKlineChart(el, opts) {
     chart.setOption({ series: cur.series }, { replaceMerge: ['series'] });
   }
 
-  return { chart, setRange, setDateRange, onZoom, setSubSeries, addAnchorLines, dispose: () => { window.removeEventListener('keydown', kbdMove); chart.dispose(); } };
+  return { chart, setRange, setDateRange, onZoom, getZoom, setSubSeries, addAnchorLines, dispose: () => { window.removeEventListener('keydown', kbdMove); chart.dispose(); } };
 }
 
 /* 环形图（行业分布） */

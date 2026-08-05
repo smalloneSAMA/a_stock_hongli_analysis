@@ -74,22 +74,23 @@ export function buildHistoryView(container, cfg) {
   const codeState = {};
 
   /* S7 图表叠加：区间锚线（主图虚线）+ 股息率副图（曲线 + 90/10分位线）
-     锚与分位线按时间范围窗口动态计算（全部/5年/3年/1年），范围切换时刷新。
-     ETF 用跟踪指数序列计算（价格含除息/折溢价噪声），锚按场内价换算显示 */
-  const RANGE_WINDOW = { all: 0, '5y': 1250, '3y': 756, '1y': 252 };   // 交易日（0=全历史）
+     锚与分位线按当前 dataZoom 可见窗口动态计算（拖动/范围按钮/自定义日期统一走 onZoom），
+     最小窗口 60 交易日（分位稳定性）。ETF 用跟踪指数序列计算，锚按场内价换算显示 */
+  const MIN_WINDOW = 60;   // 交易日
   let analysisEnt = null;      // 当前标的的 analysis 条目
   let analysisCalcRows = null; // 计算用行情（ETF=跟踪指数，其他=自身）
   let analysisScale = 1;       // ETF 场内价/指数点位 换算系数
+  let analysisZoomOff = null;  // onZoom 订阅（renderMain 重渲染时先释放）
 
   /* dy 序列（统一公式）：dy_t = dyNow × closeNow(计算序列末值) / close_t
-     返回 {dataByDate: Map, p10, p90}，p10/p90 为窗口分位 */
+     返回 {dataByDate: Map, p10, p90}，p10/p90 为可见窗口分位 */
   const buildDySeries = (ent, calcRows, winDays) => {
     const dyNow = ent.factors.dy && ent.factors.dy.v;
     if (dyNow == null || !calcRows.length) return null;
     const n = calcRows.length;
     const closeNow = calcRows[n - 1].close;
     if (!closeNow) return null;
-    const win = winDays > 0 ? Math.min(winDays, n) : n;
+    const win = Math.max(MIN_WINDOW, Math.min(winDays, n));
     const vals = [];
     const dataByDate = new Map();
     for (let i = n - win; i < n; i++) {
@@ -104,11 +105,10 @@ export function buildHistoryView(container, cfg) {
     return { dataByDate, p10: q(0.1), p90: q(0.9) };
   };
 
-  /* 按窗口刷新锚线 + dy 副图（范围按钮/初次加载共用）；chartRows = 图表显示行（锚换算基准） */
-  const applyAnalysisToChart = (chartApi, chartRows, rangeKey) => {
+  /* 按窗口刷新锚线 + dy 副图（chartRows = 图表显示行，锚换算基准） */
+  const applyAnalysisToChart = (chartApi, chartRows, winDays) => {
     if (!analysisEnt || !analysisEnt.anchors) return;
     const calcRows = analysisCalcRows || chartRows;
-    const winDays = RANGE_WINDOW[rangeKey] ?? 1250;
     const dyS = buildDySeries(analysisEnt, calcRows, winDays);
     if (!dyS) return;
     const closeCalc = calcRows[calcRows.length - 1].close;
@@ -132,6 +132,23 @@ export function buildHistoryView(container, cfg) {
     }]);
   };
 
+  /* dataZoom 变化 → 按当前可见窗口刷新锚/分位线（rAF 节流防拖动卡顿；所见即所得） */
+  const bindZoomAnalysis = (chartApi, rows) => {
+    if (analysisZoomOff) { analysisZoomOff(); analysisZoomOff = null; }
+    let raf = 0;
+    analysisZoomOff = chartApi.onZoom((s, e) => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (state.chart !== chartApi) return;
+        const approx = Math.round((e - s) / 100 * rows.length);
+        /* 按钮触发的 dataZoom 用精确窗口（±5天容差吸收百分比舍入）；用户拖动则清标志用近似窗口 */
+        const win = Math.round((e - s) / 100 * rows.length);
+        applyAnalysisToChart(chartApi, rows, Number.isFinite(win) ? win : rows.length);
+        applyAnalysisToChart(chartApi, rows, Number.isFinite(win) ? win : rows.length);
+      });
+    });
+  };
+
   const applyAnalysisOverlay = (chartApi, rows, code) => {
     loadAnalysis().then(async (an) => {
       if (state.chart !== chartApi) return;   // 已切换标的/重新渲染，丢弃过期回调
@@ -153,7 +170,11 @@ export function buildHistoryView(container, cfg) {
         } catch { /* 指数行情加载失败则退化为自身序列 */ }
       }
       if (state.chart !== chartApi) return;
-      applyAnalysisToChart(chartApi, rows, state.range);
+      bindZoomAnalysis(chartApi, rows);
+      /* 初次按当前 dataZoom 可见窗口计算 */
+      const dz = chartApi.getZoom?.() || null;
+      const win = dz ? Math.round((dz.end - dz.start) / 100 * rows.length) : rows.length;
+      applyAnalysisToChart(chartApi, rows, win);
     }).catch(() => { /* 分析数据加载失败不影响图表 */ });
   };
 
@@ -488,9 +509,7 @@ export function buildHistoryView(container, cfg) {
       const btns = [];
       for (const [key, label] of ranges) {
         const b = el('button', { class: 'seg-btn' + (state.range === key ? ' active' : ''), onclick: () => {
-          chartApi.setRange(key);
-          /* 锚线/分位线随范围窗口动态刷新（analysis 数据已加载时） */
-          if (analysisEnt && state.chart === chartApi) applyAnalysisToChart(chartApi, rows, key);
+          chartApi.setRange(key);   /* dataZoom 事件 → onZoom 回调统一按可见窗口刷新锚/分位线 */
         } }, label);
         btns.push([key, b]);
         g.append(b);
