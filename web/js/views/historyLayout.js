@@ -189,12 +189,14 @@ export function buildHistoryView(container, cfg) {
   const itemsOf = () => (cfg.groups ? cfg.groups[groupIdx].items : cfg.items);
   let listApi = null;
 
-  /* 分组切换：保持当前选中 code（若在新组），否则选中新组第一只 */
-  function switchGroup(i) {
+  /* 分组切换：保持当前选中 code（若在新组），否则选中新组第一只；
+     auto=false 时不自动选中（搜索结果点击场景，由调用方 select） */
+  function switchGroup(i, { auto = true } = {}) {
     if (i === groupIdx || !cfg.groups) return;
     groupIdx = i;
     panel.querySelectorAll('.ticker-head .seg-btn').forEach((b, bi) => b.classList.toggle('active', bi === i));
     listApi.refresh(cfg.groups[i].items);
+    if (!auto) return;
     if (state.code && cfg.groups[i].items.some(it => it.code === state.code)) {
       listApi.setActive(state.code);
     } else if (cfg.groups[i].items.length) {
@@ -202,10 +204,21 @@ export function buildHistoryView(container, cfg) {
     }
   }
 
+  /* 全量列表（搜索范围：推荐+其他成分股全部可搜） */
+  const allItems = cfg.groups ? cfg.groups.flatMap(g => g.items) : null;
+
   listApi = renderTickerList(panel, itemsOf(), {
-    onSelect: (it) => select(it),
+    onSelect: (it) => {
+      /* 搜索结果可能属于其他分组：自动切换到该分组 tab（不重复 select，由下方 select 接管） */
+      if (cfg.groups) {
+        const gi = cfg.groups.findIndex(g => g.items.some(x => x.code === it.code));
+        if (gi >= 0 && gi !== groupIdx) switchGroup(gi, { auto: false });
+      }
+      select(it);
+    },
     activeCode: state.code,
     searchable: true,
+    searchItems: allItems || undefined,
     title: panelTitle,
   });
 

@@ -85,7 +85,7 @@ export function errorBox(message, onRetry) {
  * 选中回调 onSelect(item)
  * title: 可选标题区（Node），渲染在搜索框之前（注意本函数会清空 container）
  */
-export function renderTickerList(container, items, { onSelect, activeCode, searchable = true, title = null }) {
+export function renderTickerList(container, items, { onSelect, activeCode, searchable = true, title = null, searchItems = null }) {
   container.innerHTML = '';
   if (title) container.append(title);
   const searchBox = searchable ? el('input', { class: 'ticker-search', type: 'search', placeholder: '搜索代码 / 名称…', 'aria-label': '搜索标的' }) : null;
@@ -119,13 +119,14 @@ export function renderTickerList(container, items, { onSelect, activeCode, searc
   if (searchBox) {
     searchBox.addEventListener('input', () => {
       const q = searchBox.value.trim().toLowerCase();
-      current = q ? items.filter(i => i.name.toLowerCase().includes(q) || i.code.includes(q)) : items;
+      /* 搜索范围：searchItems（如全量分组）优先，否则当前列表 */
+      current = q ? (searchItems || items).filter(i => i.name.toLowerCase().includes(q) || i.code.includes(q)) : items;
       paint(current);
     });
   }
   return {
     setActive(code) { activeCode = code; paint(current); },
-    /* 切换分组：替换列表数据并清空搜索 */
+    /* 切换分组：替换列表数据并清空搜索（searchItems 同步） */
     refresh(newItems) {
       items = newItems; current = newItems;
       if (searchBox) searchBox.value = '';
