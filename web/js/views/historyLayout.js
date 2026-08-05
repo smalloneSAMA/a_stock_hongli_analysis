@@ -82,18 +82,26 @@ export function buildHistoryView(container, cfg) {
   let analysisScale = 1;       // ETF 场内价/指数点位 换算系数
   let analysisZoomOff = null;  // onZoom 订阅（renderMain 重渲染时先释放）
 
-  /* dy 序列（统一公式）：dy_t = dyNow × closeNow(计算序列末值) / close_t
+  /* dy 序列（统一公式）：dy_t = dyNow × closeNow(最新收盘) / close_t
+     窗口按 dataZoom 百分比定位（拖动平移时窗口内容随之变化）；最小跨度 MIN_WINDOW 天。
      返回 {dataByDate: Map, p10, p90}，p10/p90 为可见窗口分位 */
-  const buildDySeries = (ent, calcRows, winDays) => {
+  const buildDySeries = (ent, calcRows, sPct, ePct) => {
     const dyNow = ent.factors.dy && ent.factors.dy.v;
     if (dyNow == null || !calcRows.length) return null;
     const n = calcRows.length;
     const closeNow = calcRows[n - 1].close;
     if (!closeNow) return null;
-    const win = Math.max(MIN_WINDOW, Math.min(winDays, n));
+    let si = Math.max(0, Math.round(sPct / 100 * (n - 1)));
+    let ei = Math.min(n - 1, Math.round(ePct / 100 * (n - 1)));
+    if (ei - si + 1 < MIN_WINDOW) {   // 窄窗口保护：以当前窗口为中心扩展
+      const mid = Math.round((si + ei) / 2);
+      si = Math.max(0, mid - Math.floor(MIN_WINDOW / 2));
+      ei = Math.min(n - 1, si + MIN_WINDOW - 1);
+      if (ei - si + 1 < MIN_WINDOW) si = Math.max(0, ei - MIN_WINDOW + 1);
+    }
     const vals = [];
     const dataByDate = new Map();
-    for (let i = n - win; i < n; i++) {
+    for (let i = si; i <= ei; i++) {
       const c = calcRows[i].close;
       if (!c) continue;
       const v = Number((dyNow * closeNow / c).toFixed(4));
@@ -105,11 +113,11 @@ export function buildHistoryView(container, cfg) {
     return { dataByDate, p10: q(0.1), p90: q(0.9) };
   };
 
-  /* 按窗口刷新锚线 + dy 副图（chartRows = 图表显示行，锚换算基准） */
-  const applyAnalysisToChart = (chartApi, chartRows, winDays) => {
+  /* 按 dataZoom 可见窗口刷新锚线 + dy 副图（chartRows = 图表显示行，锚换算基准） */
+  const applyAnalysisToChart = (chartApi, chartRows, sPct, ePct) => {
     if (!analysisEnt || !analysisEnt.anchors) return;
     const calcRows = analysisCalcRows || chartRows;
-    const dyS = buildDySeries(analysisEnt, calcRows, winDays);
+    const dyS = buildDySeries(analysisEnt, calcRows, sPct, ePct);
     if (!dyS) return;
     const closeCalc = calcRows[calcRows.length - 1].close;
     const dyNow = analysisEnt.factors.dy.v;
@@ -140,11 +148,7 @@ export function buildHistoryView(container, cfg) {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         if (state.chart !== chartApi) return;
-        const approx = Math.round((e - s) / 100 * rows.length);
-        /* 按钮触发的 dataZoom 用精确窗口（±5天容差吸收百分比舍入）；用户拖动则清标志用近似窗口 */
-        const win = Math.round((e - s) / 100 * rows.length);
-        applyAnalysisToChart(chartApi, rows, Number.isFinite(win) ? win : rows.length);
-        applyAnalysisToChart(chartApi, rows, Number.isFinite(win) ? win : rows.length);
+        applyAnalysisToChart(chartApi, rows, s, e);
       });
     });
   };
@@ -173,8 +177,7 @@ export function buildHistoryView(container, cfg) {
       bindZoomAnalysis(chartApi, rows);
       /* 初次按当前 dataZoom 可见窗口计算 */
       const dz = chartApi.getZoom?.() || null;
-      const win = dz ? Math.round((dz.end - dz.start) / 100 * rows.length) : rows.length;
-      applyAnalysisToChart(chartApi, rows, win);
+      applyAnalysisToChart(chartApi, rows, dz ? dz.start : 0, dz ? dz.end : 100);
     }).catch(() => { /* 分析数据加载失败不影响图表 */ });
   };
 

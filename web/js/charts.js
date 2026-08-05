@@ -61,8 +61,10 @@ export function createKlineChart(el, opts) {
     + `<b style="font-weight:600;color:${color || '#E2E8F0'}">${v}</b></div>`;
 
   const dataZoomBase = [
-    // 仅保留 slider 拖拉条：滚轮缩放（inside）已按用户要求移除
+    // slider 拖拉条（index 0，zoomDispatch 依赖）
     { type: 'slider', bottom: 2, height: 16, borderColor: 'rgba(51,65,85,0.5)', backgroundColor: 'rgba(15,23,42,0.5)', fillerColor: 'rgba(251,191,36,0.14)', handleStyle: { color: '#FBBF24' }, moveHandleStyle: { color: '#FBBF24' }, textStyle: { color: C.text3, fontSize: 9 }, dataBackground: { lineStyle: { color: '#334155' }, areaStyle: { color: 'rgba(51,65,85,0.25)' } }, minValueSpan: 20 },
+    // 鼠标按住左右拖动平移（滚轮缩放按用户要求保持关闭）
+    { type: 'inside', zoomOnMouseWheel: false, moveOnMouseMove: true, moveOnMouseWheel: false, preventDefaultMouseMove: true, minValueSpan: 20 },
   ];
 
   const zoomDispatch = (start, end) => {
@@ -110,10 +112,15 @@ export function createKlineChart(el, opts) {
     return { start: z.start ?? 0, end: z.end ?? 100 };
   }
 
-  /* slider 拖动/范围变更回调：cb(startPct, endPct)；返回取消函数 */
+  /* slider 拖动/范围变更回调：cb(startPct, endPct)；返回取消函数
+     多 dataZoom 实例（slider+inside）时事件参数在 batch 数组里，取 slider(index 0) 的值 */
   let zoomCbs = [];
   const onZoomHandler = (p) => {
-    for (const cb of zoomCbs) cb(p.start, p.end);
+    const items = Array.isArray(p.batch) && p.batch.length ? p.batch : [p];
+    const it = items.find((x) => x.dataZoomIndex === 0) || items[0];
+    if (it && typeof it.start === 'number') {
+      for (const cb of zoomCbs) cb(it.start, it.end);
+    }
   };
   function onZoom(cb) {
     zoomCbs.push(cb);
@@ -471,22 +478,22 @@ export function createKlineChart(el, opts) {
   window.addEventListener('resize', () => { chart.resize(); });
 
   /* S7 锚线（数据可用后异步叠加；重复调用为替换语义）：list = [{value, label, color}]，line/candlestick 通用
-     从 getOption 重组系列（保留成交量/overlay/副图），replaceMerge 防 markLine.data 按索引残留旧线 */
+     merge 模式按索引更新 series[0].markLine（data 长度恒定=2，逐索引替换无残留，不重建其他系列） */
   function addAnchorLines(list) {
     if (!list || !list.length) return;
-    const cur = chart.getOption();
-    const main = cur.series[0];
-    if (!main) return;
-    main.markLine = {
-      silent: true, symbol: 'none', z: 7,
-      label: { position: 'insideEndTop', fontSize: 10, formatter: (p) => p.name },
-      data: list.map(a => ({
-        yAxis: a.value, name: a.label,
-        lineStyle: { color: a.color, type: 'dashed', width: 1 },
-        label: { color: a.color },
-      })),
-    };
-    chart.setOption({ series: cur.series }, { replaceMerge: ['series'] });
+    chart.setOption({
+      series: [{
+        markLine: {
+          silent: true, symbol: 'none', z: 7,
+          label: { position: 'insideEndTop', fontSize: 10, formatter: (p) => p.name },
+          data: list.map(a => ({
+            yAxis: a.value, name: a.label,
+            lineStyle: { color: a.color, type: 'dashed', width: 1 },
+            label: { color: a.color },
+          })),
+        },
+      }],
+    });
   }
 
   return { chart, setRange, setDateRange, onZoom, getZoom, setSubSeries, addAnchorLines, dispose: () => { window.removeEventListener('keydown', kbdMove); chart.dispose(); } };
