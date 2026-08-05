@@ -222,6 +222,21 @@ def update_web():
     print("⚠️ 请人工核对《红利介绍.md》中相关描述/快照数字是否需要同步（脚本不自动改该文件）。")
     print("✅ 前端数据包更新完成（刷新浏览器即可看到新数据）")
 
+def update_pool():
+    """其他成份股（精选池 289 − 推荐 20）：K线增量 + 缺失补齐 → 重算指标与区间分析"""
+    print("\n═══ 其他成份股更新（269 只，首次全量约 20-30 分钟）═══")
+    import _fetch_pool_data as fpd
+    fpd.main()
+    print("\n── 重算前端数据包（指标 + 区间分析）──")
+    import _gen_web_data as gwd
+    gwd.build_manifest()
+    gwd.build_stock_indicators()
+    import _gen_analysis as ga
+    ga.main()
+    print("\n⚠️  季度末请执行：python scripts/_fetch_pool_data.py --check-fin（分红/财报/股本检测，约15分钟）")
+    print("✅ 其他成份股更新完成（刷新浏览器即可）")
+
+
 def update_fin_refresh():
     print("\n═══ 分红/财报更新检测（季度末/定期执行）═══")
     fsd.check_financials()
@@ -243,6 +258,7 @@ def main():
   6. 全部更新
   7. 前端数据包（web/展示数据 + 国证指数成分）
   8. 分红/财报更新检测（季度末定期执行）
+  9. 其他成份股（精选池289−推荐20，首次全量约20-30分钟）
   0. 退出
 """)
         ch = input("请输入编号: ").strip()
@@ -297,6 +313,10 @@ def main():
             msg = "将检测20只分红/财报更新（东财，约1分钟；有变化才写缓存），是否继续？"
             if ask(msg):
                 update_fin_refresh()
+        elif ch == "9":
+            msg = "其他成份股：首次全量约20-30分钟（分批可用 --batch），之后增量约3分钟。是否继续？"
+            if ask(msg):
+                update_pool()
         else:
             print("无效输入")
 

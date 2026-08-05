@@ -44,15 +44,27 @@ export function buildHistoryView(container, cfg) {
    *   kind: 'index'|'etf'|'stock',
    *   title,
    *   items: [{code, name, price, chg, subHtml}],   // 来自 manifest，含最新价
+   *   groups: [{label, items}...]                  // 可选：左侧列表分组切换（股票：推荐/其他成份股）
    *   chartUnit, subControl, indicatorOptions,
    *   quoteExtra(obj, rows), itemSub(obj, rows),    // 可选兜底
    *   chartNote(obj, rows), columns, buildTableRows(rows, k, ind),
    * } */
   const kinds = { index: '指数', etf: 'ETF', stock: '股票' };
 
+  /* 列表标题：普通（单组）或带分组切换按钮 */
+  const totalItems = cfg.groups ? cfg.groups.reduce((a, g) => a + g.items.length, 0) : cfg.items.length;
+  const panelTitle = el('div', { class: 'ticker-head' },
+    el('div', { class: 'card-title' }, cfg.title + '（' + totalItems + '）'),
+    cfg.groups ? el('div', { class: 'seg-group', role: 'group', 'aria-label': '列表分组' }) : null);
+  if (cfg.groups) {
+    for (const [i, g] of cfg.groups.entries()) {
+      panelTitle.querySelector('.seg-group').append(
+        el('button', { class: 'seg-btn' + (i === 0 ? ' active' : ''), onclick: () => switchGroup(i) }, g.label));
+    }
+  }
+
   const layout = el('div', { class: 'view-layout' },
-    el('aside', { class: 'ticker-panel card' },
-      el('div', { class: 'card-title', style: 'margin:12px 14px 4px' }, cfg.title + '（' + cfg.items.length + '）')),
+    el('aside', { class: 'ticker-panel card' }, panelTitle),
     el('section', { class: 'main-panel' },
       el('div', { class: 'card main-card' }, emptyState('选择左侧标的', '点击列表中的标的查看历史行情'))));
   container.append(layout);
@@ -67,10 +79,23 @@ export function buildHistoryView(container, cfg) {
       if (state.chart !== chartApi) return;   // 已切换标的/重新渲染，丢弃过期回调
       const ent = an.by_code[code];
       if (!ent || !ent.anchors) return;
-      chartApi.addAnchorLines([
-        { value: ent.anchors.buy, label: `买入锚 ${fmt2(ent.anchors.buy)}（${ent.anchors.dist_buy >= 0 ? '+' : ''}${fmt2(ent.anchors.dist_buy)}%）`, color: '#F6465D' },
-        { value: ent.anchors.sell, label: `卖出锚 ${fmt2(ent.anchors.sell)}（${ent.anchors.dist_sell >= 0 ? '+' : ''}${fmt2(ent.anchors.dist_sell)}%）`, color: '#34D399' },
-      ]);
+      /* 锚线（指数默认；ETF 锚为跟踪指数点位→按当前折溢价比例换算为场内价；股票 cfg.anchors===false 关闭） */
+      if (cfg.anchors !== false) {
+        let buy = ent.anchors.buy, sell = ent.anchors.sell;
+        if (ent.type === 'ETF') {
+          const last = rows.length ? rows[rows.length - 1].close : null;
+          const idxNow = ent.factors.price && ent.factors.price.v;
+          if (last && idxNow) {
+            const scale = last / idxNow;
+            buy = +(buy * scale).toFixed(3);
+            sell = +(sell * scale).toFixed(3);
+          }
+        }
+        chartApi.addAnchorLines([
+          { value: buy, label: `买入锚 ${fmt2(buy)}（${ent.anchors.dist_buy >= 0 ? '+' : ''}${fmt2(ent.anchors.dist_buy)}%）`, color: '#F6465D' },
+          { value: sell, label: `卖出锚 ${fmt2(sell)}（${ent.anchors.dist_sell >= 0 ? '+' : ''}${fmt2(ent.anchors.dist_sell)}%）`, color: '#34D399' },
+        ]);
+      }
       /* dy 副图：ETF 用后端序列（K线为场内价、锚为指数点位，量纲不同无法重算）；指数/股票前端重算 dy_t = dyNow×closeNow/close_t */
       const dyNow = ent.factors.dy && ent.factors.dy.v;
       const closeNow = ent.factors.price && ent.factors.price.v;
@@ -97,14 +122,34 @@ export function buildHistoryView(container, cfg) {
   const panel = layout.querySelector('.ticker-panel');
   const mainCard = layout.querySelector('.main-card');
 
-  const listApi = renderTickerList(panel, cfg.items, {
+  /* 当前分组数据（groups 存在时切换；否则恒为 cfg.items） */
+  let groupIdx = 0;
+  const itemsOf = () => (cfg.groups ? cfg.groups[groupIdx].items : cfg.items);
+  let listApi = null;
+
+  /* 分组切换：保持当前选中 code（若在新组），否则选中新组第一只 */
+  function switchGroup(i) {
+    if (i === groupIdx || !cfg.groups) return;
+    groupIdx = i;
+    panel.querySelectorAll('.ticker-head .seg-btn').forEach((b, bi) => b.classList.toggle('active', bi === i));
+    listApi.refresh(cfg.groups[i].items);
+    if (state.code && cfg.groups[i].items.some(it => it.code === state.code)) {
+      listApi.setActive(state.code);
+    } else if (cfg.groups[i].items.length) {
+      select(cfg.groups[i].items[0]);
+    }
+  }
+
+  listApi = renderTickerList(panel, itemsOf(), {
     onSelect: (it) => select(it),
     activeCode: state.code,
     searchable: true,
+    title: panelTitle,
   });
 
   // 默认选中第一只（立即渲染图表）
-  if (cfg.items.length) select(cfg.items[0]);
+  const first = itemsOf();
+  if (first.length) select(first[0]);
 
   /* ── 选中标的 → 按需加载 K线（+副图数据） → 图表 + 表格 ── */
   async function select(item) {

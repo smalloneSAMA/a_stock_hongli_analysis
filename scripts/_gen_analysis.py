@@ -360,10 +360,18 @@ def main(only=None):
         stocks = comp["by_etf"].get(code, {}).get("stocks", [])
         r = build_index_etf("ETF", code, name, stocks, idx_info.get(ETF_TRACK.get(code)))
         emit(r)
-    for code, name, tcode in fsd.STOCKS:
+    # 股票：推荐20 + 其他成份股（web/data/stocks/*.json 有指标文件即分析）
+    stk_names = {c: n for c, n, _ in fsd.STOCKS}
+    t_path = os.path.join(BASE, "cache", "_成分股汇总表.json")
+    if os.path.exists(t_path):
+        stk_names.update({r["code"]: r.get("name", r["code"]) for r in json.load(open(t_path, encoding="utf-8"))})
+    import glob
+    stk_files = sorted(glob.glob(os.path.join(BASE, "web", "data", "stocks", "*.json")))
+    for fp in stk_files:
+        code = os.path.basename(fp)[:-5]
         if only and code != only:
             continue
-        emit(build_stock(code, name))
+        emit(build_stock(code, stk_names.get(code, code)))
 
     print("\n".join(rows))
     print("\n口径说明：dy0 为 TTM 口径（近12个月除权派息/现价），与成分股逐日 dy 同口径；")

@@ -83,9 +83,11 @@ export function errorBox(message, onRetry) {
 /**
  * items: [{code, name, price, chg, sub, subDir}]
  * 选中回调 onSelect(item)
+ * title: 可选标题区（Node），渲染在搜索框之前（注意本函数会清空 container）
  */
-export function renderTickerList(container, items, { onSelect, activeCode, searchable = true }) {
+export function renderTickerList(container, items, { onSelect, activeCode, searchable = true, title = null }) {
   container.innerHTML = '';
+  if (title) container.append(title);
   const searchBox = searchable ? el('input', { class: 'ticker-search', type: 'search', placeholder: '搜索代码 / 名称…', 'aria-label': '搜索标的' }) : null;
   if (searchBox) container.append(searchBox);
   const ul = el('ul', { class: 'ticker-list' });
@@ -121,7 +123,15 @@ export function renderTickerList(container, items, { onSelect, activeCode, searc
       paint(current);
     });
   }
-  return { setActive(code) { activeCode = code; paint(current); } };
+  return {
+    setActive(code) { activeCode = code; paint(current); },
+    /* 切换分组：替换列表数据并清空搜索 */
+    refresh(newItems) {
+      items = newItems; current = newItems;
+      if (searchBox) searchBox.value = '';
+      paint(newItems);
+    },
+  };
 }
 
 /* ── 筛选条件解析：>5 / <3 / >=2 / <=8 / 2~8 / 文本包含 / 日期起~止 ── */

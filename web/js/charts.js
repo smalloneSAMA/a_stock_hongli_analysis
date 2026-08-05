@@ -399,18 +399,35 @@ export function createKlineChart(el, opts) {
       const cur = chart.getOption();   // 取当前主系列（含 addAnchorLines 合并的 markLine）
       chart.setOption({
         grid: [
-          { left: 62, right: 14, top: 30, height: defs ? '48%' : '58%' },
-          { left: 62, right: 14, top: defs ? '62%' : '74%', height: '12%' },
+          { left: 62, right: 14, top: 30, height: defs ? '48%' : '58%', show: true },
+          { left: 62, right: 14, top: defs ? '62%' : '74%', height: '12%', show: true },
           { left: 62, right: 14, top: '76%', height: '12%', show: !!defs },
         ],
         xAxis: [
-          { axisLabel: { show: false } },
-          { axisLabel: { show: defs ? false : true } },
-          { axisLabel: { show: !!defs } },
+          { gridIndex: 0, axisLabel: { show: false } },
+          { gridIndex: 1, axisLabel: { show: defs ? false : true } },
+          {
+            gridIndex: 2, type: 'category', data: dates, boundaryGap: true,
+            axisLine: { lineStyle: { color: 'rgba(51,65,85,0.6)' } },
+            axisTick: { show: false },
+            axisLabel: { color: C.text3, fontSize: 10.5, hideOverlap: true, show: !!defs },
+            splitLine: { show: false },
+          },
         ],
-        yAxis: [{}, {}, { name: defs && defs[0] ? defs[0].unit || '' : '' }],
+        yAxis: [
+          { gridIndex: 0 },
+          { gridIndex: 1 },
+          {
+            gridIndex: 2, scale: true, splitNumber: 2,
+            axisLabel: { color: C.text3, fontSize: 10, formatter: (v) => Number(v).toFixed(1) },
+            splitLine: { lineStyle: { color: C.split, type: 'dashed' } },
+            axisLine: { show: false },
+            name: defs && defs[0] ? defs[0].unit || '' : '',
+            nameTextStyle: { color: C.text3, fontSize: 10, padding: [0, 0, 0, 20] },
+          },
+        ],
         dataZoom: option.dataZoom.map((z) => ({ ...z, xAxisIndex: [0, 1, 2] })),
-        legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['收盘', '成交量', ...(defs ? defs.map(d => d.name) : [])] },
+        legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['收盘', '成交量', ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
         series: [cur.series[0], volSeries, ...series],
       }, { replaceMerge: ['series', 'legend'] });
       return;
@@ -425,18 +442,22 @@ export function createKlineChart(el, opts) {
     const overlayPart = cur.series.filter(s => s.yAxisIndex === 3);
     chart.setOption({
       grid: [
-        { left: 62, right: 14, top: 30, height: defs ? '48%' : '62%' },
-        { left: 62, right: 14, top: defs ? '62%' : '76%', height: '9%' },
+        { left: 62, right: 14, top: 30, height: defs ? '48%' : '62%', show: true },
+        { left: 62, right: 14, top: defs ? '62%' : '76%', height: '9%', show: true },
         { left: 62, right: 14, top: '76%', height: '12%', show: !!defs },
       ],
       // 日期标签跟随最底部可见 grid：无副图→成交量 grid1 显示；有副图→grid1 隐藏、副图 grid2 显示
       xAxis: [
-        { axisLabel: { show: false } },
-        { axisLabel: { show: defs ? false : true } },
-        { axisLabel: { show: !!defs } },
+        { gridIndex: 0, axisLabel: { show: false } },
+        { gridIndex: 1, axisLabel: { show: defs ? false : true } },
+        { gridIndex: 2, axisLabel: { show: !!defs } },
       ],
-      yAxis: [{}, {}, { name: defs && defs[0] ? defs[0].unit || '' : '' }],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60'] : []), '成交量', ...overlayPart.map(s => s.name), ...(defs ? defs.map(d => d.name) : [])] },
+      yAxis: [
+        { gridIndex: 0 },
+        { gridIndex: 1 },
+        { gridIndex: 2, name: defs && defs[0] ? defs[0].unit || '' : '' },
+      ],
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60'] : []), '成交量', ...overlayPart.map(s => s.name), ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
       series: [mainSeries, ...maSeries, volSeries2, ...overlayPart, ...series],
     }, { replaceMerge: ['series', 'legend'] });
   }

@@ -82,10 +82,14 @@ def fetch_dividend(code):
             out.append({"ex_date": exdate, "bonus10": round(bonus, 3)})
     return out
 
-def update_dividends(refresh=False):
-    """20只全量分红 → cache/分红_{code}.json（缓存已存在则跳过，删除自愈重拉；refresh=True 强制重拉）"""
-    print("── 全量分红历史（东财，1s/只）──")
-    for code, name, _t in STOCKS:
+def update_dividends(refresh=False, codes=None):
+    """全量分红 → cache/分红_{code}.json（缓存已存在则跳过，删除自愈重拉；refresh=True 强制重拉）
+    codes=None 默认推荐20只；传 code 列表可拉其他成份股（_fetch_pool_data）"""
+    lst = codes if codes is not None else [c for c, _, _ in STOCKS]
+    names = {c: n for c, n, _ in STOCKS}
+    print(f"── 全量分红历史（东财，1s/只，{len(lst)} 只）──")
+    for code in lst:
+        name = names.get(code, code)
         if not refresh and os.path.exists(fh.cache_path("分红", code)):
             print(f"  [{code} {name}] 分红缓存已存在，跳过")
             continue
@@ -179,10 +183,13 @@ def fetch_share_history(code):
     except Exception:
         return []
 
-def update_share_hist(refresh=False):
-    """20只股本变动历史 → cache/股本_{code}.json（缓存存在跳过；refresh=True 强制重拉）"""
-    print("── 股本变动历史（东财 EH_EQUITY，1s/只）──")
-    for code, name, _t in STOCKS:
+def update_share_hist(refresh=False, codes=None):
+    """股本变动历史 → cache/股本_{code}.json（缓存存在跳过；refresh=True 强制重拉）"""
+    lst = codes if codes is not None else [c for c, _, _ in STOCKS]
+    names = {c: n for c, n, _ in STOCKS}
+    print(f"── 股本变动历史（东财 EH_EQUITY，1s/只，{len(lst)} 只）──")
+    for code in lst:
+        name = names.get(code, code)
         if not refresh and os.path.exists(fh.cache_path("股本", code)):
             print(f"  [{code} {name}] 股本缓存已存在，跳过")
             continue
@@ -196,12 +203,15 @@ def update_share_hist(refresh=False):
             print(f"  ❌ [{code} {name}] 股本拉取失败: {repr(e)[:80]}")
         time.sleep(0.3)
 
-def update_financials(refresh=False):
-    """20只财报 → cache/财报_{code}.json（缓存存在且为新版字段则跳过；旧版缺归母净利自动重拉）
+def update_financials(refresh=False, codes=None):
+    """财报 → cache/财报_{code}.json（缓存存在且为新版字段则跳过；旧版缺归母净利自动重拉）
     同时确保股本变动历史缓存存在（update_share_hist）；refresh=True 强制全量重拉"""
-    update_share_hist(refresh=refresh)
-    print("── 季度财报（东财，1s/只）──")
-    for code, name, _t in STOCKS:
+    lst = codes if codes is not None else [c for c, _, _ in STOCKS]
+    names = {c: n for c, n, _ in STOCKS}
+    update_share_hist(refresh=refresh, codes=codes)
+    print(f"── 季度财报（东财，1s/只，{len(lst)} 只）──")
+    for code in lst:
+        name = names.get(code, code)
         stale = refresh
         if os.path.exists(fh.cache_path("财报", code)) and not refresh:
             try:
@@ -488,13 +498,16 @@ def export_excel():
     except PermissionError:
         print("⚠️  excel/股票历史.xlsx 被占用（可能已在Excel中打开），请关闭后重新执行导出")
 
-def check_financials():
-    """检测 20 只分红/财报是否有更新（如新财报公告/新除权日）：
+def check_financials(codes=None):
+    """检测分红/财报是否有更新（如新财报公告/新除权日）：
     拉最新数据与缓存对比（分红比最新除权日，财报比最新公告日），有变化则写回缓存。
-    每只约 2 个请求（东财限流 1s），共约 40-60s；适合季度末/定期执行。"""
-    print("── 分红/财报更新检测（东财，2s/只，约1分钟）──")
+    每只约 2 个请求（东财限流 1s）；适合季度末/定期执行。codes=None 默认推荐20只。"""
+    lst = codes if codes is not None else [c for c, _, _ in STOCKS]
+    names = {c: n for c, n, _ in STOCKS}
+    print(f"── 分红/财报更新检测（东财，2s/只，{len(lst)} 只，约 {len(lst)*2//60} 分钟）──")
     updated = []
-    for code, name, _t in STOCKS:
+    for code in lst:
+        name = names.get(code, code)
         for typ, key, fetch in (("分红", "ex_date", fetch_dividend), ("财报", "notice_date", fetch_financials)):
             try:
                 rows = fetch(code)

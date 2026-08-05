@@ -3,8 +3,8 @@
 生成前端展示数据包 web/data/（只读缓存，不触发任何网络拉取）
 
 输出：
-- web/data/manifest.json      三类标的清单 + 数据源 + 单位换算因子 + 数据日期
-- web/data/stocks/{code}.json 20只股票逐日指标（复用 _fetch_stock_data 的 calc_* 口径，与 Excel 完全一致）
+- web/data/manifest.json      三类标的清单 + 数据源 + 单位换算因子 + 数据日期（股票池=推荐20+其他成份股，含 rec/ready 标记）
+- web/data/stocks/{code}.json 股票池逐日指标（复用 _fetch_stock_data 的 calc_* 口径，与 Excel 完全一致）
 - web/data/summary.json       成分股汇总（_成分股汇总表.json + 当日涨跌幅 + 名称）
 
 用法: python scripts/_gen_web_data.py
@@ -108,28 +108,29 @@ def build_manifest():
                      "last_close": close, "last_chg": chg, "last_nav": nav, "last_acc": acc,
                      "last_nav_chg": nav_chg})
 
-    for code, name, tcode in fsd.STOCKS:
+    # 股票池 = 推荐20 + 其他成份股（精选池 289 − 推荐，来自汇总表；含未拉取 K 线的占位）
+    rec_set = {c for c, _, _ in fsd.STOCKS}
+    rec_names = {c: n for c, n, _ in fsd.STOCKS}
+    t_path = os.path.join(BASE, "cache", "_成分股汇总表.json")
+    pool_meta = {}
+    if os.path.exists(t_path):
+        pool_meta = {r["code"]: r for r in json.load(open(t_path, encoding="utf-8"))}
+    all_codes = [c for c, _, _ in fsd.STOCKS] + [c for c in pool_meta if c not in rec_set]
+    for code in all_codes:
         c = fh.load_cache("股票", code)
         rows = (c or {}).get("rows", [])
+        name = rec_names.get(code, pool_meta.get(code, {}).get("name", code))
         if rows:
             n = ensure_amount_filled("股票", code, c)
             if n:
                 print(f"  股票 {code} {name}: 补估算成交额 {n} 行并写回缓存")
             dates.append(rows[-1]["date"])
-        else:
-            print(f"  ⚠️ 股票 {code} {name}: 无缓存，请先运行 update.py 选项5")
         close, chg = quote_of(rows)
-        stocks.append({"code": code, "name": name, "last": last_date(rows), "n": len(rows),
-                       "last_close": close, "last_chg": chg})
-
-    # 股票列表补最新股息率（读已生成的指标文件末行）
-    # 行业（一二级）：_成分股汇总表.json（东财 f127 申万细分 → map_ind 归并）
-    t_path = os.path.join(BASE, "cache", "_成分股汇总表.json")
-    ind_map = {}
-    if os.path.exists(t_path):
-        ind_map = {r["code"]: r for r in json.load(open(t_path, encoding="utf-8"))}
-    for s in stocks:
-        p = os.path.join(WEB_DATA, "stocks", f"{s['code']}.json")
+        s = {"code": code, "name": name, "last": last_date(rows), "n": len(rows),
+             "last_close": close, "last_chg": chg,
+             "rec": code in rec_set, "ready": bool(rows)}
+        # 最新股息率：有指标文件读末行；否则用汇总表 div_yield 快照（东财近12月口径）
+        p = os.path.join(WEB_DATA, "stocks", f"{code}.json")
         if os.path.exists(p):
             try:
                 ind = json.load(open(p, encoding="utf-8"))
@@ -138,9 +139,12 @@ def build_manifest():
             except Exception:
                 pass
         s.setdefault("last_dy", None)
-        t = ind_map.get(s["code"], {})
+        if s["last_dy"] is None:
+            s["last_dy"] = pool_meta.get(code, {}).get("div_yield")
+        t = pool_meta.get(code, {})
         s["ind"] = t.get("ind", "")
         s["ind3"] = t.get("ind3", "")
+        stocks.append(s)
 
     manifest = {
         "data_date": max(dates) if dates else "",
@@ -152,10 +156,22 @@ def build_manifest():
     print(f"  ✅ manifest.json：指数{len(indices)} / ETF{len(etfs)} / 股票{len(stocks)}，数据日期 {manifest['data_date']}")
 
 
+def stock_pool():
+    """股票池全量（推荐20 + 其他成份股）：返回 [(code, name)]，含无 K 线缓存的占位"""
+    rec = [(c, n) for c, n, _ in fsd.STOCKS]
+    other = []
+    t_path = os.path.join(BASE, "cache", "_成分股汇总表.json")
+    if os.path.exists(t_path):
+        rec_set = {c for c, _, _ in fsd.STOCKS}
+        other = [(r["code"], r.get("name", r["code"])) for r in json.load(open(t_path, encoding="utf-8"))
+                 if r["code"] not in rec_set]
+    return rec + other
+
+
 def build_stock_indicators():
     print("═══ [2/3] 股票逐日指标（复用 _fetch_stock_data calc_* 口径）═══")
     ok, skip = 0, 0
-    for code, name, tcode in fsd.STOCKS:
+    for code, name in stock_pool():
         kc = fh.load_cache("股票", code)
         if not kc or not kc.get("rows"):
             skip += 1
@@ -184,8 +200,8 @@ def build_stock_indicators():
                         "roe": roe[i], "roa": roa[i]})
         atomic_dump(os.path.join(WEB_DATA, "stocks", f"{code}.json"), out)
         ok += 1
-        if ok % 5 == 0:
-            print(f"  进度 {ok}/{len(fsd.STOCKS)}")
+        if ok % 20 == 0:
+            print(f"  进度 {ok}")
     print(f"  ✅ 指标生成 {ok} 只，跳过 {skip} 只")
 
 

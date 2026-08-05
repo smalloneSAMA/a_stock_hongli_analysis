@@ -44,16 +44,21 @@ export default {
       el('div', { class: 'txt-3', style: 'font-size:12px' }, '数据日期 ' + m.data_date)));
 
     /* 列表信息全部来自 manifest（含最新价/涨跌/股息率/一二级行业），K线与指标选中后按需加载 */
-    const items = m.stocks.map((s) => ({
+    const toItem = (s) => ({
       code: s.code, name: s.name, price: s.last_close, chg: s.last_chg,
       subHtml: el('span', { class: 'txt-3', style: 'font-size:10.5px' },
-        (s.ind || '—') + ' · 股息率 ' + (s.last_dy == null ? '—' : fmt2(s.last_dy) + '%')),
-    }));
+        (s.ready === false ? '⚠ 待拉取 · ' : '') + (s.ind || '—') + ' · 股息率 ' + (s.last_dy == null ? '—' : fmt2(s.last_dy) + '%')),
+    });
+    const recItems = m.stocks.filter(s => s.rec).map(toItem);
+    const otherItems = m.stocks.filter(s => !s.rec).map(toItem);
 
     buildHistoryView(container, {
       kind: 'stock',
-      title: '推荐20只',
-      items,
+      title: '股票历史',
+      groups: [
+        { label: '推荐 ' + recItems.length, items: recItems },
+        { label: '其他成份股 ' + otherItems.length, items: otherItems },
+      ],
       chartUnit: '元',
       subControl: 'none',
       compView: false,            // 股票：去掉 图表/成分股 切换

@@ -101,7 +101,7 @@ button { font-family: inherit; }
   border-bottom: 1px solid rgba(51, 65, 85, 0.45);
 }
 .topbar-inner {
-  max-width: 1480px; margin: 0 auto; padding: 0 var(--space-5);
+  max-width: 1600px; margin: 0 auto; padding: 0 var(--space-5);
   height: 100%; display: flex; align-items: center; gap: var(--space-6);
 }
 .brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
@@ -141,12 +141,12 @@ button { font-family: inherit; }
 .data-date::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); margin-right: 7px; box-shadow: 0 0 8px rgba(34,197,94,.8); }
 
 /* ═══ 视图容器 ═══ */
-.view { max-width: 1480px; margin: 0 auto; padding: var(--space-5); min-height: calc(100dvh - var(--topbar-h) - 44px); }
+.view { max-width: 1600px; margin: 0 auto; padding: var(--space-4) var(--space-5); min-height: calc(100dvh - var(--topbar-h) - 44px); }
 .view > * { animation: view-in 0.34s var(--ease) both; }
 @keyframes view-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 .foot {
-  max-width: 1480px; margin: 0 auto; padding: var(--space-4) var(--space-5) var(--space-6);
+  max-width: 1600px; margin: 0 auto; padding: var(--space-4) var(--space-5) var(--space-6);
   color: var(--text-3); font-size: 12px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
   border-top: 1px solid rgba(51, 65, 85, 0.3);
 }
@@ -168,6 +168,11 @@ button { font-family: inherit; }
 
 /* ═══ 三栏布局（指数/ETF/股票） ═══ */
 .view-layout { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+/* ═══ 左侧标的列表 ═══ */
+.ticker-head { margin: 12px 12px 4px; }
+.ticker-head .card-title { margin: 0 2px 6px; }
+.ticker-head .seg-group { display: flex; width: 100%; }
+.ticker-head .seg-btn { flex: 1; text-align: center; font-size: 12px; padding: 4px 6px; }
 .ticker-panel { position: sticky; top: calc(var(--topbar-h) + 16px); max-height: calc(100dvh - var(--topbar-h) - 40px); display: flex; flex-direction: column; overflow: hidden; }
 .ticker-search {
   margin: var(--space-3) var(--space-3) 0; padding: 7px 10px;
