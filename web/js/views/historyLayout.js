@@ -123,7 +123,8 @@ export function buildHistoryView(container, cfg) {
     const dyNow = analysisEnt.factors.dy.v;
     const mk = (name, p, color) => {
       const anchor = closeCalc * dyNow / p;
-      return { value: Number((anchor * analysisScale).toFixed(3)), label: `${name} ${fmt2(anchor * analysisScale)}（${(anchor / closeCalc - 1) * 100 >= 0 ? '+' : ''}${fmt2((anchor / closeCalc - 1) * 100)}%）`, color };
+      /* 锚 label 两行：上行文字（买入锚/卖出锚），下行数字（数值 + 距现价%） */
+      return { value: Number((anchor * analysisScale).toFixed(3)), label: `${name}\n${fmt2(anchor * analysisScale)}（${(anchor / closeCalc - 1) * 100 >= 0 ? '+' : ''}${fmt2((anchor / closeCalc - 1) * 100)}%）`, color };
     };
     if (cfg.anchors !== false) {
       chartApi.addAnchorLines([mk('买入锚', dyS.p90, '#F6465D'), mk('卖出锚', dyS.p10, '#34D399')]);
