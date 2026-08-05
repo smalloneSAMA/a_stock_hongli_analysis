@@ -187,11 +187,11 @@ export function createKlineChart(el, opts) {
           ...(anchorLines.length ? {
             markLine: {
               silent: true, symbol: 'none', z: 7,
-              label: { position: 'insideEndTop', fontSize: 10, formatter: (p) => p.name },
+              label: { position: 'insideEndTop', fontSize: 11.5, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
               data: anchorLines.map(a => ({
                 yAxis: a.value, name: a.label,
                 lineStyle: { color: a.color, type: 'dashed', width: 1 },
-                label: { color: a.color },
+                label: { color: a.color, borderColor: a.color },
               })),
             },
           } : {}),
@@ -287,11 +287,11 @@ export function createKlineChart(el, opts) {
           ...(anchorLines.length ? {
             markLine: {
               silent: true, symbol: 'none', z: 7,
-              label: { position: 'insideEndTop', fontSize: 10, formatter: (p) => p.name },
+              label: { position: 'insideEndTop', fontSize: 11.5, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
               data: anchorLines.map(a => ({
                 yAxis: a.value, name: a.label,
                 lineStyle: { color: a.color, type: 'dashed', width: 1 },
-                label: { color: a.color },
+                label: { color: a.color, borderColor: a.color },
               })),
             },
           } : {}),
@@ -398,11 +398,11 @@ export function createKlineChart(el, opts) {
       ...(d.markLines ? {
         markLine: {
           silent: true, symbol: 'none',
-          label: { fontSize: 10, formatter: (p) => p.name },
+          label: { fontSize: 11, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [2, 5], formatter: (p) => p.name },
           data: d.markLines.map(m => ({
             yAxis: m.value, name: m.label,
             lineStyle: { color: m.color, type: 'dashed', width: 1 },
-            label: { color: m.color },
+            label: { color: m.color, borderColor: m.color },
           })),
         },
       } : {}),
@@ -485,11 +485,11 @@ export function createKlineChart(el, opts) {
       series: [{
         markLine: {
           silent: true, symbol: 'none', z: 7,
-          label: { position: 'insideEndTop', fontSize: 10, formatter: (p) => p.name },
+          label: { position: 'insideEndTop', fontSize: 11.5, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
           data: list.map(a => ({
             yAxis: a.value, name: a.label,
             lineStyle: { color: a.color, type: 'dashed', width: 1 },
-            label: { color: a.color },
+            label: { color: a.color, borderColor: a.color },
           })),
         },
       }],
