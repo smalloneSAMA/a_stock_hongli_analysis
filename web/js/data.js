@@ -26,6 +26,8 @@ export function indiUrl(code) {
   return `/web/data/stocks/${code}.json`;
 }
 
+export const COMPONENTS_URL = '/web/data/components.json';
+
 export const MANIFEST_URL = '/web/data/manifest.json';
 export const SUMMARY_URL = '/web/data/summary.json';
 

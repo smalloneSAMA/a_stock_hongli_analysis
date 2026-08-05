@@ -38,6 +38,7 @@ export default {
     container.append(body);
 
     let tableApi = null, donutChart = null, barChart = null;
+    let donutFilterInd = null;   // 行业分布环形图点击筛选（与搜索/下拉/推荐勾选叠加）
     let all = [];
 
     const load = async () => {
@@ -49,6 +50,10 @@ export default {
 
     const render = (rows, base) => {
       body.innerHTML = '';
+      /* 重载保护：旧图表实例挂在已清空的 DOM 上，须先销毁（视图常驻+重试场景） */
+      if (donutChart) { donutChart.dispose(); donutChart = null; }
+      if (barChart) { barChart.dispose(); barChart = null; }
+      donutFilterInd = null;
 
       const statCard = (label, value, sub, amber) => el('div', { class: 'stat-card card' + (amber ? ' amber' : '') },
         el('div', { class: 'stat-label' }, label),
@@ -101,6 +106,7 @@ export default {
         if (q) out = out.filter(r => r.name.toLowerCase().includes(q) || r.code.includes(q));
         if (ind) out = out.filter(r => r.ind === ind);
         if (recOnly) out = out.filter(r => r._rec);
+        if (donutFilterInd) out = out.filter(r => r.ind === donutFilterInd);   // 环形图行业筛选
         countSpan.textContent = `筛选结果 ${out.length} / ${base.length}`;
         tableApi.refresh(out);
         renderCharts(out);
@@ -115,14 +121,26 @@ export default {
       const renderCharts = (out) => {
         const donutEl = grid.querySelector('.mini-chart');
         const barEl = grid.querySelector('.mini-chart.bar');
-        if (donutChart) { donutChart.dispose(); donutChart = null; }
+        const donutTitleEl = grid.querySelector('.card-title');
+
+        /* 行业分布环形图：全量数据固定（base），仅首次创建——筛选不重建、动画只播一次（与指数/ETF板块一致） */
+        if (!donutChart) {
+          const cnt = new Map();
+          for (const r of base) cnt.set(r.ind, (cnt.get(r.ind) || 0) + 1);
+          const donutData = [...cnt.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+          donutChart = createDonut(donutEl, donutData, { title: '成分股行业分布', selectable: true });
+          /* 点击行业扇区 → 表格筛选该行业；再点同一扇区 → 取消 */
+          donutChart.on('click', (p) => {
+            if (!p || !p.name) return;
+            donutFilterInd = (donutFilterInd === p.name) ? null : p.name;
+            donutTitleEl.textContent = '行业分布' + (donutFilterInd ? ' · 筛选：' + donutFilterInd + '（再点击取消）' : '');
+            applyFilter();
+          });
+        }
+        donutTitleEl.textContent = '行业分布' + (donutFilterInd ? ' · 筛选：' + donutFilterInd + '（再点击取消）' : '');
+
+        /* 股息率 TOP15：每次筛选刷新（donut 保持稳定不动） */
         if (barChart) { barChart.dispose(); barChart = null; }
-
-        const cnt = new Map();
-        for (const r of out) cnt.set(r.ind, (cnt.get(r.ind) || 0) + 1);
-        const donutData = [...cnt.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-        donutChart = createDonut(donutEl, donutData, { title: '成分股行业分布' });
-
         const dyTop = out
           .filter(r => r.div_yield != null && r.div_yield > 0)
           .sort((a, b) => b.div_yield - a.div_yield)

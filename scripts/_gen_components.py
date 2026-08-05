@@ -6,7 +6,7 @@
 - 000151：东财成分表 + 腾讯名称
 用法: python _gen_components.py [--force]
 """
-import sys, io, os, json, re, time, requests, pandas as pd, urllib.request
+import sys, io, os, json, re, time, glob, requests, pandas as pd, urllib.request
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -322,6 +322,33 @@ def build():
     out.append("5. **权重说明**：指数权重随季度调整与市场涨跌变动，本表为静态快照。")
     out.append("6. **风险警示**：基金有风险，投资须谨慎。以上内容仅为基于公开数据的客观信息梳理，**不构成任何投资建议**。")
     out.append("")
+
+    # 附录：非精选池国证指数成分（cache/成分_*.json，国证官网 sample-detail 接口）
+    comp_files = sorted(glob.glob(os.path.join(BASE, "cache", "成分_*.json")))
+    if comp_files:
+        out.append("---")
+        out.append("")
+        out.append("## 附：非精选池指数成分（国证系列）")
+        out.append("")
+        out.append("> 数据来源：国证指数官网样本详情接口（sample-detail/detail）· 官网仅披露前十大权重，其余未公开 · 行业为国证行业分类（与申万口径不同）")
+        out.append("")
+        for fp in comp_files:
+            try:
+                cc = json.load(open(fp, encoding="utf-8"))
+            except Exception:
+                continue
+            stocks = cc.get("stocks", [])
+            w10 = sum((s.get("weight") or 0) for s in cc.get("top10", []))
+            out.append(f"### {cc.get('name', '')}（{cc.get('code', '')}）")
+            out.append("")
+            out.append(f"> 样本日期 {cc.get('sample_date', '')} · 样本数 {cc.get('total', len(stocks))} 只 · 权重仅前十大公开（合计 {w10:.2f}%）")
+            out.append("")
+            out.append("| 序号 | 证券代码 | 证券名称 | 国证行业 | 权重(%) |")
+            out.append("| :--: | :--: | :--: | :--: | :--: |")
+            for i, s in enumerate(stocks, 1):
+                w = "—" if s.get("weight") is None else f"{s['weight']:.2f}"
+                out.append(f"| {i} | {s.get('code', '')} | {s.get('name', '')} | {s.get('ind', '')} | {w} |")
+            out.append("")
 
     with open(MD, "w", encoding="utf-8") as f:
         f.write("\n".join(out))

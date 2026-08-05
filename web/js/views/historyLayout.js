@@ -4,8 +4,8 @@
          内存缓存保证切换秒开 */
 
 import { el, renderTickerList, renderTable, skeleton, errorBox, emptyState, fmt2, fmtPct, dirOf, dailyChg, attachDatePicker } from './common.js';
-import { loadJSON, klineUrl, indiUrl } from '../data.js';
-import { createKlineChart } from '../charts.js';
+import { loadJSON, klineUrl, indiUrl, COMPONENTS_URL } from '../data.js';
+import { createKlineChart, createDonut } from '../charts.js';
 
 const D = { volume: 1e4, amount: 1e8 };  // 默认除数：ETF/股票（腾讯源）手→万手、元→亿元
 
@@ -50,7 +50,9 @@ export function buildHistoryView(container, cfg) {
       el('div', { class: 'card main-card' }, emptyState('选择左侧标的', '点击列表中的标的查看历史行情'))));
   container.append(layout);
 
-  let state = { code: null, chart: null, range: 'all' };
+  let state = { code: null, chart: null, range: 'all', view: 'chart' };
+  /* 每只标的的视图状态记忆：{range, from, to, view}（切换标的不重置） */
+  const codeState = {};
   const panel = layout.querySelector('.ticker-panel');
   const mainCard = layout.querySelector('.main-card');
 
@@ -65,6 +67,15 @@ export function buildHistoryView(container, cfg) {
 
   /* ── 选中标的 → 按需加载 K线（+副图数据） → 图表 + 表格 ── */
   async function select(item) {
+    /* 保存当前标的的状态（时间范围/日期/图表成分股tab） */
+    if (state.code) {
+      const st = codeState[state.code] || (codeState[state.code] = {});
+      st.range = state.range || 'all';
+      const f = mainCard.querySelector('.dr-from'), t = mainCard.querySelector('.dr-to');
+      st.from = f ? f.value : '';
+      st.to = t ? t.value : '';
+      st.view = state.view || 'chart';
+    }
     state.code = item.code;
     listApi.setActive(item.code);
 
@@ -112,12 +123,24 @@ export function buildHistoryView(container, cfg) {
     const chartBox = el('div', { class: 'chart-box' },
       el('div', { class: 'chart' + (cfg.subControl !== 'none' ? ' chart-short' : '') }, ''));
 
+    /* 成分股面板（图表/成分股 切换按钮触发；复用成分股汇总板块的展示方式） */
+    const compBox = el('div', { class: 'comp-panel', style: 'display:none' });
+
+    /* 标的简介条（cfg.intros[code] → {intro, note}，插在报价头与图表之间） */
+    const intro = cfg.intros ? cfg.intros[item.code] : null;
+
     const rowsTable = cfg.buildTableRows(rows, k, ind);
     const tableBox = el('div', {});
     const note = el('div', { class: 'chart-note' }, cfg.chartNote(obj, rows));
 
     // ⚠️ 必须先挂载到 DOM 再初始化 ECharts：容器未挂载时尺寸为 0，canvas 缓冲为 0×0 会空白
-    mainCard.append(chartBox, tableBox, note);
+    mainCard.append(chartBox, compBox, tableBox, note);
+    if (intro) {
+      const introBar = el('div', { class: 'intro-bar' },
+        el('div', { class: 'intro-text' }, intro.intro),
+        el('div', { class: 'intro-note' }, intro.note));
+      mainCard.insertBefore(introBar, chartBox);
+    }
 
     if (state.chart) { state.chart.dispose(); }
     const chartApi = createKlineChart(chartBox.querySelector('.chart'), {
@@ -135,6 +158,7 @@ export function buildHistoryView(container, cfg) {
     const rangeApi = rangeGroup();
     /* 自定义起止日期：手动文本输入（YYYY-MM-DD），旁显上下限 */
     const dateRangeApi = dateRangeGroup();
+    const vsGroup = cfg.compView === false ? null : viewSwitchGroup();   // 股票视图不需要成分股切换
 
     const head = el('div', { class: 'chart-head' },
       el('div', {},
@@ -146,8 +170,92 @@ export function buildHistoryView(container, cfg) {
         el('span', { class: 'txt-3', style: 'font-size:11.5px' }, unit)),
       el('div', { class: 'chart-meta' },
         rangeApi.el, dateRangeApi.el,
-        cfg.subControl !== 'none' ? subControlGroup() : null));
+        cfg.subControl !== 'none' ? subControlGroup() : null,
+        vsGroup ? vsGroup.el : null),
+      );
     mainCard.prepend(head);
+
+    /* 恢复该标的的记忆状态（时间范围/日期/图表成分股tab）；无记忆时继承当前 tab */
+    const st = codeState[item.code] || (codeState[item.code] = { range: 'all', from: '', to: '', view: state.view });
+    if (st.range && st.range !== 'all') chartApi.setRange(st.range);
+    rangeApi.setActive(st.range || 'all');
+    state.range = st.range || 'all';
+    if (st.from || st.to) chartApi.setDateRange(st.from || null, st.to || null);
+    if (vsGroup && st.view === 'comp') vsGroup.setView('comp');
+
+    /* 图表 ↔ 成分股 切换按钮组 */
+    let compDonut = null;
+    function viewSwitchGroup() {
+      const g = el('div', { class: 'seg-group', role: 'group', 'aria-label': '视图切换' });
+      const btns = [];
+      const setView = (view) => {
+        state.view = view;
+        for (const [v, b] of btns) b.classList.toggle('active', v === view);
+        if (view === 'chart') { chartBox.style.display = ''; compBox.style.display = 'none'; }
+        else { chartBox.style.display = 'none'; compBox.style.display = ''; renderComponents(); }
+      };
+      for (const [v, label] of [['chart', '图表'], ['comp', '成分股']]) {
+        const b = el('button', { class: 'seg-btn' + (v === 'chart' ? ' active' : ''), onclick: () => setView(v) }, label);
+        btns.push([v, b]);
+        g.append(b);
+      }
+      return { el: g, setView };
+    }
+
+    /* 成分股视图：行业分布环形图 + 成分股表格（数据来自 web/data/components.json） */
+    const COMP_COLUMNS = [
+      { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
+      { key: 'name', label: '名称', align: 'left', sortable: true },
+      { key: 'ind', label: '一级行业', align: 'left', sortable: true },
+      { key: 'weight', label: '权重(%)', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
+      { key: 'div_yield', label: '股息率(%)', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
+    ];
+    async function renderComponents() {
+      if (compBox.dataset.loaded === item.code) return;   // 同一标的不重复加载
+      compBox.dataset.loaded = item.code;
+      compBox.innerHTML = '';
+      compBox.append(skeleton({ style: 'min-height:420px' }));
+      try {
+        const comp = await loadJSON(COMPONENTS_URL);
+        const data = (kinds[cfg.kind] === 'ETF' ? comp.by_etf : comp.by_index)[item.code] || null;
+        compBox.innerHTML = '';
+        if (!data || !data.n) {
+          compBox.append(emptyState('暂无成分股数据', '该标的未收录于成分股精选池（指数/ETF成分股md）'));
+          return;
+        }
+        const grid = el('div', { class: 'summary-grid' },
+          el('div', { class: 'side-panel' },
+            el('div', { class: 'card card-pad' },
+              el('div', { class: 'card-title' }, '行业分布（' + data.n + ' 只）'),
+              el('div', { class: 'mini-chart' }, ''))),
+          el('div', { class: 'card table-card' }, el('div', { class: 'table-wrap', style: 'max-height:620px' }, '')));
+        compBox.append(grid);
+        const cnt = new Map();
+        for (const s of data.stocks) cnt.set(s.ind || '未知', (cnt.get(s.ind || '未知') || 0) + 1);
+        const donutData = [...cnt.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+        if (compDonut) { compDonut.dispose(); compDonut = null; }
+        compDonut = createDonut(grid.querySelector('.mini-chart'), donutData, { title: '成分股行业分布', selectable: true });
+        const compTableApi = renderTable(grid.querySelector('.table-card'), { columns: COMP_COLUMNS, rows: data.stocks, pageSize: 50 });
+        /* 点击行业扇区 → 右侧表格筛选该行业；再点同一扇区 → 取消筛选 */
+        let filterInd = null;
+        const donutTitle = grid.querySelector('.card-title');
+        compDonut.on('click', (p) => {
+          if (!p || !p.name) return;
+          if (filterInd === p.name) {
+            filterInd = null;
+            compTableApi.refresh(data.stocks);
+            donutTitle.textContent = '行业分布（' + data.n + ' 只）';
+          } else {
+            filterInd = p.name;
+            compTableApi.refresh(data.stocks.filter(s => (s.ind || '未知') === p.name));
+            donutTitle.textContent = '行业分布 · 筛选：' + p.name + '（再点击取消）';
+          }
+        });
+      } catch (err) {
+        compBox.innerHTML = '';
+        compBox.append(errorBox(`成分股数据加载失败：${err.message}`, () => { delete compBox.dataset.loaded; renderComponents(); }));
+      }
+    }
 
     const tableApi = renderTable(tableBox, { columns: cfg.columns, rows: rowsTable, pageSize: 50 });
     tableApi.sortBy('日期', -1); // 默认最新在上

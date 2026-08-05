@@ -181,6 +181,62 @@ def build_stock_indicators():
     print(f"  ✅ 指标生成 {ok} 只，跳过 {skip} 只")
 
 
+def build_components():
+    """生成 web/data/components.json：每只指数/ETF 的成分股列表（代码/名称/权重/一级行业/股息率）
+    来源：cache/_成分股汇总.json 的 w 字段（md 解析：股票→{指数/ETF名: 权重}）反转 + _成分股汇总表.json 的行业"""
+    print("═══ [3/4] 生成 components.json ═══")
+    s_path = os.path.join(BASE, "cache", "_成分股汇总.json")
+    t_path = os.path.join(BASE, "cache", "_成分股汇总表.json")
+    if not (os.path.exists(s_path) and os.path.exists(t_path)):
+        print("  ⚠️ 缺少 _成分股汇总.json/_成分股汇总表.json，跳过（请先运行 update.py 选项4）")
+        return
+    stock = json.load(open(s_path, encoding="utf-8"))
+    tmap = {r["code"]: r for r in json.load(open(t_path, encoding="utf-8"))}
+
+    def build_one(name):
+        rows = []
+        key = name.split("(")[0].strip()   # 去半角括号后缀（如 000151 的“(辅助,510720跟踪)”），匹配 md 解析的指数名
+        for c, s in stock.items():
+            w, found = None, False
+            for wn, wv in (s.get("w") or {}).items():
+                if wn.split("（")[0].split("(")[0].strip() == key:   # md 解析已去全角括号，这里兼容两种
+                    w, found = wv, True
+                    break
+            if not found:
+                continue
+            t = tmap.get(c, {})
+            rows.append({"code": c, "name": s.get("name", ""), "weight": w,
+                         "ind": t.get("ind", ""), "div_yield": s.get("div_yield_calc")})
+        rows.sort(key=lambda r: -(r["weight"] or 0))
+        return {"name": name, "n": len(rows), "stocks": rows}
+
+    out = {"by_index": {}, "by_etf": {}}
+    for code, name, _src, _t in fh.INDICES:
+        out["by_index"][code] = build_one(name)
+    for code, name, _t in fh.ETFS:
+        out["by_etf"][code] = build_one(name)
+
+    # 精选池外的国证指数（980092）：从 cache/成分_{code}.json 补充（国证官网 sample-detail 接口）
+    for code, name, _src, _t in fh.INDICES:
+        if out["by_index"].get(code, {}).get("n"):
+            continue
+        p = os.path.join(BASE, "cache", f"成分_{code}.json")
+        if not os.path.exists(p):
+            continue
+        try:
+            cc = json.load(open(p, encoding="utf-8"))
+            stocks = [{"code": s["code"], "name": s["name"], "weight": s.get("weight"),
+                       "ind": s.get("ind", ""), "div_yield": None} for s in cc.get("stocks", [])]
+            out["by_index"][code] = {"name": cc.get("name", name), "n": len(stocks), "stocks": stocks,
+                                      "note": f"国证官网成分（{cc.get('sample_date', '')}），仅前十大权重公开"}
+            print(f"  📥 {code} {cc.get('name', name)}: 国证官网补充 {len(stocks)} 只（{cc.get('sample_date', '')}）")
+        except Exception as e:
+            print(f"  ⚠️ {code} 成分缓存读取失败: {e}")
+    atomic_dump(os.path.join(WEB_DATA, "components.json"), out)
+    ok = sum(1 for v in out["by_index"].values() if v["n"]) + sum(1 for v in out["by_etf"].values() if v["n"])
+    print(f"  ✅ components.json：指数{len(out['by_index'])}只 / ETF{len(out['by_etf'])}只，有成分的 {ok} 只")
+
+
 def build_summary():
     print("═══ [3/3] 生成 summary.json ═══")
     t_path = os.path.join(BASE, "cache", "_成分股汇总表.json")
@@ -205,5 +261,6 @@ if __name__ == "__main__":
     t0 = time.time()
     build_manifest()
     build_stock_indicators()
+    build_components()
     build_summary()
     print(f"✅ 前端数据包生成完成，耗时 {time.time() - t0:.1f}s → web/data/")

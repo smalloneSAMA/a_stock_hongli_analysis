@@ -292,18 +292,40 @@ export function createKlineChart(el, opts) {
     }
     return -1;
   };
+
+  /* ── 左上角浮层：光标日期 → 最新日期的累计涨幅（跟随鼠标/键盘/点击）── */
+  if (!el.style.position || el.style.position === 'static') el.style.position = 'relative';
+  const floatEl = document.createElement('div');
+  floatEl.style.cssText = "position:absolute;top:28px;left:64px;z-index:6;pointer-events:none;display:none;background:rgba(10,16,30,.88);border:1px solid #334155;border-radius:8px;padding:6px 10px;font-family:'Fira Code',monospace;line-height:1.55";
+  el.appendChild(floatEl);
+  let lastFloatIdx = -2;
+  const updateFloating = (i) => {
+    if (i === lastFloatIdx) return;   // 无变化不重绘（mousemove 高频调用）
+    lastFloatIdx = i;
+    if (i < 0 || i >= n || closes[i] == null || closes[n - 1] == null) { floatEl.style.display = 'none'; return; }
+    const chg = (closes[n - 1] / closes[i] - 1) * 100;
+    const c = chg >= 0 ? C.up : C.down;
+    floatEl.innerHTML =
+      '<div style="font-size:10px;color:#94A3B8">' + dates[i] + ' → ' + dates[n - 1] + '</div>'
+      + '<div style="font-size:13px;font-weight:700;color:' + c + '">累计 ' + (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%</div>';
+    floatEl.style.display = 'block';
+  };
+
   chart.getZr().on('mousemove', (e) => {
-    if (keyIdx < 0) {   // 键盘尚未开始移动时，跟随鼠标 hover（移动中不打断，防鼠标抖动）
-      const i = pixelToIdx(e.offsetX, e.offsetY);
-      if (i >= 0) mouseIdx = i;
+    const i = pixelToIdx(e.offsetX, e.offsetY);
+    if (i >= 0) {
+      updateFloating(i);
+      if (keyIdx < 0) mouseIdx = i;   // 键盘尚未开始移动时，跟随鼠标 hover（移动中不打断，防鼠标抖动）
     }
   });
+  chart.getZr().on('mouseout', () => updateFloating(-1));   // 鼠标移出图表隐藏浮层
   chart.getZr().on('click', (e) => {
     const i = pixelToIdx(e.offsetX, e.offsetY);
-    if (i >= 0) { keyIdx = i; chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: i }); }   // 点击锚定：光标立即显示在该日期
+    if (i >= 0) { keyIdx = i; chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: i }); updateFloating(i); }   // 点击锚定：光标立即显示在该日期
   });
   const kbdMove = (e) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if (!el.offsetWidth || !el.offsetHeight) return;   // 隐藏视图中的图表不响应键盘（视图常驻后存在多个图表实例）
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;   // 输入框聚焦时不干扰
     e.preventDefault();
@@ -312,6 +334,7 @@ export function createKlineChart(el, opts) {
     const next = e.key === 'ArrowRight' ? keyIdx + 1 : keyIdx - 1;
     if (next < 0 || next >= n) return;
     keyIdx = next;
+    updateFloating(keyIdx);   // 键盘移动同步左上角累计涨幅
     const z = chart.getOption().dataZoom[0] || {};
     const s = Math.round((z.start ?? 0) / 100 * (n - 1));
     const en = Math.round((z.end ?? 100) / 100 * (n - 1));
@@ -362,7 +385,7 @@ export function createKlineChart(el, opts) {
 }
 
 /* 环形图（行业分布） */
-export function createDonut(el, data, { title = '' } = {}) {
+export function createDonut(el, data, { title = '', selectable = false } = {}) {
   const chart = echarts.init(el);
   chart.setOption({
     backgroundColor: 'transparent',
@@ -377,6 +400,7 @@ export function createDonut(el, data, { title = '' } = {}) {
     color: ['#22D3EE', '#FBBF24', '#818CF8', '#F6465D', '#34D399', '#F472B6', '#60A5FA', '#F87171', '#A3E635', '#2DD4BF', '#C084FC', '#FB923C', '#94A3B8'],
     series: [{
       type: 'pie', radius: ['44%', '62%'], center: ['36%', '50%'],
+      selectedMode: selectable ? 'single' : false,   // 点击扇区选中偏移（成分股视图行业筛选用）
       avoidLabelOverlap: true, itemStyle: { borderColor: '#0F172A', borderWidth: 2 },
       label: { show: false },
       emphasis: {

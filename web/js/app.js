@@ -1,4 +1,4 @@
-/* 应用入口：hash 路由 + 视图懒加载 + 数据日期徽章 */
+/* 应用入口：hash 路由 + 视图懒加载（容器常驻，切换不销毁——保留各板块操作状态）+ 数据日期徽章 */
 
 import { loadJSON, MANIFEST_URL } from './data.js';
 
@@ -18,24 +18,38 @@ function paintNav(active) {
   });
 }
 
-let loading = null;
+/* 视图容器常驻：首次进入才 mount，之后切换只改 display（保留 DOM 与图表状态） */
+const containers = {};
 
 async function navigate() {
   const name = currentView();
   paintNav(name);
-  viewEl.innerHTML = '';
-  if (loading) loading.dispose?.();
-  const mod = await import(`./views/${name}View.js`);
-  const view = mod.default;
-  loading = view;
-  try {
-    await view.mount(viewEl);
-  } catch (err) {
-    console.error(err);
-    viewEl.innerHTML = '';
-    const { errorBox } = await import('./views/common.js');
-    viewEl.append(errorBox(`视图加载失败：${err.message}`, () => navigate()));
+
+  let c = containers[name];
+  if (!c) {
+    c = containers[name] = { el: document.createElement('div'), ready: null, mounted: false };
+    viewEl.appendChild(c.el);
+    c.ready = (async () => {
+      const mod = await import(`./views/${name}View.js`);
+      await mod.default.mount(c.el);
+      c.mounted = true;
+    })().catch(async (err) => {
+      delete containers[name];
+      c.el.remove();
+      console.error(err);
+      const { errorBox } = await import('./views/common.js');
+      viewEl.append(errorBox(`视图加载失败：${err.message}`, () => navigate()));
+    });
   }
+
+  /* 显示当前视图，隐藏其余（不销毁） */
+  for (const k in containers) {
+    containers[k].el.style.display = k === name ? '' : 'none';
+  }
+
+  if (c.ready) await c.ready;
+  /* 隐藏期间图表容器尺寸为 0，切回时触发 resize 校准 */
+  window.dispatchEvent(new Event('resize'));
 }
 
 /* 数据日期徽章 */

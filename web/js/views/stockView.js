@@ -57,6 +57,7 @@ export default {
       items,
       chartUnit: '元',
       subControl: 'none',
+      compView: false,            // 股票：去掉 图表/成分股 切换
       showMA: false,              // 股票：去掉 MA5/MA20/MA60 均线
       showOHLC: false,            // 股票：浮动面板去掉 开盘/最高/最低 字段
       withIndicator: true,   // 加载指标数据供主图叠加曲线使用
