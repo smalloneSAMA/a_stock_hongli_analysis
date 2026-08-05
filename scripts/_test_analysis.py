@@ -220,7 +220,107 @@ a, b = by_code["515180"]["factors"], by_code["000922"]["factors"]
 same = all(a[k]["pct"] == b[k]["pct"] for k in ("dy", "price", "trend"))
 check("同源因子一致(515180/000922)", same)
 
-# ── 汇总 ────────────────────────────────────────────────────────
+# ── T6 analysis.json 结构完整性（S3-S7 产物）──────────────────────
+print("\n── T6 analysis.json 结构完整性 ──")
+by_code = analysis["by_code"]
+F_KEYS = {"指数": ["dy", "price", "trend", "sent"], "ETF": ["dy", "price", "trend", "sent"],
+          "股票": ["dy", "price", "trend", "pe", "pb", "peg"]}
+bad = []
+for c, v in by_code.items():
+    if sorted(v["factors"].keys()) != sorted(F_KEYS[v["type"]]):
+        bad.append((c, list(v["factors"].keys())))
+check("因子键集合正确（指数/ETF 4键，股票 6键）", not bad, f"异常: {bad[:3]}")
+bad = [c for c, v in by_code.items() if any(not (f.get("name") and "v" in f and "pct" in f) for f in v["factors"].values())]
+check("因子均含 name/v/pct", not bad, f"异常: {bad}")
+bad = [c for c, v in by_code.items() if not (v["anchors"] and all(k in v["anchors"] for k in ("buy", "sell", "dist_buy", "dist_sell")))]
+check("anchors 键齐全", not bad, f"异常: {bad}")
+bad = [c for c, v in by_code.items() if v["type"] == "ETF" and (not v.get("dy_series") or len(v["dy_series"]) != 1250)]
+check("ETF dy_series 1250点", not bad, f"异常: {bad}")
+bad = [c for c, v in by_code.items() if v["type"] != "ETF" and v.get("dy_series")]
+check("非ETF 无 dy_series", not bad, f"异常: {bad}")
+bad = [c for c, v in by_code.items() if not (v.get("dy_p10") is not None and v.get("dy_p90") is not None and v["dy_p10"] < v["dy_p90"])]
+check("dy_p10<dy_p90 存在", not bad, f"异常: {bad[:3]}")
+# 三档权重与设计文档一致（体系A: 稳健 40/30/20/10, 均衡 30/30/20/20, 进取 20/30/30/20）
+exp = {"稳健": {"dy": 40, "price": 30, "trend": 20, "sent": 10},
+        "均衡": {"dy": 30, "price": 30, "trend": 20, "sent": 20},
+        "进取": {"dy": 20, "price": 30, "trend": 30, "sent": 20}}
+bad = [p for p, w in analysis["presets"].items() if w["A"] != exp[p]]
+check("三档权重A==设计文档", not bad, f"异常: {bad}")
+
+# ── T7 数值快照与重算一致性 ──────────────────────────────────────
+print("\n── T7 数值快照与重算 ──")
+# 000922 三档分数快照（与后端控制台/前端实测一致）
+snap = {"稳健": 61.2, "均衡": 55.0, "进取": 52.8}
+ok = True
+for pname, expect in snap.items():
+    w = analysis["presets"][pname]["A"]
+    v = by_code["000922"]
+    s = sum(f["pct"] * wgt for k, (wgt, f) in ((k, (wgt, v["factors"][k])) for k, wgt in w.items()) if f["pct"] is not None) / sum(w.values())
+    if abs(s - expect) > 0.2:
+        ok = False
+        print(f"    000922 {pname}: 重算 {s:.1f} vs 快照 {expect}")
+check("000922 三档分数快照", ok)
+# 锚重算公式：buy == close × dy_now / dy_p90
+bad = []
+for c, v in by_code.items():
+    an, f = v["anchors"], v["factors"]
+    if not an:
+        continue
+    expect_buy = f["price"]["v"] * f["dy"]["v"] / v["dy_p90"]
+    if abs(an["buy"] - expect_buy) > 0.05:
+        bad.append((c, an["buy"], expect_buy))
+check("锚公式重算一致（40标的）", not bad, f"异常: {bad[:3]}")
+# 分数方向 sanity：dy 反向分位已应用（T3 已验证）；band 与分数一致
+bad = [c for c, v in by_code.items()
+       if not (0 <= v["factors"]["dy"]["pct"] <= 100 and v["factors"]["dy"]["pct"] != v["factors"]["dy"]["v"])]
+check("dy pct 与 v 量纲分离", not bad, f"异常: {bad[:3]}")
+
+# ── T8 backtest.json 产物（S2/S8）─────────────────────────────────
+print("\n── T8 回测产物 ──")
+bt_path = os.path.join(BASE, "web", "data", "backtest.json")
+check("backtest.json 存在", os.path.exists(bt_path))
+bt = json.load(open(bt_path, encoding="utf-8"))
+check("order==[85,90,95]", bt["order"] == [85, 90, 95])
+check("三档各40标的", all(len(bt["by_p"][str(p)]) == 40 for p in (85, 90, 95)))
+check("summary 键齐全", all(k in bt["summary"]["90"] for k in ("n", "pos6", "pos12", "avg6", "avg12", "idx6", "idx12", "stk6", "stk12")))
+# 与 docs/回测报告.md 结论数字一致（p90 avg6/avg12）
+rep = open(os.path.join(BASE, "docs", "回测报告.md"), encoding="utf-8").read()
+s = bt["summary"]["90"]
+import re as _re
+seg90 = rep.split("### p90")[1].split("### p95")[0]
+m = _re.search(r"平均超额：6M ([+-][\d.]+)%\s*｜\s*12M ([+-][\d.]+)%", seg90)
+check("backtest.json 与 md 结论一致", m and abs(float(m.group(1)) - s["avg6"]) < 0.01 and abs(float(m.group(2)) - s["avg12"]) < 0.01,
+      f"md={m.groups() if m else None} json=({s['avg6']},{s['avg12']})")
+
+# ── T9 数据边界 ──────────────────────────────────────────────────
+print("\n── T9 数据边界 ──")
+bad = [c for c, v in dy_data.items() if v.get("dy0") and not all(isinstance(x[1], float) and x[1] == x[1] for x in v["series"])]
+check("序列无 NaN/非浮点", not bad, f"异常: {bad[:3]}")
+bad = [c for c, v in dy_data.items() if v.get("dy0") and v["dy_pct"] is not None and not (0 <= v["dy_pct"] <= 100)]
+check("dy_pct∈[0,100]", not bad, f"异常: {bad}")
+# 指数/ETF series 长度 == 缓存行数（有 close 的行）
+bad = []
+for c, v in dy_data.items():
+    if not v.get("dy0") or v["type"] == "股票":
+        continue
+    typ, code = v["type"], c
+    if typ == "ETF":
+        code, typ = v["track"], "指数"
+    cc = json.load(open(fh.cache_path(typ, code), encoding="utf-8"))
+    nclose = sum(1 for r in cc["rows"] if "close" in r)
+    if len(v["series"]) != nclose:
+        bad.append((c, len(v["series"]), nclose))
+check("series长度==缓存close行数", not bad, f"异常: {bad[:3]}")
+# 股票 series == 指标文件 dy>0 数
+bad = []
+for c, v in dy_data.items():
+    if v.get("type") != "股票":
+        continue
+    rows = json.load(open(os.path.join(BASE, "web", "data", "stocks", f"{c}.json"), encoding="utf-8"))
+    n = sum(1 for r in rows if r.get("dy") is not None and r["dy"] > 0)
+    if len(v["series"]) != n:
+        bad.append((c, len(v["series"]), n))
+check("股票series==指标文件dy>0数", not bad, f"异常: {bad}")
 print("\n" + "\n".join(RESULTS))
 print(f"\n═══ 测试汇总：PASS {PASS} / FAIL {FAIL} ═══")
 sys.exit(1 if FAIL else 0)

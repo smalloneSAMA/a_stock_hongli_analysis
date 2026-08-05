@@ -421,6 +421,8 @@ export function createKlineChart(el, opts) {
     const mainSeries = cur.series[0];
     const maSeries = maCount ? cur.series.slice(1, 1 + maCount) : [];
     const volSeries2 = cur.series[1 + maCount];
+    // 主图右轴 overlay 系列（股票指标曲线，yAxisIndex 3）必须保留，否则被 replaceMerge 丢弃
+    const overlayPart = cur.series.filter(s => s.yAxisIndex === 3);
     chart.setOption({
       grid: [
         { left: 62, right: 14, top: 30, height: defs ? '48%' : '62%' },
@@ -434,8 +436,8 @@ export function createKlineChart(el, opts) {
         { axisLabel: { show: !!defs } },
       ],
       yAxis: [{}, {}, { name: defs && defs[0] ? defs[0].unit || '' : '' }],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60'] : []), ...(defs ? defs.map(d => d.name) : [])] },
-      series: [mainSeries, ...maSeries, volSeries2, ...series],
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60'] : []), '成交量', ...overlayPart.map(s => s.name), ...(defs ? defs.map(d => d.name) : [])] },
+      series: [mainSeries, ...maSeries, volSeries2, ...overlayPart, ...series],
     }, { replaceMerge: ['series', 'legend'] });
   }
 
