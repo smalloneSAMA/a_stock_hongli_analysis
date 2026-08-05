@@ -73,49 +73,87 @@ export function buildHistoryView(container, cfg) {
   /* 每只标的的视图状态记忆：{range, from, to, view}（切换标的不重置） */
   const codeState = {};
 
-  /* S7 图表叠加：区间锚线（主图虚线）+ 股息率副图（近5年曲线 + 90/10分位线） */
+  /* S7 图表叠加：区间锚线（主图虚线）+ 股息率副图（曲线 + 90/10分位线）
+     锚与分位线按时间范围窗口动态计算（全部/5年/3年/1年），范围切换时刷新。
+     ETF 用跟踪指数序列计算（价格含除息/折溢价噪声），锚按场内价换算显示 */
+  const RANGE_WINDOW = { all: 0, '5y': 1250, '3y': 756, '1y': 252 };   // 交易日（0=全历史）
+  let analysisEnt = null;      // 当前标的的 analysis 条目
+  let analysisCalcRows = null; // 计算用行情（ETF=跟踪指数，其他=自身）
+  let analysisScale = 1;       // ETF 场内价/指数点位 换算系数
+
+  /* dy 序列（统一公式）：dy_t = dyNow × closeNow(计算序列末值) / close_t
+     返回 {dataByDate: Map, p10, p90}，p10/p90 为窗口分位 */
+  const buildDySeries = (ent, calcRows, winDays) => {
+    const dyNow = ent.factors.dy && ent.factors.dy.v;
+    if (dyNow == null || !calcRows.length) return null;
+    const n = calcRows.length;
+    const closeNow = calcRows[n - 1].close;
+    if (!closeNow) return null;
+    const win = winDays > 0 ? Math.min(winDays, n) : n;
+    const vals = [];
+    const dataByDate = new Map();
+    for (let i = n - win; i < n; i++) {
+      const c = calcRows[i].close;
+      if (!c) continue;
+      const v = Number((dyNow * closeNow / c).toFixed(4));
+      dataByDate.set(calcRows[i].date, v);
+      vals.push(v);
+    }
+    vals.sort((a, b) => a - b);
+    const q = (p) => vals[Math.min(vals.length - 1, Math.floor(vals.length * p))];
+    return { dataByDate, p10: q(0.1), p90: q(0.9) };
+  };
+
+  /* 按窗口刷新锚线 + dy 副图（范围按钮/初次加载共用）；chartRows = 图表显示行（锚换算基准） */
+  const applyAnalysisToChart = (chartApi, chartRows, rangeKey) => {
+    if (!analysisEnt || !analysisEnt.anchors) return;
+    const calcRows = analysisCalcRows || chartRows;
+    const winDays = RANGE_WINDOW[rangeKey] ?? 1250;
+    const dyS = buildDySeries(analysisEnt, calcRows, winDays);
+    if (!dyS) return;
+    const closeCalc = calcRows[calcRows.length - 1].close;
+    const dyNow = analysisEnt.factors.dy.v;
+    const mk = (name, p, color) => {
+      const anchor = closeCalc * dyNow / p;
+      return { value: Number((anchor * analysisScale).toFixed(3)), label: `${name} ${fmt2(anchor * analysisScale)}（${(anchor / closeCalc - 1) * 100 >= 0 ? '+' : ''}${fmt2((anchor / closeCalc - 1) * 100)}%）`, color };
+    };
+    if (cfg.anchors !== false) {
+      chartApi.addAnchorLines([mk('买入锚', dyS.p90, '#F6465D'), mk('卖出锚', dyS.p10, '#34D399')]);
+    }
+    /* dy 副图数据对齐图表日期（ETF 的指数序列按日期映射） */
+    const data = new Array(chartRows.length).fill(null);
+    for (let i = 0; i < chartRows.length; i++) data[i] = dyS.dataByDate.get(chartRows[i].date) ?? null;
+    chartApi.setSubSeries([{
+      name: '股息率', data, color: '#FBBF24', unit: '%',
+      markLines: [
+        { value: dyS.p90, label: '90分位 ' + dyS.p90.toFixed(2), color: '#F6465D' },
+        { value: dyS.p10, label: '10分位 ' + dyS.p10.toFixed(2), color: '#34D399' },
+      ],
+    }]);
+  };
+
   const applyAnalysisOverlay = (chartApi, rows, code) => {
-    loadAnalysis().then((an) => {
+    loadAnalysis().then(async (an) => {
       if (state.chart !== chartApi) return;   // 已切换标的/重新渲染，丢弃过期回调
       const ent = an.by_code[code];
       if (!ent || !ent.anchors) return;
-      /* 锚线（指数默认；ETF 锚为跟踪指数点位→按当前折溢价比例换算为场内价；股票 cfg.anchors===false 关闭） */
-      if (cfg.anchors !== false) {
-        let buy = ent.anchors.buy, sell = ent.anchors.sell;
-        if (ent.type === 'ETF') {
-          const last = rows.length ? rows[rows.length - 1].close : null;
-          const idxNow = ent.factors.price && ent.factors.price.v;
-          if (last && idxNow) {
-            const scale = last / idxNow;
-            buy = +(buy * scale).toFixed(3);
-            sell = +(sell * scale).toFixed(3);
+      analysisEnt = ent;
+      analysisCalcRows = rows;
+      analysisScale = 1;
+      /* ETF：用跟踪指数序列计算分位/锚（自身价格含除息/折溢价噪声），锚按场内价比例换算 */
+      if (ent.type === 'ETF' && ent.track) {
+        try {
+          const idx = await loadTickerObj('指数', ent.track);
+          if (state.chart === chartApi && idx && idx.rows && idx.rows.length) {
+            analysisCalcRows = idx.rows;
+            const lastSelf = rows.length ? rows[rows.length - 1].close : null;
+            const lastIdx = idx.rows[idx.rows.length - 1].close;
+            if (lastSelf && lastIdx) analysisScale = lastSelf / lastIdx;
           }
-        }
-        chartApi.addAnchorLines([
-          { value: buy, label: `买入锚 ${fmt2(buy)}（${ent.anchors.dist_buy >= 0 ? '+' : ''}${fmt2(ent.anchors.dist_buy)}%）`, color: '#F6465D' },
-          { value: sell, label: `卖出锚 ${fmt2(sell)}（${ent.anchors.dist_sell >= 0 ? '+' : ''}${fmt2(ent.anchors.dist_sell)}%）`, color: '#34D399' },
-        ]);
+        } catch { /* 指数行情加载失败则退化为自身序列 */ }
       }
-      /* dy 副图：ETF 用后端序列（K线为场内价、锚为指数点位，量纲不同无法重算）；指数/股票前端重算 dy_t = dyNow×closeNow/close_t */
-      const dyNow = ent.factors.dy && ent.factors.dy.v;
-      const closeNow = ent.factors.price && ent.factors.price.v;
-      if (dyNow == null || closeNow == null) return;
-      const n = rows.length;
-      const data = new Array(n).fill(null);
-      if (ent.dy_series) {
-        const m = new Map(ent.dy_series);
-        for (let i = 0; i < n; i++) data[i] = m.get(rows[i].date) ?? null;
-      } else {
-        const win = Math.min(1250, n);
-        for (let i = n - win; i < n; i++) {
-          const c = rows[i].close;
-          data[i] = c ? Number((dyNow * closeNow / c).toFixed(4)) : null;
-        }
-      }
-      const ml = [];
-      if (ent.dy_p90 != null) ml.push({ value: ent.dy_p90, label: '90分位 ' + ent.dy_p90.toFixed(2), color: '#F6465D' });
-      if (ent.dy_p10 != null) ml.push({ value: ent.dy_p10, label: '10分位 ' + ent.dy_p10.toFixed(2), color: '#34D399' });
-      chartApi.setSubSeries([{ name: '股息率', data, color: '#FBBF24', unit: '%', markLines: ml }]);
+      if (state.chart !== chartApi) return;
+      applyAnalysisToChart(chartApi, rows, state.range);
     }).catch(() => { /* 分析数据加载失败不影响图表 */ });
   };
 
@@ -241,8 +279,6 @@ export function buildHistoryView(container, cfg) {
     });
     state.chart = chartApi;
     if (subDefs) chartApi.setSubSeries(subDefs);
-    /* S7：图表视图叠加区间锚线 + 股息率副图（analysis 数据可用时） */
-    applyAnalysisOverlay(chartApi, rows, item.code);
 
     /* 预设时间范围按钮（点击 → setRange → datazoom 事件 → onZoom 联动 UI） */
     const rangeApi = rangeGroup();
@@ -272,6 +308,8 @@ export function buildHistoryView(container, cfg) {
     state.range = st.range || 'all';
     if (st.from || st.to) chartApi.setDateRange(st.from || null, st.to || null);
     if (vsGroup && st.view && st.view !== 'chart') vsGroup.setView(st.view);
+    /* S7：图表叠加区间锚线 + 股息率副图（此时 state.range 已恢复记忆，锚按正确窗口计算） */
+    applyAnalysisOverlay(chartApi, rows, item.code);
 
     /* 图表 ↔ 成分股 ↔ 区间分析 切换按钮组（股票视图无成分股：cfg.compView === false） */
     let compDonut = null;
@@ -449,7 +487,11 @@ export function buildHistoryView(container, cfg) {
       const g = el('div', { class: 'seg-group', role: 'group', 'aria-label': '时间范围' });
       const btns = [];
       for (const [key, label] of ranges) {
-        const b = el('button', { class: 'seg-btn' + (state.range === key ? ' active' : ''), onclick: () => chartApi.setRange(key) }, label);
+        const b = el('button', { class: 'seg-btn' + (state.range === key ? ' active' : ''), onclick: () => {
+          chartApi.setRange(key);
+          /* 锚线/分位线随范围窗口动态刷新（analysis 数据已加载时） */
+          if (analysisEnt && state.chart === chartApi) applyAnalysisToChart(chartApi, rows, key);
+        } }, label);
         btns.push([key, b]);
         g.append(b);
       }

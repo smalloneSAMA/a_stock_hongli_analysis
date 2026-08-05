@@ -464,22 +464,23 @@ export function createKlineChart(el, opts) {
 
   window.addEventListener('resize', () => { chart.resize(); });
 
-  /* S7 锚线（数据可用后异步叠加）：list = [{value, label, color}]，line/candlestick 通用 */
+  /* S7 锚线（数据可用后异步叠加；重复调用为替换语义）：list = [{value, label, color}]，line/candlestick 通用
+     从 getOption 重组系列（保留成交量/overlay/副图），replaceMerge 防 markLine.data 按索引残留旧线 */
   function addAnchorLines(list) {
     if (!list || !list.length) return;
-    chart.setOption({
-      series: [{
-        markLine: {
-          silent: true, symbol: 'none', z: 7,
-          label: { position: 'insideEndTop', fontSize: 10, formatter: (p) => p.name },
-          data: list.map(a => ({
-            yAxis: a.value, name: a.label,
-            lineStyle: { color: a.color, type: 'dashed', width: 1 },
-            label: { color: a.color },
-          })),
-        },
-      }],
-    });
+    const cur = chart.getOption();
+    const main = cur.series[0];
+    if (!main) return;
+    main.markLine = {
+      silent: true, symbol: 'none', z: 7,
+      label: { position: 'insideEndTop', fontSize: 10, formatter: (p) => p.name },
+      data: list.map(a => ({
+        yAxis: a.value, name: a.label,
+        lineStyle: { color: a.color, type: 'dashed', width: 1 },
+        label: { color: a.color },
+      })),
+    };
+    chart.setOption({ series: cur.series }, { replaceMerge: ['series'] });
   }
 
   return { chart, setRange, setDateRange, onZoom, setSubSeries, addAnchorLines, dispose: () => { window.removeEventListener('keydown', kbdMove); chart.dispose(); } };
