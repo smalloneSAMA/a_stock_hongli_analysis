@@ -165,8 +165,8 @@ export function createKlineChart(el, opts) {
         },
       },
       grid: [
-        { left: 62, right: 14, top: 30, height: '58%' },
-        { left: 62, right: 14, top: '74%', height: '12%' },
+        { left: 62, right: 108, top: 30, height: '58%' },
+        { left: 62, right: 108, top: '74%', height: '12%' },
       ],
       xAxis: xAxisIndex.map((g) => ({ type: 'category', data: dates, gridIndex: g, boundaryGap: true, ...axisBase, axisLabel: { ...axisBase.axisLabel, show: g === 1 }, splitLine: { show: false } })),
       yAxis: [
@@ -187,7 +187,7 @@ export function createKlineChart(el, opts) {
           ...(anchorLines.length ? {
             markLine: {
               silent: true, symbol: 'none', z: 7,
-              label: { position: 'insideEndTop', fontSize: 11.5, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
+              label: { position: 'end', fontSize: 11.5, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
               data: anchorLines.map(a => ({
                 yAxis: a.value, name: a.label,
                 lineStyle: { color: a.color, type: 'dashed', width: 1 },
@@ -264,9 +264,9 @@ export function createKlineChart(el, opts) {
         },
       },
       grid: [
-        { left: 62, right: 14, top: 30, height: '62%' },
-        { left: 62, right: 14, top: '76%', height: '9%' },
-        { left: 62, right: 14, top: '76%', height: '12%', show: false },
+        { left: 62, right: 108, top: 30, height: '62%' },
+        { left: 62, right: 108, top: '76%', height: '9%' },
+        { left: 62, right: 108, top: '76%', height: '12%', show: false },
       ],
       xAxis: [0, 1, 2].map((g) => ({ type: 'category', data: dates, gridIndex: g, boundaryGap: true, ...axisBase, axisLabel: { ...axisBase.axisLabel, show: g === 1 }, splitLine: { show: false } })),
       yAxis: [
@@ -287,7 +287,7 @@ export function createKlineChart(el, opts) {
           ...(anchorLines.length ? {
             markLine: {
               silent: true, symbol: 'none', z: 7,
-              label: { position: 'insideEndTop', fontSize: 11.5, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
+              label: { position: 'end', fontSize: 11.5, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
               data: anchorLines.map(a => ({
                 yAxis: a.value, name: a.label,
                 lineStyle: { color: a.color, type: 'dashed', width: 1 },
@@ -330,10 +330,11 @@ export function createKlineChart(el, opts) {
     return -1;
   };
 
-  /* ── 左上角浮层：光标日期 → 最新日期的累计涨幅（跟随鼠标/键盘/点击）── */
+  /* ── 左上角浮层（固定）：光标日 → 最新日 累计涨幅（上段） + 光标日详情：开/收/高/低/涨跌/量额（下段）──
+     跟随鼠标/键盘/点击更新；光标移出隐藏 */
   if (!el.style.position || el.style.position === 'static') el.style.position = 'relative';
   const floatEl = document.createElement('div');
-  floatEl.style.cssText = "position:absolute;top:28px;left:64px;z-index:6;pointer-events:none;display:none;background:rgba(10,16,30,.88);border:1px solid #334155;border-radius:8px;padding:6px 10px;font-family:'Fira Code',monospace;line-height:1.55";
+  floatEl.style.cssText = "position:absolute;top:28px;left:64px;z-index:6;pointer-events:none;display:none;background:rgba(10,16,30,.9);border:1px solid #334155;border-radius:8px;padding:6px 10px;font-family:'Fira Code',monospace;line-height:1.6;max-width:340px";
   el.appendChild(floatEl);
   let lastFloatIdx = -2;
   const updateFloating = (i) => {
@@ -342,9 +343,26 @@ export function createKlineChart(el, opts) {
     if (i < 0 || i >= n || closes[i] == null || closes[n - 1] == null) { floatEl.style.display = 'none'; return; }
     const chg = (closes[n - 1] / closes[i] - 1) * 100;
     const c = chg >= 0 ? C.up : C.down;
-    floatEl.innerHTML =
+    const k = klines[i];
+    const dchg = chg[i];
+    const dc = dchg == null ? '#94A3B8' : (dchg >= 0 ? C.up : C.down);
+    /* 上段：累计涨幅（光标日 → 最新日） */
+    let html =
       '<div style="font-size:10px;color:#94A3B8">' + dates[i] + ' → ' + dates[n - 1] + '</div>'
       + '<div style="font-size:13px;font-weight:700;color:' + c + '">累计 ' + (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%</div>';
+    /* 下段：光标日详情（开/收/高/低/涨跌/量额） */
+    const rows = [];
+    if (k) {
+      const open = Number(k[0]).toFixed(2), close = Number(k[1]).toFixed(2);
+      const low = Number(k[2]).toFixed(2), high = Number(k[3]).toFixed(2);
+      if (showOHLC) rows.push('<span style="color:#94A3B8">开</span> ' + open + ' <span style="color:#94A3B8">高</span> ' + high + ' <span style="color:#94A3B8">低</span> ' + low);
+      rows.push('<span style="color:#94A3B8">收</span> ' + close + ' <span style="color:#94A3B8">涨跌</span> <span style="color:' + dc + '">' + (dchg == null ? '—' : (dchg >= 0 ? '+' : '') + dchg.toFixed(2) + '%') + '</span>');
+      if (volumes[i] != null) rows.push('<span style="color:#94A3B8">量</span> ' + Number(volumes[i]).toFixed(0) + '万手');
+      if (amounts[i] != null) rows.push('<span style="color:#94A3B8">额</span> ' + Number(amounts[i]).toFixed(1) + '亿');
+    }
+    html += '<div style="border-top:1px solid #334155;margin:5px 0 4px"></div>'
+      + '<div style="font-size:11px;color:#E2E8F0;white-space:nowrap">' + dates[i] + ' · ' + rows.join(' · ') + '</div>';
+    floatEl.innerHTML = html;
     floatEl.style.display = 'block';
   };
 
@@ -398,7 +416,7 @@ export function createKlineChart(el, opts) {
       ...(d.markLines ? {
         markLine: {
           silent: true, symbol: 'none',
-          label: { fontSize: 11, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [2, 5], formatter: (p) => p.name },
+          label: { position: 'end', fontSize: 11, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [2, 5], formatter: (p) => p.name },
           data: d.markLines.map(m => ({
             yAxis: m.value, name: m.label,
             lineStyle: { color: m.color, type: 'dashed', width: 1 },
@@ -412,9 +430,9 @@ export function createKlineChart(el, opts) {
       const cur = chart.getOption();   // 取当前主系列（含 addAnchorLines 合并的 markLine）
       chart.setOption({
         grid: [
-          { left: 62, right: 14, top: 30, height: defs ? '48%' : '58%', show: true },
-          { left: 62, right: 14, top: defs ? '62%' : '74%', height: '12%', show: true },
-          { left: 62, right: 14, top: '76%', height: '12%', show: !!defs },
+          { left: 62, right: 108, top: 30, height: defs ? '48%' : '58%', show: true },
+          { left: 62, right: 108, top: defs ? '62%' : '74%', height: '12%', show: true },
+          { left: 62, right: 108, top: '76%', height: '12%', show: !!defs },
         ],
         xAxis: [
           { gridIndex: 0, axisLabel: { show: false } },
@@ -455,9 +473,9 @@ export function createKlineChart(el, opts) {
     const overlayPart = cur.series.filter(s => s.yAxisIndex === 3);
     chart.setOption({
       grid: [
-        { left: 62, right: 14, top: 30, height: defs ? '48%' : '62%', show: true },
-        { left: 62, right: 14, top: defs ? '62%' : '76%', height: '9%', show: true },
-        { left: 62, right: 14, top: '76%', height: '12%', show: !!defs },
+        { left: 62, right: 108, top: 30, height: defs ? '48%' : '62%', show: true },
+        { left: 62, right: 108, top: defs ? '62%' : '76%', height: '9%', show: true },
+        { left: 62, right: 108, top: '76%', height: '12%', show: !!defs },
       ],
       // 日期标签跟随最底部可见 grid：无副图→成交量 grid1 显示；有副图→grid1 隐藏、副图 grid2 显示
       xAxis: [
@@ -485,7 +503,7 @@ export function createKlineChart(el, opts) {
       series: [{
         markLine: {
           silent: true, symbol: 'none', z: 7,
-          label: { position: 'insideEndTop', fontSize: 11.5, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
+          label: { position: 'end', fontSize: 11.5, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
           data: list.map(a => ({
             yAxis: a.value, name: a.label,
             lineStyle: { color: a.color, type: 'dashed', width: 1 },
