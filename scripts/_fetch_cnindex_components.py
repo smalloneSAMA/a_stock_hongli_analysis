@@ -99,8 +99,8 @@ def export_excel(objs):
     print(f"✅ excel/国证指数成分.xlsx 已生成（{len(objs)} 个指数 sheet）")
 
 
-def main():
-    codes = sys.argv[1:] or [c for c, _ in INDICES]
+def main(codes=None):
+    codes = codes or [c for c, _ in INDICES]
     objs = []
     for code in codes:
         name = dict(INDICES).get(code, code)
@@ -127,4 +127,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(codes=sys.argv[1:] or None)
