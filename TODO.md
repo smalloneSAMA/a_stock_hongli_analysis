@@ -1,6 +1,5 @@
 # 待做
 
-- 回测未更新：数据已到 2026-08-06，backtest.json 仍为 08-05 → `python update.py bt` 重跑（约1分钟）
 - 变更摘要的 ETF 规模变化检测未实现（manifest/analysis 无常驻规模字段，仅增删检测）
 
 # 已修复的问题

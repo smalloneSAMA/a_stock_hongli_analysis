@@ -271,14 +271,34 @@ for c, v in by_code.items():
 check("锚公式重算一致（40标的）", not bad, f"异常: {bad[:3]}")
 # band 与分数一致性已由 T3.6 覆盖；dy 反向分位由 T3.4 覆盖
 
-# ── T8 backtest.json 产物（S2/S8，精选池+自选股48只）─────────────────────────────
+# ── T8 backtest.json 产物（S2/S8，全量约360标的：指数/ETF/推荐20/其他成份股/自选股）──
 print("\n── T8 回测产物 ──")
 bt_path = os.path.join(BASE, "web", "data", "backtest.json")
 check("backtest.json 存在", os.path.exists(bt_path))
 bt = json.load(open(bt_path, encoding="utf-8"))
 check("order==[85,90,95]", bt["order"] == [85, 90, 95])
-check("三档各48标的（精选池+自选股）", all(len(bt["by_p"][str(p)]) == 48 for p in (85, 90, 95)))
-check("summary 键齐全", all(k in bt["summary"]["90"] for k in ("n", "pos6", "pos12", "avg6", "avg12", "idx6", "idx12", "stk6", "stk12")))
+BT_GROUPS = ("指数", "ETF", "推荐20", "其他成份股", "自选股")
+n_dy = sum(1 for v in dy_data.values() if v.get("dy0") is not None)
+check("三档行数==有dy标的数（全量）", all(len(bt["by_p"][str(p)]) == n_dy for p in (85, 90, 95)),
+      f"行数{[len(bt['by_p'][str(p)]) for p in (85,90,95)]} vs 有dy {n_dy}")
+check("scope.n_total==有dy标的数", bt.get("scope", {}).get("n_total") == n_dy)
+check("summary 键齐全", all(k in bt["summary"]["90"] for k in ("n", "pos6", "pos12", "avg6", "avg12", "idx6", "idx12", "stk6", "stk12", "groups")))
+# 分组字段（其他成份股纳入）
+bad = [r["code"] for r in bt["by_p"]["90"] if r.get("group") not in BT_GROUPS]
+check("group 值合法（五组）", not bad, f"异常: {bad[:3]}")
+n_other = sum(1 for r in bt["by_p"]["90"] if r.get("group") == "其他成份股")
+check("其他成份股 ≥300 只", n_other >= 300, f"{n_other} 只")
+sg = bt["summary"]["90"]["groups"]
+check("groups 五组齐全", all(g in sg for g in BT_GROUPS))
+n_sum = sum(v["n"] for v in sg.values())
+n_valid = sum(1 for r in bt["by_p"]["90"] if "skip" not in r)
+check("groups.n 之和==有效标的数", n_sum == n_valid, f"{n_sum} vs {n_valid}")
+# 抽查 1 只其他成份股：重跑 run_backtest 与 json 行一致
+import _backtest_analysis as bta
+sample = next(r for r in bt["by_p"]["90"] if r.get("group") == "其他成份股" and "skip" not in r)
+r2 = bta.run_backtest(sample["code"], dy_data[sample["code"]], p_buy=90)
+same = r2 and "skip" not in r2 and abs(r2["excess"]["12M"] - sample["ex12"]) < 0.01
+check("其他成份股抽查一致", same, f"{sample['code']} 重跑{r2['excess']['12M'] if r2 else None} vs json {sample['ex12']}")
 # 与 docs/回测报告.md 结论数字一致（p90 avg6/avg12）
 rep = open(os.path.join(BASE, "docs", "回测报告.md"), encoding="utf-8").read()
 s = bt["summary"]["90"]

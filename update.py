@@ -385,7 +385,7 @@ def update_web():
     fcc.main()
     collect_etfs()   # 变更摘要采集
     print("\n⚠️ 提示：回测报告（web/data/backtest.json + docs/回测报告.md）为研究产物，")
-    print("   需手动运行 python scripts/_backtest_analysis.py 更新（约1分钟，数据更新后建议重跑）。")
+    print("   需手动运行 python scripts/_backtest_analysis.py 更新（全量约1分钟，数据更新后建议重跑）。")
     print("⚠️ 请人工核对《红利介绍.md》中相关描述/快照数字是否需要同步（脚本不自动改该文件）。")
     print("✅ 前端数据包更新完成（刷新浏览器即可看到新数据）")
 
@@ -429,7 +429,7 @@ def update_fin_refresh():
 # ────────────────────────────── 维护工具 ──────────────────────────────
 
 def run_backtest():
-    print("\n═══ 重跑回测（精选池，约1分钟）═══")
+    print("\n═══ 重跑回测（全量约360标的，约1分钟）═══")
     import _backtest_analysis as ba
     ba.main()
     print("✅ 回测完成（web/data/backtest.json + docs/回测报告.md）")
@@ -519,7 +519,7 @@ def deep_update(auto=False):
     update_watchlist(rerun_web=False)  # 10 自选
     export_excel()
     update_web()
-    if ask("是否重跑回测（约1分钟）？", default=False):
+    if ask("是否重跑回测（全量，约1分钟）？", default=False):
         run_backtest()
     print_changes()
     print(f"\n✅ 深度更新完成，用时 {time.time()-t0:.0f} 秒")
@@ -563,7 +563,7 @@ def tools_menu():
     while True:
         print("""
 ── 维护工具 ──
-  1. 重跑回测（backtest.json + 回测报告.md，约1分钟）
+  1. 重跑回测（backtest.json + 回测报告.md，全量约1分钟）
   2. 失败重试（跳过北交所预期失败项）
   3. 缓存清理（删除后全量重拉）
   4. 重导 Excel（指数/ETF/推荐股）

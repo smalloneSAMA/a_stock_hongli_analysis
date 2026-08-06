@@ -8,6 +8,7 @@ const COLS = [
   { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
   { key: 'name', label: '名称', align: 'left', sortable: true },
   { key: 'type', label: '类型', align: 'center', sortable: true },
+  { key: 'group', label: '分组', align: 'center', sortable: true },
   { key: 'n_buy', label: '信号数', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : v) },
   { key: 'win6', label: '胜率6M', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : v + '%') },
   { key: 'win12', label: '胜率12M', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : v + '%') },
@@ -28,7 +29,7 @@ export default {
         el('div', { class: 'txt-3', style: 'font-size:11.5px;line-height:1.8;margin-top:4px' },
           `生成日期 ${bt.date} · 信号：dy 上穿 p 分位=买、下穿 ${100 - bt.order[0]}~${100 - bt.order[bt.order.length - 1]} 分位=卖（5年滚动窗口），次一交易日收盘执行；ETF 用跟踪指数序列`),
         el('div', { class: 'txt-3', style: 'font-size:11.5px;line-height:1.8' },
-          '收益为价格口径（不含分红再投）；基准 = 同区间每日买入的平均收益；超额 = 信号组均值 − 基准'),
+          `范围：全量 ${bt.scope ? bt.scope.n_total : ''} 标的（指数/ETF/推荐20/其他成份股/自选股） · 收益为价格口径（不含分红再投）；基准 = 同区间每日买入的平均收益；超额 = 信号组均值 − 基准`),
       );
       /* 阅读说明（默认折叠） */
       const guideBox = el('div', { class: 'bt-guide', style: 'display:none' },
@@ -63,9 +64,11 @@ export default {
       const presetBar = el('div', { class: 'seg-group', style: 'margin-top:10px' },
         bt.order.map(p => el('button', { class: 'seg-btn' + (p === 90 ? ' active' : ''), onclick: () => render(p) }, 'p' + p)));
       const sumCard = el('div', { class: 'bt-summary' });
+      const groupTitle = el('div', { class: 'txt-3', style: 'font-size:11px;margin:12px 2px 0' }, '分组统计（有效数 · 12M 平均超额 · 12M 正超额占比）');
+      const groupCard = el('div', { class: 'bt-summary' });
       const insightEl = el('div', { class: 'bt-insight' });
       const tableBox = el('div', {});
-      root.append(head, guideBtn, guideBox, presetBar, sumCard, insightEl, tableBox);
+      root.append(head, guideBtn, guideBox, presetBar, sumCard, groupTitle, groupCard, insightEl, tableBox);
 
       let tableApi = null;
       function render(p) {
@@ -88,6 +91,18 @@ export default {
           sumCard.append(el('div', { class: 'bt-cell' },
             el('div', { class: 'txt-3', style: 'font-size:11px' }, k),
             el('div', { class: 'bt-val ' + (cls === 'up' ? 'txt-up' : cls === 'down' ? 'txt-down' : '') }, v)));
+        }
+        /* 分组卡（指数/ETF/推荐20/其他成份股/自选股，与股票历史板块分组呼应） */
+        groupCard.innerHTML = '';
+        const gs = s.groups || {};
+        for (const [g, v] of Object.entries(gs)) {
+          const gCls = v.avg12 == null ? '' : (v.avg12 > 0 ? 'txt-up' : (v.avg12 < 0 ? 'txt-down' : ''));
+          groupCard.append(el('div', { class: 'bt-cell' },
+            el('div', { class: 'txt-3', style: 'font-size:11px' }, g),
+            el('div', { class: 'bt-val' }, v.n + ' 个'),
+            el('div', { class: 'txt-3', style: 'font-size:10.5px;line-height:1.7' },
+              '12M ', el('span', { class: gCls }, v.avg12 == null ? '—' : (v.avg12 >= 0 ? '+' : '') + fmt2(v.avg12) + '%'),
+              ' · 正超额 ' + (v.n ? Math.round(v.pos12 / v.n * 100) + '%' : '—'))));
         }
         /* 本档解读（中性描述，随档位切换刷新） */
         insightEl.innerHTML = '';
