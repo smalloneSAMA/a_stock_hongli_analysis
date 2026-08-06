@@ -381,6 +381,8 @@ def update_web():
     feh.main()   # ETF季报持仓（980092 股息率估算、159201 持仓成分）
     import _gen_analysis as ga
     ga.main()   # S1 股息率反推（重建 analysis_dy.json）→ S3/S4 因子打分与点位锚（analysis.json）
+    import _recommend_stocks as rs
+    rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
     import _fetch_cnindex_components as fcc
     fcc.main()
     collect_etfs()   # 变更摘要采集
@@ -401,6 +403,8 @@ def update_pool(rerun_web=True):
         gwd.build_manifest()
         import _gen_analysis as ga
         ga.main()
+        import _recommend_stocks as rs
+        rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
         print("\n⚠️  季度末请执行：python scripts/_fetch_pool_data.py --check-fin（分红/财报/股本检测，约15分钟）")
         print("✅ 其他成份股更新完成（刷新浏览器即可）")
 
@@ -417,6 +421,8 @@ def update_watchlist(rerun_web=True):
         gwd.build_manifest()
         import _gen_analysis as ga
         ga.main()
+        import _recommend_stocks as rs
+        rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
         print("✅ 自选股更新完成（刷新浏览器即可）")
 
 
@@ -446,6 +452,8 @@ def retry_failed():
     gwd.build_manifest()
     import _gen_analysis as ga
     ga.main()
+    import _recommend_stocks as rs
+    rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
     print("✅ 重试完成（刷新浏览器即可）")
 
 def clear_cache():
@@ -515,6 +523,8 @@ def deep_update(auto=False):
         import _fetch_watchlist as fw
         fw.main(check_fin=True)
         save_json(LAST_FIN, {"time": time.strftime("%Y-%m-%d %H:%M")})
+        import _recommend_stocks as rs
+        rs.main()   # check-fin 后质量因子更新，重算推荐评分
     update_pool(rerun_web=False)      # 9 其他成份（含新成分K线）
     update_watchlist(rerun_web=False)  # 10 自选
     export_excel()
@@ -588,6 +598,8 @@ def tools_menu():
             import _fetch_watchlist as fw
             fw.main(check_fin=True)
             save_json(LAST_FIN, {"time": time.strftime("%Y-%m-%d %H:%M")})
+            import _recommend_stocks as rs
+            rs.main()   # check-fin 后质量因子更新，重算推荐评分
             print("✅ check-fin 完成（建议随后运行 单项→4 重算指标）")
         else:
             print("无效输入")

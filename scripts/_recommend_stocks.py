@@ -242,31 +242,42 @@ def score_all(codes, meta, raw):
 
 
 def apply_constraints(ranked, top=20):
-    """组合约束：行业 ≤3；四象限 ≥3（不足时从备选中按总分补）"""
+    """组合约束：行业 ≤4；四象限（金融/防御/周期/消费）各 ≥3（象限保底优先于总分）"""
     picked, backup = [], []
-    ind_cnt, quad_cnt = {}, {}
-    for c, scores, grp, fac, m in ranked:
-        q = QUADRANT.get(m["ind"], "其他")
-        if ind_cnt.get(m["ind"], 0) >= 4:
-            backup.append((c, scores, grp, fac, m))
-            continue
-        picked.append((c, scores, grp, fac, m))
-        ind_cnt[m["ind"]] = ind_cnt.get(m["ind"], 0) + 1
-        quad_cnt[q] = quad_cnt.get(q, 0) + 1
+    ind_cnt = {}
+    QUADS = ("金融", "防御", "周期", "消费")
+    # 第一轮：四象限各保底 3 只（象限内按总分，受行业≤4 限制）
+    for q in QUADS:
+        got = 0
+        for it in ranked:
+            if got >= 3:
+                break
+            c, scores, grp, fac, m = it
+            if QUADRANT.get(m["ind"], "其他") != q:
+                continue
+            if ind_cnt.get(m["ind"], 0) >= 4:
+                continue
+            picked.append(it)
+            ind_cnt[m["ind"]] = ind_cnt.get(m["ind"], 0) + 1
+            got += 1
+    # 第二轮：按总分补满 top（行业 ≤4）
+    for it in ranked:
         if len(picked) >= top:
             break
-    # 四象限补足（从 backup 按总分序）
-    for q in ("金融", "防御", "周期", "消费"):
-        while quad_cnt.get(q, 0) < 3 and backup:
-            for i, it in enumerate(backup):
-                c, scores, grp, fac, m = it
-                if QUADRANT.get(m["ind"], "其他") == q and ind_cnt.get(m["ind"], 0) < 4:
-                    picked.append(it); backup.pop(i)
-                    ind_cnt[m["ind"]] = ind_cnt.get(m["ind"], 0) + 1
-                    quad_cnt[q] = quad_cnt.get(q, 0) + 1
-                    break
-            else:
-                break
+        c, scores, grp, fac, m = it
+        if any(x[0] == c for x in picked):
+            continue
+        if ind_cnt.get(m["ind"], 0) >= 4:
+            backup.append(it)
+            continue
+        picked.append(it)
+        ind_cnt[m["ind"]] = ind_cnt.get(m["ind"], 0) + 1
+    # 剩余全部按总分序进备选
+    for it in ranked:
+        if not any(x[0] == it[0] for x in picked) and not any(x[0] == it[0] for x in backup):
+            backup.append(it)
+    # 名单按总分重排（象限保底只决定选谁，不决定排名）
+    picked.sort(key=lambda x: -(x[1]["均衡"] if x[1]["均衡"] is not None else -1))
     return picked[:top], backup
 
 

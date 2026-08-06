@@ -26,8 +26,10 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
 
-# ── 20只推荐股（红利股票推荐20只.md）────────────────────────────
-STOCKS = [
+# ── 推荐股清单（动态：读 cache/_推荐20.json 评分产物；缺失时回退硬编码清单）──
+# 推荐清单由 scripts/_recommend_stocks.py 生成（量化评分）；此清单同时驱动 manifest rec 标记、
+# 回测“推荐20”分组、推荐股 Excel 导出与 K 线增量拉取——单一来源，全链路自动跟随
+_FALLBACK_STOCKS = [
     ("600036", "招商银行", "sh600036"),
     ("601838", "成都银行", "sh601838"),
     ("601088", "中国神华", "sh601088"),
@@ -49,6 +51,30 @@ STOCKS = [
     ("600582", "天地科技", "sh600582"),
     ("600757", "长江传媒", "sh600757"),
 ]
+
+
+def _rec_stocks():
+    """读评分产物 → [(code, name, tcode)]；产物缺失/损坏回退硬编码清单"""
+    p = os.path.join(BASE, "cache", "_推荐20.json")
+    try:
+        obj = json.load(open(p, encoding="utf-8"))
+        rows = obj.get("list") or []
+        if rows:
+            out = []
+            for r in rows:
+                code = r.get("code")
+                if not code:
+                    continue
+                tcode = ("sh" if code.startswith(("6", "9")) else "sz") + code
+                out.append((code, r.get("name", code), tcode))
+            if out:
+                return out
+    except Exception:
+        pass
+    return list(_FALLBACK_STOCKS)
+
+
+STOCKS = _rec_stocks()
 START = "2004-01-01"  # 最早时间上限
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
 
