@@ -185,6 +185,13 @@ def build_report(results_by_p, order=(85, 90, 95)):
 def main(only=None, p_buy=None, full=False):
     data = load_analysis()
     order = (p_buy,) if p_buy else (85, 90, 95)
+    # 默认范围：精选池（11指数+11ETF+20推荐股票）+ 自选股清单（xlsx 现读，show==1）
+    default_stk = {c for c, _, _ in fsd.STOCKS}
+    try:
+        import _fetch_watchlist as watchlist
+        default_stk |= {r["code"] for r in watchlist.read_watchlist_xlsx() if r.get("show")}
+    except Exception:
+        pass
     results_by_p = {}
     for p in order:
         print(f"\n═══ 股息率分位信号回测（p_buy={p}，窗口{WINDOW}日）═══")
@@ -194,8 +201,8 @@ def main(only=None, p_buy=None, full=False):
                 continue
             if only and code != only:
                 continue
-            # 默认仅回测精选池（11指数+11ETF+20推荐股票）；--full 才覆盖全部股票池（307只，较慢）
-            if not full and info["type"] == "股票" and code not in {c for c, _, _ in fsd.STOCKS}:
+            # 默认仅回测精选池+自选股；--full 才覆盖全部股票池（较慢）
+            if not full and info["type"] == "股票" and code not in default_stk:
                 continue
             r = run_backtest(code, info, p_buy=p)
             results.append(r)
@@ -252,6 +259,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="只回测单个代码")
     ap.add_argument("--p", type=int, default=None, help="单档回测（默认三档 p85/90/95）")
-    ap.add_argument("--full", action="store_true", help="回测全部股票池（默认仅精选池42只）")
+    ap.add_argument("--full", action="store_true", help="回测全部股票池（默认仅精选池+自选股48只）")
     args = ap.parse_args()
     main(only=args.only, p_buy=args.p, full=args.full)

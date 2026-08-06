@@ -271,13 +271,13 @@ for c, v in by_code.items():
 check("锚公式重算一致（40标的）", not bad, f"异常: {bad[:3]}")
 # band 与分数一致性已由 T3.6 覆盖；dy 反向分位由 T3.4 覆盖
 
-# ── T8 backtest.json 产物（S2/S8，精选池42只）─────────────────────────────
+# ── T8 backtest.json 产物（S2/S8，精选池+自选股48只）─────────────────────────────
 print("\n── T8 回测产物 ──")
 bt_path = os.path.join(BASE, "web", "data", "backtest.json")
 check("backtest.json 存在", os.path.exists(bt_path))
 bt = json.load(open(bt_path, encoding="utf-8"))
 check("order==[85,90,95]", bt["order"] == [85, 90, 95])
-check("三档各362标的（全量）", all(len(bt["by_p"][str(p)]) == 362 for p in (85, 90, 95)))
+check("三档各48标的（精选池+自选股）", all(len(bt["by_p"][str(p)]) == 48 for p in (85, 90, 95)))
 check("summary 键齐全", all(k in bt["summary"]["90"] for k in ("n", "pos6", "pos12", "avg6", "avg12", "idx6", "idx12", "stk6", "stk12")))
 # 与 docs/回测报告.md 结论数字一致（p90 avg6/avg12）
 rep = open(os.path.join(BASE, "docs", "回测报告.md"), encoding="utf-8").read()
