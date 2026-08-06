@@ -29,7 +29,8 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_stock_data as fsd
 
 OUT = os.path.join(BASE, "cache", "_推荐20.json")
-DY_MIN = 3.5          # 股息率门槛（%）
+DY_MIN = 3.0          # 股息率门槛（%）；dy∈[3.0,3.5) 为临界纳入（标记 near）
+DY_NEAR = 3.5        # 临界上界（%）
 AMT_MIN = 3e7         # 近60日均成交额门槛（元，3000万）
 VOL_DAYS = 250        # 波动率窗口
 MOM_DAYS = 60         # 动量窗口
@@ -246,7 +247,7 @@ def apply_constraints(ranked, top=20):
     ind_cnt, quad_cnt = {}, {}
     for c, scores, grp, fac, m in ranked:
         q = QUADRANT.get(m["ind"], "其他")
-        if ind_cnt.get(m["ind"], 0) >= 3:
+        if ind_cnt.get(m["ind"], 0) >= 4:
             backup.append((c, scores, grp, fac, m))
             continue
         picked.append((c, scores, grp, fac, m))
@@ -259,7 +260,7 @@ def apply_constraints(ranked, top=20):
         while quad_cnt.get(q, 0) < 3 and backup:
             for i, it in enumerate(backup):
                 c, scores, grp, fac, m = it
-                if QUADRANT.get(m["ind"], "其他") == q and ind_cnt.get(m["ind"], 0) < 3:
+                if QUADRANT.get(m["ind"], "其他") == q and ind_cnt.get(m["ind"], 0) < 4:
                     picked.append(it); backup.pop(i)
                     ind_cnt[m["ind"]] = ind_cnt.get(m["ind"], 0) + 1
                     quad_cnt[q] = quad_cnt.get(q, 0) + 1
@@ -325,8 +326,18 @@ def main(top=20, write=True):
     for i, (c, scores, grp, fac, sm) in enumerate(picked, 1):
         tag = "●" if c in rec_now else ""
         in_rank[c] = i
+        dy = sm.get('last_dy')
+        near = '⚠️' if dy is not None and DY_MIN <= dy < DY_NEAR else ''
         print(f"{i:<5}{c:<9}{sm['name']:<9}{sm.get('ind','?'):<7}{QUADRANT.get(sm.get('ind',''),'其他'):<5}"
-              f"{scores['均衡']:<8}{scores['稳健']:<8}{scores['进取']:<8}{tag}")
+              f"{scores['均衡']:<8}{scores['稳健']:<8}{scores['进取']:<8}{tag}{near}")
+
+    # ── 临界备选（dy 3.0~3.5%，放宽门槛可入，按评分排序）──
+    near_list = [x for x in ranked if meta[x[0]].get("last_dy") is not None and DY_MIN <= meta[x[0]]["last_dy"] < DY_NEAR]
+    if near_list:
+        print()
+        print("── 临界备选（dy 3.0~3.5%，⚠️ 放宽门槛可入榜）──")
+        for i, (c, scores, grp, fac, sm) in enumerate(near_list[:12], 1):
+            print(f"  ⚠️ {i:<3}{c:<9}{sm['name']:<9}{sm.get('ind','?'):<7}dy={sm.get('last_dy')}% 均衡{scores['均衡']}")
 
     # ── 现人工 20 只对比 ──
     all_rank = {c: i for i, (c, *_rest) in enumerate(ranked, 1)}
@@ -350,7 +361,7 @@ def main(top=20, write=True):
             return {"code": c, "name": sm.get("name", c), "rank": rank,
                     "score": scores["均衡"], "scores": scores, "group": grp, "factors": fac,
                     "ind": sm.get("ind", ""), "quadrant": QUADRANT.get(sm.get("ind", ""), "其他"),
-                    "dy": sm.get("last_dy")}
+                    "dy": sm.get("last_dy"), "near": bool(sm.get("last_dy") is not None and DY_MIN <= sm["last_dy"] < DY_NEAR)}
         obj = {
             "date": str(datetime.date.today()),
             "factor_date": {"dy": str(datetime.date.today()), "dividend": str(datetime.date.today())},
@@ -358,7 +369,9 @@ def main(top=20, write=True):
             "weights": WEIGHTS,
             "filters": {"dy_min": DY_MIN, "amt_min": AMT_MIN},
             "list": [slim(it, i) for i, it in enumerate(picked, 1)],
-            "backup": [slim(it, i + len(picked)) for i, it in enumerate(backup[:10])],
+            "backup": [slim(it, len(picked) + i + 1) for i, it in enumerate(backup[:10])],
+            "near_backup": [slim(it, i + 1) for i, (c2, sc2, g2, f2, m2) in enumerate(ranked)
+                             if m2.get("last_dy") is not None and DY_MIN <= m2["last_dy"] < DY_NEAR][:20],
             "excluded": excluded,
         }
         tmp = OUT + ".tmp"
