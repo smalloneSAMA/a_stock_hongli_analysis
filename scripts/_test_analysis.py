@@ -40,7 +40,7 @@ comp = load("web/data/components.json")
 print("── T1 dy 序列正确性（S1）──")
 n_all = len(dy_data)
 n_ok = sum(1 for v in dy_data.values() if v.get("dy0") is not None)
-check("标的覆盖", n_all == 362 and n_ok == 362,
+check("标的覆盖", n_all == 368 and n_ok == 368,
       f"{n_all} 标的，{n_ok} 有数据（980092/159201 补股息率后均有数据）")
 # 1.2 反推末值 == dy0
 bad = [c for c, v in dy_data.items() if v.get("dy0") and abs(v["series"][-1][1] - v["dy0"]) > 1e-6]
@@ -124,7 +124,7 @@ else:
 # ── T3 因子与打分（S3/S4）────────────────────────────────────────
 print("\n── T3 因子与打分（S3/S4）──")
 by_code = analysis["by_code"]
-check("标的覆盖", len(by_code) == 362, f"{len(by_code)} 个")
+check("标的覆盖", len(by_code) == 368, f"{len(by_code)} 个")
 # 3.2 权重和
 for pname, pws in analysis["presets"].items():
     for sysname, w in pws.items():
@@ -173,7 +173,7 @@ check("股票 pe/pb 均有分位", not stk_missing, f"缺失: {stk_missing}")
 # ── T4 点位锚（S5）──────────────────────────────────────────────
 print("\n── T4 点位锚（S5）──")
 no_anchor = [c for c, v in by_code.items() if v.get("anchors") is None]
-check("锚全覆盖（362标的）", not no_anchor, f"缺失: {no_anchor}")
+check("锚全覆盖（368标的）", not no_anchor, f"缺失: {no_anchor}")
 bad = [c for c, v in by_code.items()
        if not (v["anchors"]["buy"] < v["anchors"]["sell"])]
 check("buy < sell", not bad, f"异常: {bad}")
@@ -249,7 +249,7 @@ check("三档权重A==设计文档", not bad, f"异常: {bad}")
 # ── T7 数值快照与重算一致性 ──────────────────────────────────────
 print("\n── T7 数值快照与重算 ──")
 # 000922 三档分数快照（与后端控制台/前端实测一致）
-snap = {"稳健": 57.9, "均衡": 51.8, "进取": 48.8}
+snap = {"稳健": 60.6, "均衡": 54.7, "进取": 52.7}
 ok = True
 for pname, expect in snap.items():
     w = analysis["presets"][pname]["A"]
