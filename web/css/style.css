@@ -167,12 +167,14 @@ button { font-family: inherit; }
 .card-title::before { content: ""; width: 3px; height: 12px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 8px rgba(34,211,238,.7); }
 
 /* ═══ 三栏布局（指数/ETF/股票） ═══ */
-.view-layout { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.view-layout { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: var(--space-4); align-items: start; }
 /* ═══ 左侧标的列表 ═══ */
 .ticker-head { margin: 12px 12px 4px; }
 .ticker-head .card-title { margin: 0 2px 6px; }
 .ticker-head .seg-group { display: flex; width: 100%; }
-.ticker-head .seg-btn { flex: 1; text-align: center; font-size: 12px; padding: 4px 6px; }
+.ticker-head .seg-btn { flex: 1; text-align: center; font-size: 12px; padding: 4px 6px; display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1.2; }
+.ticker-head .seg-text { font-size: 12px; }
+.ticker-head .seg-num { font-size: 10.5px; opacity: 0.65; font-family: var(--font-num); }
 .ticker-panel { position: sticky; top: calc(var(--topbar-h) + 16px); max-height: calc(100dvh - var(--topbar-h) - 40px); display: flex; flex-direction: column; overflow: hidden; }
 .ticker-search {
   margin: var(--space-3) var(--space-3) 0; padding: 7px 10px;

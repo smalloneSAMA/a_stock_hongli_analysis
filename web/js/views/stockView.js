@@ -50,6 +50,10 @@ export default {
         (s.ready === false ? '⚠ 待拉取 · ' : '') + (s.ind || '—') + ' · 股息率 ' + (s.last_dy == null ? '—' : fmt2(s.last_dy) + '%')),
     });
     const recItems = m.stocks.filter(s => s.rec).map(toItem);
+    /* 自选股清单（manifest watch 标记）：推荐/其他 tab 不受清单影响（重叠股票两侧同时出现）；
+       自选股 tab 只显示清单中展示字段==1 的股票，按 xlsx 序号排序 */
+    const watchItems = m.stocks.filter(s => s.watch)
+      .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)).map(toItem);
     const otherItems = m.stocks.filter(s => !s.rec).map(toItem);
 
     buildHistoryView(container, {
@@ -58,6 +62,7 @@ export default {
       groups: [
         { label: '推荐 ' + recItems.length, items: recItems },
         { label: '其他成份股 ' + otherItems.length, items: otherItems },
+        { label: '自选股 ' + watchItems.length, items: watchItems },
       ],
       chartUnit: '元',
       subControl: 'none',

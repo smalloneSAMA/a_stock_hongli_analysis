@@ -58,8 +58,13 @@ export function buildHistoryView(container, cfg) {
     cfg.groups ? el('div', { class: 'seg-group', role: 'group', 'aria-label': '列表分组' }) : null);
   if (cfg.groups) {
     for (const [i, g] of cfg.groups.entries()) {
+      /* tab 两行：文字 + 数量（label 形如 "推荐 20" → 拆为 seg-text/seg-num） */
+      const m = String(g.label).match(/^(.*?)\s+(\d+)$/);
+      const content = m
+        ? [el('span', { class: 'seg-text' }, m[1]), el('span', { class: 'seg-num' }, m[2])]
+        : g.label;
       panelTitle.querySelector('.seg-group').append(
-        el('button', { class: 'seg-btn' + (i === 0 ? ' active' : ''), onclick: () => switchGroup(i) }, g.label));
+        el('button', { class: 'seg-btn' + (i === 0 ? ' active' : ''), onclick: () => switchGroup(i) }, content));
     }
   }
 
@@ -205,15 +210,30 @@ export function buildHistoryView(container, cfg) {
     }
   }
 
-  /* 全量列表（搜索范围：推荐+其他成分股全部可搜） */
-  const allItems = cfg.groups ? cfg.groups.flatMap(g => g.items) : null;
+  /* 全量列表（搜索范围：全部组可搜；按 code 去重，优先级按组序 推荐>其他>自选，重叠股票跳高优先组）
+     非 groups 视图（指数/ETF）无全量列表，搜索用当前列表 */
+  const allItems = cfg.groups ? [] : null;
+  if (cfg.groups) {
+    const seen = new Set();
+    for (const g of cfg.groups) {
+      for (const it of g.items) {
+        if (seen.has(it.code)) continue;
+        seen.add(it.code);
+        allItems.push(it);
+      }
+    }
+  }
 
   listApi = renderTickerList(panel, itemsOf(), {
     onSelect: (it) => {
-      /* 搜索结果可能属于其他分组：自动切换到该分组 tab（不重复 select，由下方 select 接管） */
+      /* 搜索结果可能属于其他分组：自动切换到该分组 tab（不重复 select，由下方 select 接管）。
+         当前分组内点击不切换——自选股与成份股重叠时留在当前 tab，不再被 findIndex 优先序带偏 */
       if (cfg.groups) {
-        const gi = cfg.groups.findIndex(g => g.items.some(x => x.code === it.code));
-        if (gi >= 0 && gi !== groupIdx) switchGroup(gi, { auto: false });
+        const inCur = cfg.groups[groupIdx].items.some(x => x.code === it.code);
+        if (!inCur) {
+          const gi = cfg.groups.findIndex(g => g.items.some(x => x.code === it.code));
+          if (gi >= 0 && gi !== groupIdx) switchGroup(gi, { auto: false });
+        }
       }
       select(it);
     },

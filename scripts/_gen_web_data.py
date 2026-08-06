@@ -20,6 +20,7 @@ sys.path.insert(0, SCRIPTS)
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
+import _fetch_watchlist as watchlist
 
 WEB_DATA = os.path.join(BASE, "web", "data")
 os.makedirs(os.path.join(WEB_DATA, "stocks"), exist_ok=True)
@@ -108,18 +109,25 @@ def build_manifest():
                      "last_close": close, "last_chg": chg, "last_nav": nav, "last_acc": acc,
                      "last_nav_chg": nav_chg})
 
-    # 股票池 = 推荐20 + 其他成份股（精选池 289 − 推荐，来自汇总表；含未拉取 K 线的占位）
+    # 股票池 = 推荐20 + 其他成份股（精选池 289 − 推荐，来自汇总表）+ 自选股清单（xlsx 现读）；含未拉取 K 线的占位
     rec_set = {c for c, _, _ in fsd.STOCKS}
     rec_names = {c: n for c, n, _ in fsd.STOCKS}
     t_path = os.path.join(BASE, "cache", "_成分股汇总表.json")
     pool_meta = {}
     if os.path.exists(t_path):
         pool_meta = {r["code"]: r for r in json.load(open(t_path, encoding="utf-8"))}
-    all_codes = [c for c, _, _ in fsd.STOCKS] + [c for c in pool_meta if c not in rec_set]
+    watch_rows = [r for r in watchlist.read_watchlist_xlsx() if r["show"]]
+    watch_set = {r["code"] for r in watch_rows}
+    watch_names = {r["code"]: r["name"] for r in watch_rows}
+    watch_seq = {r["code"]: r["seq"] for r in watch_rows}   # 自选股 tab 按清单序号排序
+    watch_meta = watchlist.load_watch_meta()   # 行业增强（自选股不在精选池时展示用）
+    all_codes = [c for c, _, _ in fsd.STOCKS]
+    all_codes += [c for c in pool_meta if c not in rec_set]
+    all_codes += [r["code"] for r in watch_rows if r["code"] not in rec_set and r["code"] not in pool_meta]
     for code in all_codes:
         c = fh.load_cache("股票", code)
         rows = (c or {}).get("rows", [])
-        name = rec_names.get(code, pool_meta.get(code, {}).get("name", code))
+        name = rec_names.get(code) or pool_meta.get(code, {}).get("name") or watch_names.get(code, code)
         if rows:
             n = ensure_amount_filled("股票", code, c)
             if n:
@@ -128,7 +136,9 @@ def build_manifest():
         close, chg = quote_of(rows)
         s = {"code": code, "name": name, "last": last_date(rows), "n": len(rows),
              "last_close": close, "last_chg": chg,
-             "rec": code in rec_set, "ready": bool(rows)}
+             "rec": code in rec_set, "watch": code in watch_set, "ready": bool(rows)}
+        if code in watch_seq:
+            s["seq"] = watch_seq[code]
         # 最新股息率：有指标文件读末行；否则用汇总表 div_yield 快照（东财近12月口径）
         p = os.path.join(WEB_DATA, "stocks", f"{code}.json")
         if os.path.exists(p):
@@ -142,8 +152,9 @@ def build_manifest():
         if s["last_dy"] is None:
             s["last_dy"] = pool_meta.get(code, {}).get("div_yield")
         t = pool_meta.get(code, {})
-        s["ind"] = t.get("ind", "")
-        s["ind3"] = t.get("ind3", "")
+        wm = watch_meta.get(code, {})
+        s["ind"] = t.get("ind", "") or wm.get("ind", "")
+        s["ind3"] = t.get("ind3", "") or wm.get("ind3", "")
         stocks.append(s)
 
     manifest = {
@@ -157,7 +168,7 @@ def build_manifest():
 
 
 def stock_pool():
-    """股票池全量（推荐20 + 其他成份股）：返回 [(code, name)]，含无 K 线缓存的占位"""
+    """股票池全量（推荐20 + 其他成份股 + 自选股清单）：返回 [(code, name)]，含无 K 线缓存的占位"""
     rec = [(c, n) for c, n, _ in fsd.STOCKS]
     other = []
     t_path = os.path.join(BASE, "cache", "_成分股汇总表.json")
@@ -165,6 +176,11 @@ def stock_pool():
         rec_set = {c for c, _, _ in fsd.STOCKS}
         other = [(r["code"], r.get("name", r["code"])) for r in json.load(open(t_path, encoding="utf-8"))
                  if r["code"] not in rec_set]
+    # 自选股清单（池外部分；池内已由汇总表覆盖；仅展示字段==1 的）
+    other_set = {c for c, _ in other}
+    rec_set = {c for c, _ in rec}
+    other += [(r["code"], r["name"]) for r in watchlist.read_watchlist_xlsx()
+              if r["show"] and r["code"] not in rec_set and r["code"] not in other_set]
     return rec + other
 
 

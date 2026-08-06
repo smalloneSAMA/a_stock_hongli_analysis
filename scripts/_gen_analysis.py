@@ -395,11 +395,13 @@ def main(only=None):
         stocks = comp["by_etf"].get(code, {}).get("stocks", [])
         r = build_index_etf("ETF", code, name, stocks, idx_info.get(ETF_TRACK.get(code)))
         emit(r)
-    # 股票：推荐20 + 其他成份股（web/data/stocks/*.json 有指标文件即分析）
+    # 股票：推荐20 + 其他成份股 + 自选股清单（web/data/stocks/*.json 有指标文件即分析）
     stk_names = {c: n for c, n, _ in fsd.STOCKS}
     t_path = os.path.join(BASE, "cache", "_成分股汇总表.json")
     if os.path.exists(t_path):
         stk_names.update({r["code"]: r.get("name", r["code"]) for r in json.load(open(t_path, encoding="utf-8"))})
+    import _fetch_watchlist as watchlist
+    stk_names.update({r["code"]: r["name"] for r in watchlist.read_watchlist_xlsx()})
     import glob
     stk_files = sorted(glob.glob(os.path.join(BASE, "web", "data", "stocks", "*.json")))
     for fp in stk_files:

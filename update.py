@@ -231,12 +231,26 @@ def update_pool():
     fpd.main()
     print("\n── 重算前端数据包（指标 + 区间分析）──")
     import _gen_web_data as gwd
+    gwd.build_stock_indicators()   # 先指标（manifest 的 last_dy 读指标文件末行）
     gwd.build_manifest()
-    gwd.build_stock_indicators()
     import _gen_analysis as ga
     ga.main()
     print("\n⚠️  季度末请执行：python scripts/_fetch_pool_data.py --check-fin（分红/财报/股本检测，约15分钟）")
     print("✅ 其他成份股更新完成（刷新浏览器即可）")
+
+
+def update_watchlist():
+    """自选股（读自选股清单.xlsx）：K线/分红/财报/股本增量 → 重算前端包"""
+    print("\n═══ 自选股更新（自选股清单.xlsx）═══")
+    import _fetch_watchlist as fw
+    fw.main()
+    print("\n── 重算前端数据包（清单 + 指标 + 区间分析）──")
+    import _gen_web_data as gwd
+    gwd.build_stock_indicators()   # 先指标（manifest 的 last_dy 读指标文件末行）
+    gwd.build_manifest()
+    import _gen_analysis as ga
+    ga.main()
+    print("✅ 自选股更新完成（刷新浏览器即可）")
 
 
 def update_fin_refresh():
@@ -261,6 +275,7 @@ def main():
   7. 前端数据包（web/展示数据 + 国证指数成分）
   8. 分红/财报更新检测（季度末定期执行）
   9. 其他成份股（精选池289−推荐20，首次全量约20-30分钟）
+  10. 自选股（读自选股清单.xlsx，增量）
   0. 退出
 """)
         ch = input("请输入编号: ").strip()
@@ -305,6 +320,9 @@ def main():
             print("\n—— 分红/财报检测 ——")
             if ask("检测20只分红/财报是否有更新（约1分钟），是否执行？"):
                 update_fin_refresh()
+            print("\n—— 自选股 ——")
+            if ask("自选股（自选股清单.xlsx，增量）是否更新？"):
+                update_watchlist()
             print("\n—— 前端数据包 ——")
             if ask("重新生成前端数据包（web/data/ + 国证成分，约10秒），是否执行？"):
                 update_web()
@@ -319,6 +337,9 @@ def main():
             msg = "其他成份股：首次全量约20-30分钟（分批可用 --batch），之后增量约3分钟。是否继续？"
             if ask(msg):
                 update_pool()
+        elif ch == "10":
+            if ask("自选股：读自选股清单.xlsx，增量拉K线/分红/财报，秒~分钟级。是否继续？"):
+                update_watchlist()
         else:
             print("无效输入")
 
