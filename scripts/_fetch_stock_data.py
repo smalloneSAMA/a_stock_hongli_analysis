@@ -380,6 +380,12 @@ def calc_dividend_yield(rows, div_rows):
                 continue
             if (d - ex).days < 365:
                 total += per
+        if not total and events:
+            # 空窗回退：窗口内无除权（除权日顺延/披露延迟）时，用最近一次已除权单次派息，
+            # 防高股息股在除权空窗期股息率假归零（如粤高速 2026 除权日 8-10，8月初 dy 归 0）
+            last = [per for ex, per in events if ex <= d]
+            if last:
+                total = last[0]
         close = r.get("close") or 0
         out.append(round(total / close * 100, 2) if close and total else 0.0)
     return out
