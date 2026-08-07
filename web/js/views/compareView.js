@@ -1,10 +1,15 @@
 /* 视图：对比分析（同类对比：指数/ETF/股票各自内部多选，归一化净值同图观察趋势关系）
    数据全部来自现有缓存（klineUrl 直读 /cache/），零后端改动 */
 
-import { loadJSON, MANIFEST_URL } from '../data.js';
-import { el, fmt2, fmtSigned, dirOf, fmtScale } from './common.js';
+import { loadJSON, klineUrl, MANIFEST_URL } from '../data.js';
+import { el, fmt2, fmtSigned, dirOf, fmtScale, skeleton, errorBox, emptyState } from './common.js';
+import { cssVar } from '../theme.js';
 
 const MAX = 8;   // 最多同时对比的标的数
+const KIND = { index: '指数', etf: 'ETF', stock: '股票' };
+const PALETTE = ['#60A5FA', '#818CF8', '#F87171', '#F472B6', '#34D399', '#FBBF24', '#22D3EE', '#A78BFA'];
+const RANGES = [['all', '全部'], ['5y', '5年'], ['3y', '3年'], ['1y', '1年']];
+const WIN_N = { '5y': 1250, '3y': 750, '1y': 250 };
 
 export default {
   async mount(root) {
@@ -54,6 +59,125 @@ export default {
     const body = el('div', { class: 'cmp-body' }, listPanel, mainEl);
 
     root.append(el('div', { class: 'card cmp-panel' }, toolbar, body));
+
+    /* ═══ 对比图表（步骤2：归一化净值同图）═══ */
+    let chartApi = null;
+    let navMode = true;      // ETF 净值/场内价
+    let rangeKey = 'all';
+    let cmp = null;          // 已加载数据 {dates, aligned}
+    const rangeBtns = [];
+
+    /* 开始对比：拉数据 → 共同起点对齐 → 归一化 → 图表 */
+    async function renderCompare() {
+      if (order.length < 2) return;
+      mainEl.innerHTML = '';
+      mainEl.append(skeleton());
+      try {
+        const items = order.map(code => selected.get(code));
+        const series = [];
+        for (const it of items) {
+          const obj = await loadJSON(klineUrl(KIND[it.type], it.code));
+          const rows = (obj && obj.rows) || [];
+          if (!rows.length) throw new Error(`${it.name}（${it.code}）缓存无数据`);
+          series.push({ it, rows });
+        }
+        /* 共同起点 = 各序列起始日期的最大值（保证窗口内全部有数据） */
+        const start = series.reduce((mx, s) => (mx < s.rows[0].date ? s.rows[0].date : mx), '');
+        const aligned = series.map(s => {
+          const useNav = s.it.type === 'etf' && navMode;
+          const rows = s.rows.filter(r => r.date >= start);
+          const pts = rows.map(r => ({ date: r.date, v: r[useNav ? 'nav' : 'close'] ?? r.close }));
+          const base = pts[0] && pts[0].v;
+          if (!base) throw new Error(`${s.it.name} 起点无数据`);
+          return { it: s.it, pts, base };
+        });
+        /* 日期轴 = 共同起点后全部交易日并集（缺失填 null 断线） */
+        const dateSet = new Set();
+        for (const a of aligned) for (const p of a.pts) dateSet.add(p.date);
+        const dates = [...dateSet].sort();
+        const rows2 = aligned.map(a => {
+          const map = new Map(a.pts.map(p => [p.date, p.v / a.base * 100]));
+          return { it: a.it, vals: dates.map(d => map.get(d) ?? null) };
+        });
+        cmp = { dates, aligned: rows2 };
+        buildChart();
+      } catch (err) {
+        mainEl.innerHTML = '';
+        mainEl.append(errorBox(`对比加载失败：${err.message}`, () => renderCompare()));
+      }
+    }
+
+    /* 图表（可被净值切换/range 按钮重绘） */
+    function buildChart() {
+      if (!cmp) return;
+      mainEl.innerHTML = '';
+      const n = cmp.dates.length;
+      if (n < 250) {
+        mainEl.append(el('div', { class: 'cmp-warn' }, `⚠ 共同窗口仅 ${n} 个交易日（不足1年），建议移除上市较晚的标的`));
+      }
+      /* 工具条：ETF 净值/场内价切换（仅 ETF 对比）+ 时间范围 */
+      const segNav = el('div', { class: 'seg-group', role: 'group' },
+        ['净值', '场内价'].map((lab, i) => el('button', { class: 'seg-btn' + ((i === 0) === navMode ? ' active' : ''),
+          onclick: () => { navMode = i === 0; buildChart(); } }, lab)));
+      rangeBtns.length = 0;
+      const segRange = el('div', { class: 'seg-group', role: 'group' }, RANGES.map(([key, label]) => {
+        const b = el('button', { class: 'seg-btn' + (key === rangeKey ? ' active' : ''), onclick: () => setRange(key) }, label);
+        rangeBtns.push([key, b]);
+        return b;
+      }));
+      const bar = el('div', { class: 'cmp-chart-bar' },
+        el('span', { class: 'cmp-chart-title' }, '归一化净值（起点=100）'),
+        el('div', { style: 'display:flex;gap:8px' },
+          curType === 'etf' ? segNav : null,
+          segRange));
+      const chartEl = el('div', { class: 'chart', style: 'height:460px;margin-top:8px' });
+      mainEl.append(bar, chartEl);
+
+      if (chartApi) { chartApi.dispose(); chartApi = null; }
+      chartApi = echarts.init(chartEl);
+      const names = cmp.aligned.map(r => r.it.name);
+      const axis = cssVar('--text-3');
+      const grid = cssVar('--grid-line');
+      chartApi.setOption({
+        animation: false,
+        legend: { top: 0, data: names, icon: 'roundRect', itemWidth: 14, itemHeight: 8, textStyle: { color: cssVar('--text-2'), fontSize: 11 } },
+        tooltip: { trigger: 'axis', backgroundColor: cssVar('--tooltip-bg'), borderColor: cssVar('--border'),
+          textStyle: { color: cssVar('--text'), fontSize: 12 },
+          valueFormatter: (v) => (v == null ? '—' : Number(v).toFixed(2)) },
+        grid: { left: 52, right: 16, top: 36, bottom: 60 },
+        xAxis: { type: 'category', data: cmp.dates, boundaryGap: false,
+          axisLine: { lineStyle: { color: grid } }, axisLabel: { color: axis, fontSize: 10.5 }, axisTick: { show: false } },
+        yAxis: { type: 'value', scale: true, axisLabel: { color: axis, fontSize: 10.5 },
+          splitLine: { lineStyle: { color: grid } } },
+        dataZoom: [
+          { type: 'inside', xAxisIndex: 0 },
+          { type: 'slider', xAxisIndex: 0, height: 16, bottom: 6, borderColor: 'transparent',
+            backgroundColor: cssVar('--input-bg'), fillerColor: 'rgba(96,165,250,.12)',
+            handleStyle: { color: cssVar('--brand') } },
+        ],
+        series: cmp.aligned.map((r, i) => ({
+          name: r.it.name, type: 'line', data: r.vals, showSymbol: false, sampling: 'lttb',
+          lineStyle: { width: 1.6, color: PALETTE[i % PALETTE.length] },
+          itemStyle: { color: PALETTE[i % PALETTE.length] },
+        })),
+      });
+      applyRange();
+    }
+
+    function setRange(key) {
+      rangeKey = key;
+      for (const [k, b] of rangeBtns) b.classList.toggle('active', k === key);
+      applyRange();
+    }
+
+    function applyRange() {
+      if (!chartApi || !cmp) return;
+      const n = cmp.dates.length;
+      const win = WIN_N[rangeKey];
+      const start = win && n > win ? (n - win) / n * 100 : 0;
+      chartApi.dispatchAction({ type: 'dataZoom', start, end: 100 });
+    }
+
 
     /* ── 当前类型列表（含搜索/分组）── */
     function currentItems() {
@@ -155,13 +279,6 @@ export default {
     searchBox.addEventListener('input', () => { query = searchBox.value.trim(); renderList(); });
     btnClear.addEventListener('click', () => { selected.clear(); order.length = 0; renderChips(); renderList(); });
     btnGo.addEventListener('click', () => renderCompare());
-
-    /* ── 开始对比（步骤 2 接入图表）── */
-    function renderCompare() {
-      if (order.length < 2) return;
-      mainEl.innerHTML = '';
-      mainEl.append(el('div', { class: 'empty-state', style: 'padding:64px 16px' }, '图表渲染（步骤 2 接入）'));
-    }
 
     renderGroupTabs();
     renderList();
