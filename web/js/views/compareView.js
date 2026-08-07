@@ -63,6 +63,7 @@ export default {
     /* ═══ 对比图表（步骤2：归一化净值同图）═══ */
     let chartApi = null;
     let navMode = true;      // ETF 净值/场内价
+    let divMode = false;     // 含分红模式
     let rangeKey = 'all';
     let cmp = null;          // 已加载数据 {dates, aligned}
     const rangeBtns = [];
@@ -79,25 +80,50 @@ export default {
           const obj = await loadJSON(klineUrl(KIND[it.type], it.code));
           const rows = (obj && obj.rows) || [];
           if (!rows.length) throw new Error(`${it.name}（${it.code}）缓存无数据`);
-          series.push({ it, rows });
+          /* 股票：含分红重建需要分红缓存（ex_date/bonus10），缺失则退化为价格 */
+          let divRows = null;
+          if (it.type === 'stock') {
+            try {
+              const d = await loadJSON('/cache/分红_' + it.code + '.json');
+              divRows = (d && d.rows) || null;
+            } catch { divRows = null; }
+          }
+          series.push({ it, rows, divRows });
         }
         /* 共同起点 = 各序列起始日期的最大值（保证窗口内全部有数据） */
         const start = series.reduce((mx, s) => (mx < s.rows[0].date ? s.rows[0].date : mx), '');
         const aligned = series.map(s => {
-          const useNav = s.it.type === 'etf' && navMode;
+          const plainKey = s.it.type === 'etf' && navMode ? 'nav' : 'close';
           const rows = s.rows.filter(r => r.date >= start);
-          const pts = rows.map(r => ({ date: r.date, v: r[useNav ? 'nav' : 'close'] ?? r.close }));
-          const base = pts[0] && pts[0].v;
-          if (!base) throw new Error(`${s.it.name} 起点无数据`);
-          return { it: s.it, pts, base };
+          /* 股票累计分红（升序事件流，除权日归属） */
+          const cum = new Map();
+          if (s.it.type === 'stock' && s.divRows && s.divRows.length) {
+            const evts = [...s.divRows].sort((a, b) => (a.ex_date < b.ex_date ? -1 : 1));
+            let c = 0, ei = 0;
+            for (const r of rows) {
+              while (ei < evts.length && evts[ei].ex_date <= r.date) { c += (evts[ei].bonus10 || 0) / 10; ei++; }
+              cum.set(r.date, c);
+            }
+          }
+          const pts = rows.map(r => {
+            const plain = r[plainKey] ?? r.close;
+            let div = null;
+            /* 含分红口径：ETF 用累计净值（缺失断线，绝不回退 close——与 acc_nav 不可比）；股票用 价格+累计每股分红 */
+            if (s.it.type === 'etf') div = r.acc_nav ?? r.nav ?? null;
+            else if (s.it.type === 'stock') div = cum.has(r.date) ? plain + cum.get(r.date) : null;
+            return { date: r.date, plain, div };
+          });
+          if (!pts.length || !pts[0].plain) throw new Error(`${s.it.name} 起点无数据`);
+          return { it: s.it, pts, basePlain: pts[0].plain, baseDiv: pts[0].div };
         });
         /* 日期轴 = 共同起点后全部交易日并集（缺失填 null 断线） */
         const dateSet = new Set();
         for (const a of aligned) for (const p of a.pts) dateSet.add(p.date);
         const dates = [...dateSet].sort();
         const rows2 = aligned.map(a => {
-          const map = new Map(a.pts.map(p => [p.date, p.v / a.base * 100]));
-          return { it: a.it, vals: dates.map(d => map.get(d) ?? null) };
+          const mPlain = new Map(a.pts.map(p => [p.date, p.plain / a.basePlain * 100]));
+          const mDiv = a.baseDiv ? new Map(a.pts.filter(p => p.div != null).map(p => [p.date, p.div / a.baseDiv * 100])) : null;
+          return { it: a.it, vals: dates.map(d => mPlain.get(d) ?? null), valsDiv: mDiv ? dates.map(d => mDiv.get(d) ?? null) : null };
         });
         cmp = { dates, aligned: rows2 };
         buildChart();
@@ -115,10 +141,15 @@ export default {
       if (n < 250) {
         mainEl.append(el('div', { class: 'cmp-warn' }, `⚠ 共同窗口仅 ${n} 个交易日（不足1年），建议移除上市较晚的标的`));
       }
-      /* 工具条：ETF 净值/场内价切换（仅 ETF 对比）+ 时间范围 */
+      /* 工具条：ETF 净值/场内价切换（仅 ETF 对比）+ 含分红切换 + 时间范围 */
       const segNav = el('div', { class: 'seg-group', role: 'group' },
         ['净值', '场内价'].map((lab, i) => el('button', { class: 'seg-btn' + ((i === 0) === navMode ? ' active' : ''),
           onclick: () => { navMode = i === 0; buildChart(); } }, lab)));
+      const divDisabled = curType === 'index';
+      const segDiv = el('div', { class: 'seg-group', role: 'group' },
+        ['价格', '含分红'].map((lab, i) => el('button', { class: 'seg-btn' + ((i === 1) === divMode ? ' active' : ''),
+          disabled: (divDisabled && i === 1) || undefined, title: divDisabled ? '指数无含分红数据源（仅价格）' : null,
+          onclick: () => { divMode = i === 1; buildChart(); } }, lab)));
       rangeBtns.length = 0;
       const segRange = el('div', { class: 'seg-group', role: 'group' }, RANGES.map(([key, label]) => {
         const b = el('button', { class: 'seg-btn' + (key === rangeKey ? ' active' : ''), onclick: () => setRange(key) }, label);
@@ -126,9 +157,10 @@ export default {
         return b;
       }));
       const bar = el('div', { class: 'cmp-chart-bar' },
-        el('span', { class: 'cmp-chart-title' }, '归一化净值（起点=100）'),
+        el('span', { class: 'cmp-chart-title' }, divMode && curType !== 'index' ? '归一化含分红净值（起点=100）' : '归一化净值（起点=100）'),
         el('div', { style: 'display:flex;gap:8px' },
           curType === 'etf' ? segNav : null,
+          segDiv,
           segRange));
       const chartEl = el('div', { class: 'chart', style: 'height:460px;margin-top:8px' });
       mainEl.append(bar, chartEl);
@@ -157,7 +189,7 @@ export default {
             handleStyle: { color: cssVar('--brand') } },
         ],
         series: cmp.aligned.map((r, i) => ({
-          name: r.it.name, type: 'line', data: r.vals, showSymbol: false, sampling: 'lttb',
+          name: r.it.name, type: 'line', data: divMode && curType !== 'index' ? r.valsDiv : r.vals, showSymbol: false, sampling: 'lttb',
           lineStyle: { width: 1.6, color: PALETTE[i % PALETTE.length] },
           itemStyle: { color: PALETTE[i % PALETTE.length] },
         })),
