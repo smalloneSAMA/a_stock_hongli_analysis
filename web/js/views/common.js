@@ -31,6 +31,8 @@ export function fmtPct(v, digits) {
 }
 export function fmtVol(v) { return F2(v); }     // 万手
 export function fmtAmount(v) { return F2(v); }  // 亿元
+/* ETF 规模（亿元）：>=100 取整，否则 1 位小数 */
+export function fmtScale(v) { return (v >= 100 ? Math.round(v) : Number(v).toFixed(1)) + '亿'; }
 export function fmtSigned(v) {  // 带正负号的纯数字（无%）
   if (v === null || v === undefined || Number.isNaN(v)) return '—';
   const n = Number(v);
@@ -102,8 +104,10 @@ export function renderTickerList(container, items, { onSelect, activeCode, searc
     }
     for (const it of list) {
       const priceTxt = it.price == null ? '—' : Number(it.price).toFixed(2);
+      const nameBox = el('div', { class: 'ticker-name' }, it.name);
+      if (it.scale != null) nameBox.append(el('span', { class: 'ticker-scale' }, fmtScale(it.scale)));
       const li = el('li', { class: 'ticker-item' + (it.code === activeCode ? ' active' : ''), role: 'button', tabindex: '0', 'aria-label': `${it.name} ${it.code}，最新价 ${priceTxt}` },
-        el('div', { class: 'ticker-name' }, it.name),
+        nameBox,
         el('div', { class: 'ticker-price txt-' + dirOf(it.chg) }, priceTxt),
         el('div', { class: 'ticker-code' }, it.code),
         el('div', { class: 'ticker-sub' },

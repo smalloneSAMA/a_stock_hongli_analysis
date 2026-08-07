@@ -83,6 +83,13 @@ def build_manifest():
         else:
             print(f"  ⚠️ 指数 {code} {name}: 无缓存（cache/指数_{code}.json），请先运行 update.py 选项1")
 
+    # ETF 规模（腾讯实时，cache/_ETF规模.json；缺失的标的 scale=None，前端不显示）
+    scale_map = {}
+    try:
+        sm = json.load(open(os.path.join(BASE, "cache", "_ETF规模.json"), encoding="utf-8"))
+        scale_map = {c: v.get("scale_yi") for c, v in sm.items() if v.get("scale_yi")}
+    except Exception:
+        pass
     for code, name, tcode in fh.ETFS:
         c = fh.load_cache("ETF", code)
         rows = (c or {}).get("rows", [])
@@ -107,7 +114,7 @@ def build_manifest():
                 break
         etfs.append({"code": code, "name": name, "last": last_date(rows), "n": len(rows),
                      "last_close": close, "last_chg": chg, "last_nav": nav, "last_acc": acc,
-                     "last_nav_chg": nav_chg})
+                     "last_nav_chg": nav_chg, "scale": scale_map.get(code)})
 
     # 股票池 = 推荐20 + 其他成份股（精选池 289 − 推荐，来自汇总表）+ 自选股清单（xlsx 现读）；含未拉取 K 线的占位
     rec_set = {c for c, _, _ in fsd.STOCKS}

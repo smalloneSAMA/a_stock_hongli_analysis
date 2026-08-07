@@ -49,6 +49,7 @@ export default {
         code: i.code, name: i.name,
         price: i.last_nav,          // 主数字：最新单位净值
         chg: i.last_nav_chg,        // 净值涨跌幅（红涨绿跌，与指数面板同构）
+        scale: i.scale,             // 规模（亿元，腾讯实时，缺失则不显示）
       })),
       chartUnit: '元',
       subControl: 'none',

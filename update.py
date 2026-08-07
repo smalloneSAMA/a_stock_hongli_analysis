@@ -240,6 +240,16 @@ def update_etfs():
             fh.update_incremental("ETF", code, name, fetcher)
         except Exception as e:
             print(f"  ❌ [{code} {name}] 失败: {repr(e)[:80]}")
+    # 批量拉规模（腾讯实时行情，一次请求）→ 供 manifest 展示与前端列表
+    try:
+        import _fetch_etf_data as fed
+        q = fed.tencent_quote([c for c, _, _ in ETFS])
+        scale = {c: {"scale_yi": v.get("mcap_yi"), "date": time.strftime("%Y-%m-%d")}
+                 for c, v in q.items() if v.get("mcap_yi")}
+        save_json(os.path.join(BASE, "cache", "_ETF规模.json"), scale)
+        print(f"  ✅ ETF规模已更新（{len(scale)} 只，腾讯实时）")
+    except Exception as e:
+        print(f"  ⚠️ ETF规模拉取失败: {repr(e)[:80]}（前端将不显示规模）")
     print("\n✅ ETF历史更新完成")
 
 def update_stocks():
