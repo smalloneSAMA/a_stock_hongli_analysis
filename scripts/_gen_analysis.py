@@ -31,8 +31,8 @@ PRESETS = {
     "进取": {"A": {"dy": 20, "price": 30, "trend": 30, "sent": 20},
                "B": {"pe": 15, "pb": 10, "dy": 15, "price": 20, "trend": 25, "peg": 15}},
 }
-FACTOR_CN = {"dy": "股息率分位", "price": "价格分位", "trend": "趋势", "sent": "情绪",
-             "pe": "PE-TTM分位", "pb": "PB分位", "peg": "PEG"}
+FACTOR_CN = {"dy": "股息率", "price": "价格", "trend": "趋势", "sent": "情绪",
+             "pe": "PE-TTM", "pb": "PB", "peg": "PEG"}
 
 
 def band_of(score):

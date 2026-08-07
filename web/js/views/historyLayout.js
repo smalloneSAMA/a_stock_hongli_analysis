@@ -495,6 +495,7 @@ export function buildHistoryView(container, cfg) {
               el('span', { class: 'ana-band band-hold' }, '—')),
             el('div', { class: 'ana-preset' },
               ['稳健', '均衡', '进取'].map(p => el('button', { class: 'seg-btn' + (p === '均衡' ? ' active' : ''), onclick: () => { setPreset(p); } }, p))),
+            el('div', { class: 'ana-score-tip' }, '分数 = 加权贵贱度：0=便宜（买入）→ 100=贵（卖出），分数越高越贵'),
             el('div', { class: 'ana-dy' },
               el('span', {}, '股息率 ', el('b', {}, fmt2(data.factors.dy.v) + '%'), ' · 近5年分位 ', el('b', {}, fmt2(data.factors.dy.pct))),
               el('span', { class: 'txt-3' }, '分位为贵贱度：0=最便宜，100=最贵（股息率分位已反向）'))),
@@ -526,6 +527,25 @@ export function buildHistoryView(container, cfg) {
         };
         /* 因子明细表 */
         const order = sysKey === 'B' ? ['pe', 'pb', 'dy', 'price', 'trend', 'peg'] : ['dy', 'price', 'trend', 'sent'];
+        const F_TIPS = {
+          dy: '股息率：近12个月每股派息 ÷ 股价。分位低=股息率处历史低位（价格贵）',
+          price: '现价在自身近5年价格分布中的位置。0=最便宜，100=最贵',
+          trend: '现价相对60日均线乖离 + 均线排列修正。0=最弱，100=最强',
+          sent: data.type === 'ETF'
+            ? '场内价相对净值的折溢价。溢价越高=情绪越热（高分位）'
+            : '近60日动量。涨得越多=情绪越热（高分位）',
+          pe: '市盈率(PE-TTM)在近5年的位置。分位低=估值便宜',
+          pb: '市净率在近5年的位置。分位低=估值便宜',
+          peg: 'PEG = PE ÷ 盈利增速。<1 记 0 分位（便宜），>2 记 100（贵）',
+        };
+        /* 表头行（与数据行同列宽） */
+        frowBox.append(el('div', { class: 'ana-frow ana-thead' },
+          el('span', {}, '因子'),
+          el('span', { class: 'ana-fval' }, '当前值'),
+          el('span', { class: 'ana-bar-h' }, '← 便宜 ── 贵 →'),
+          el('span', { class: 'ana-fpct' }, '分位'),
+          el('span', { class: 'ana-fw' }, '权重'),
+          el('span', { class: 'ana-fscore' }, '得分')));
         for (const k of order) {
           const f = data.factors[k];
           if (!f) continue;
@@ -537,6 +557,16 @@ export function buildHistoryView(container, cfg) {
             el('span', { class: 'ana-fpct' }, f.pct == null ? '—' : fmt2(f.pct)),
             el('span', { class: 'ana-fw' }, w0[k] + '%'),
             el('span', { class: 'ana-fscore' }, f.pct == null ? '—' : fmt2(f.pct * w0[k] / 100)));
+          /* 行级气泡 tooltip：hover/点击 解释因子含义 */
+          const tip = F_TIPS[k];
+          if (tip) {
+            row.append(el('div', { class: 'ana-tt' }, tip));
+            const bubble = row.querySelector('.ana-tt');
+            const show = (on) => bubble.classList.toggle('show', on);
+            row.addEventListener('mouseenter', () => show(true));
+            row.addEventListener('mouseleave', () => show(false));
+            row.addEventListener('click', (e) => { e.stopPropagation(); show(!bubble.classList.contains('show')); });
+          }
           frowBox.append(row);
         }
         analysisBox.append(dash);
