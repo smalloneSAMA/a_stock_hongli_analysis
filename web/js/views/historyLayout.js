@@ -52,10 +52,22 @@ export function buildHistoryView(container, cfg) {
    * } */
   const kinds = { index: '指数', etf: 'ETF', stock: '股票' };
 
-  /* 列表标题：普通（单组）或带分组切换按钮 */
+  /* 列表标题：普通（单组）或带分组切换按钮；行业筛选下拉位于标题右侧 */
   const totalItems = cfg.groups ? cfg.groups.reduce((a, g) => a + g.items.length, 0) : cfg.items.length;
+  /* 行业筛选（全量池一级行业；选中后列表 = 全量股票池 ∩ 行业，跨分组） */
+  let indFilter = '';   // '' = 全部行业
+  const applyIndFilter = (list) => (indFilter ? list.filter(it => it.ind === indFilter) : list);
+  const inds = [...new Set((cfg.groups ? cfg.groups.flatMap(g => g.items) : cfg.items)
+    .map(it => it.ind).filter(Boolean))].sort();
+  const indSel = inds.length
+    ? el('select', { class: 'ind-filter', 'aria-label': '行业筛选', title: '按一级行业筛选全部股票' },
+      el('option', { value: '' }, '全部行业'),
+      inds.map(x => el('option', { value: x }, x)))
+    : null;
   const panelTitle = el('div', { class: 'ticker-head' },
-    el('div', { class: 'card-title' }, cfg.title + '（' + totalItems + '）'),
+    el('div', { class: 'title-row' },
+      el('div', { class: 'card-title' }, cfg.title + '（' + totalItems + '）'),
+      indSel),
     cfg.groups ? el('div', { class: 'seg-group', role: 'group', 'aria-label': '列表分组' }) : null);
   if (cfg.groups) {
     for (const [i, g] of cfg.groups.entries()) {
@@ -67,6 +79,19 @@ export function buildHistoryView(container, cfg) {
       panelTitle.querySelector('.seg-group').append(
         el('button', { class: 'seg-btn' + (i === 0 ? ' active' : ''), onclick: () => switchGroup(i) }, content));
     }
+  }
+
+  /* 行业筛选联动：选中后列表/搜索均为全量池 ∩ 行业（跨分组），分组 tab 禁用；清空恢复分组模式 */
+  if (indSel) {
+    indSel.addEventListener('change', () => {
+      indFilter = indSel.value;
+      const base = indFilter
+        ? (allItems || (cfg.groups ? cfg.groups[groupIdx].items : cfg.items))
+        : (cfg.groups ? cfg.groups[groupIdx].items : cfg.items);
+      listApi.refresh(applyIndFilter(base));
+      if (allItems) listApi.setSearchItems(applyIndFilter(allItems));
+      panelTitle.querySelectorAll('.seg-btn').forEach(b => { b.disabled = !!indFilter; });
+    });
   }
 
   const layout = el('div', { class: 'view-layout' },
@@ -127,18 +152,11 @@ export function buildHistoryView(container, cfg) {
     if (!dyS) return;
     const closeCalc = calcRows[calcRows.length - 1].close;
     const dyNow = analysisEnt.factors.dy.v;
-    /* 初始全量视图：锚用后端 1250 窗口口径（与区间分析页一致）；缩放后按可见窗口重算（所见即所得） */
-    const fullView = sPct <= 0 && ePct >= 100;
+    /* 统一反推口径：锚 = 窗口基准价 × 当前dy ÷ 窗口分位dy（全量/缩放一致，所见即所得；
+       不再读后端 1250 窗口锚——避免主图内部分裂（全量真实口径 ↔ 缩放反推口径）及锚超历史范围不显示） */
     const mk = (name, p, color) => {
-      let anchor, dist;
-      if (fullView && analysisEnt.anchors) {
-        const buy = name === '买入锚';
-        anchor = buy ? analysisEnt.anchors.buy : analysisEnt.anchors.sell;
-        dist = buy ? analysisEnt.anchors.dist_buy : analysisEnt.anchors.dist_sell;
-      } else {
-        anchor = closeCalc * dyNow / p;
-        dist = (anchor / closeCalc - 1) * 100;
-      }
+      const anchor = closeCalc * dyNow / p;
+      const dist = (anchor / closeCalc - 1) * 100;
       /* 锚 label 两行：上行文字（买入锚/卖出锚），下行数字（数值 + 距现价%） */
       return { value: Number((anchor * analysisScale).toFixed(3)), label: `${name}\n${fmt2(anchor * analysisScale)}（${dist >= 0 ? '+' : ''}${fmt2(dist)}%）`, color };
     };
@@ -212,7 +230,7 @@ export function buildHistoryView(container, cfg) {
     if (i === groupIdx || !cfg.groups) return;
     groupIdx = i;
     panel.querySelectorAll('.ticker-head .seg-btn').forEach((b, bi) => b.classList.toggle('active', bi === i));
-    listApi.refresh(cfg.groups[i].items);
+    listApi.refresh(indFilter ? applyIndFilter(allItems) : applyIndFilter(cfg.groups[i].items));   // 行业生效时始终全量筛选结果
     if (!auto) return;
     if (state.code && cfg.groups[i].items.some(it => it.code === state.code)) {
       listApi.setActive(state.code);
@@ -239,7 +257,7 @@ export function buildHistoryView(container, cfg) {
     onSelect: (it) => {
       /* 搜索结果可能属于其他分组：自动切换到该分组 tab（不重复 select，由下方 select 接管）。
          当前分组内点击不切换——自选股与成份股重叠时留在当前 tab，不再被 findIndex 优先序带偏 */
-      if (cfg.groups) {
+      if (cfg.groups && !indFilter) {   // 行业筛选生效时不做跨组切换（列表已是全量筛选结果）
         const inCur = cfg.groups[groupIdx].items.some(x => x.code === it.code);
         if (!inCur) {
           const gi = cfg.groups.findIndex(g => g.items.some(x => x.code === it.code));
@@ -251,6 +269,7 @@ export function buildHistoryView(container, cfg) {
     activeCode: state.code,
     searchable: true,
     searchItems: allItems || undefined,
+    searchKey: 'list_' + (cfg.kind || ''),
     title: panelTitle,
   });
 

@@ -143,6 +143,22 @@ def get_close_arr(typ, code, info):
     return np.array([r["close"] for r in c.get("rows", []) if "close" in r], dtype=float)
 
 
+def price_percentile_anchor(info):
+    """近5年反推口径锚：反推 dy_t = D/close_t 的 p90/p10 ⇔ 价格 p10/p90（单调反比）
+    → 买入锚 = 近5年价格10分位（低），卖出锚 = 近5年价格90分位（高）
+    与主图反推锚同构（主图缩放近5年时锚 = 窗口价格分位对应价）；ETF 用跟踪指数序列"""
+    typ, code = info["type"], info["code"]
+    if typ == "ETF":
+        code = info.get("track") or code
+        typ = "指数"
+    c = json.load(open(fh.cache_path(typ, code), encoding="utf-8"))
+    closes = [r["close"] for r in c.get("rows", []) if "close" in r]
+    if not closes:
+        return None, None
+    win = closes[-WINDOW:]
+    return float(np.percentile(win, 10)), float(np.percentile(win, 90))
+
+
 def build_factors():
     """S4：全因子分位 + 三档权重表 → web/data/analysis.json（数据层只存分位，分数前端本地算）"""
     dy_data = json.load(open(os.path.join(BASE, "cache", "analysis_dy.json"), encoding="utf-8"))
@@ -173,14 +189,16 @@ def build_factors():
             s = sum(f[k][1] * wgt for k, wgt in w.items() if f[k][1] is not None)
             scores[pname] = round(s / sum(w.values()), 1)
         factors = {k: {"name": FACTOR_CN[k], "v": f[k][0], "pct": f[k][1]} for k in f}
-        # S5 点位锚：股息率涨到 5年90分位（便宜）对应的价格 = 买入锚；跌到 10 分位 = 卖出锚
+        # S5 点位锚：近5年反推口径（与主图统一）——反推 dy_t = D/close_t 的分位 ⇔ 价格分位，
+        # 买入锚 = 近5年价格10分位（股息率高=便宜），卖出锚 = 近5年价格90分位（贵）；
+        # 锚天然落在历史价格区间内，不会被真实TTM序列的除权断崖/低分红期污染
         anchors = None
-        if info.get("close_now") and info.get("dy_now") and info.get("dy_p90"):
-            buy = info["close_now"] * info["dy_now"] / info["dy_p90"]
-            sell = info["close_now"] * info["dy_now"] / info["dy_p10"]
-            anchors = {"buy": round(buy, 2), "sell": round(sell, 2),
-                       "dist_buy": round((buy / info["close_now"] - 1) * 100, 1),
-                       "dist_sell": round((sell / info["close_now"] - 1) * 100, 1)}
+        if info.get("close_now"):
+            p10, p90 = price_percentile_anchor(info)
+            if p10 and p90:
+                anchors = {"buy": round(p10, 2), "sell": round(p90, 2),
+                           "dist_buy": round((p10 / info["close_now"] - 1) * 100, 1),
+                           "dist_sell": round((p90 / info["close_now"] - 1) * 100, 1)}
         # S7 副图辅助：dy 分位值（分位线）；ETF 存近5年 dy 序列（K线为场内价、锚为指数点位，前端无法重算）
         dy_series = None
         if typ == "ETF" and info.get("series"):
@@ -188,6 +206,7 @@ def build_factors():
         out["by_code"][code] = {"name": info["name"], "type": typ, "track": info.get("track"),
                                 "factors": factors, "anchors": anchors,
                                 "dy_p10": info.get("dy_p10"), "dy_p90": info.get("dy_p90"),
+                                "win_start": info.get("window_start"), "n_days": info.get("n_days"),
                                 "dy_series": dy_series}
         rows_out.append((code, info["name"], typ, scores))
     out["date"] = max((info["series"][-1][0] for info in dy_data.values() if info.get("series")), default="")

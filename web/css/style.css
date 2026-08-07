@@ -29,6 +29,10 @@
   --warn: #FBBF24;
   --danger: #F6465D;
   --rec-bg: rgba(251, 191, 36, 0.08);
+  /* 相关矩阵配色（柔和，避免高饱和刺眼） */
+  --corr-low: #4E7FB5;    /* 负相关（暗蓝） */
+  --corr-mid: #39404E;    /* 零相关（深灰，略亮于背景） */
+  --corr-high: #B96A6A;   /* 正相关（暗红） */
 
   /* ── 字体 ── */
   --font-body: 'Fira Sans', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Segoe UI', sans-serif;
@@ -113,6 +117,10 @@
   --warn: #B45309;
   --danger: #DC2626;
   --rec-bg: rgba(180, 83, 9, 0.07);
+  /* 相关矩阵配色（柔和，避免高饱和刺眼） */
+  --corr-low: #B7D2EE;    /* 负相关（浅蓝） */
+  --corr-mid: #DDE3EC;    /* 零相关（浅灰） */
+  --corr-high: #EDC0C0;   /* 正相关（浅红） */
   --topbar-bg: rgba(255, 255, 255, 0.82);
   --input-bg: rgba(255, 255, 255, 0.9);
   --card-a: rgba(255, 255, 255, 0.92);
@@ -276,7 +284,8 @@ button { font-family: inherit; }
 .view-layout { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: var(--space-4); align-items: start; }
 /* ═══ 左侧标的列表 ═══ */
 .ticker-head { margin: 12px 12px 4px; }
-.ticker-head .card-title { margin: 0 2px 6px; }
+.ticker-head .title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 6px; }
+.ticker-head .card-title { margin: 0; }
 .ticker-head .seg-group { display: flex; width: 100%; }
 .ticker-head .seg-btn { flex: 1; text-align: center; font-size: 12px; padding: 4px 6px; display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1.2; }
 .ticker-head .seg-text { font-size: 12px; }
@@ -453,6 +462,8 @@ button { font-family: inherit; }
 .cmp-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 3px 8px; border-radius: 999px;
   background: var(--card-soft); border: 1px solid var(--brand); color: var(--text); }
 .cmp-chip-x { font-style: normal; cursor: pointer; color: var(--text-3); font-size: 13px; padding: 0 2px; }
+.cmp-chip-price { font-family: var(--font-num); font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cmp-chip-price::before { content: ''; width: 1px; height: 10px; background: var(--border); display: inline-block; margin-right: 5px; vertical-align: -1px; }
 .cmp-chip-x:hover { color: var(--down); }
 .cmp-actions { display: flex; gap: 8px; }
 .cmp-go { font-size: 12.5px; font-weight: 700; padding: 6px 18px; border-radius: 8px; border: 1px solid var(--brand);
@@ -461,20 +472,51 @@ button { font-family: inherit; }
 .cmp-body { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: var(--space-3); align-items: start; }
 .cmp-list-panel { padding: 10px; max-height: calc(100dvh - var(--topbar-h) - 210px); overflow: hidden; display: flex; flex-direction: column; }
 .cmp-groups { display: flex; gap: 4px; padding: 6px 2px 8px; flex-wrap: wrap; }
+.cmp-gtab:disabled { opacity: .45; cursor: not-allowed; }
+/* 搜索行：搜索框 + 行业下拉（与股票历史板块标题行同布局） */
+.cmp-search-row { display: flex; align-items: center; gap: 8px; margin: var(--space-3) var(--space-3) 0; }
+.cmp-search-row .ticker-search { margin: 0; flex: 1; min-width: 0; }
+.cmp-search-row .ind-filter { flex-shrink: 0; }
 .cmp-gtab { font-size: 11.5px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text-2); cursor: pointer; }
 .cmp-gtab.active { border-color: var(--brand); color: var(--brand); background: rgba(251, 191, 36, .1); }
 .cmp-gtab em { font-style: normal; opacity: .65; margin-left: 3px; font-size: 10.5px; }
-.cmp-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
-.cmp-item { display: grid; grid-template-columns: 16px 1fr auto auto; align-items: center; gap: 8px; padding: 7px 8px;
-  border-radius: 8px; cursor: pointer; font-size: 12.5px; border: 1px solid transparent; }
-.cmp-item:hover { background: var(--input-bg); }
-.cmp-item.sel { background: rgba(251, 191, 36, .08); border-color: var(--brand); }
-.cmp-check { width: 15px; height: 15px; border-radius: 4px; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: var(--brand); }
-.cmp-item.sel .cmp-check { border-color: var(--brand); }
-.cmp-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cmp-scale { font-style: normal; font-size: 10.5px; color: var(--brand); margin-left: 5px; }
-.cmp-item-code { color: var(--text-3); font-size: 11px; }
-.cmp-item-price { font-variant-numeric: tabular-nums; font-size: 12px; }
+.cmp-grp { font-style: normal; font-size: 10.5px; color: var(--text-3); margin-left: 5px; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+/* 净值图左上角累计涨跌浮层（对齐股票板块图表左上角浮层样式） */
+.cmp-float { position: absolute; top: 30px; left: 64px; z-index: 6; pointer-events: none; display: none;
+  background: var(--tooltip-bg); border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 10px;
+  font-family: 'Fira Code', monospace; min-width: 150px; max-width: 280px; }
+.cmp-float-head { font-size: 10px; color: var(--text-3); margin-bottom: 3px; }
+.cmp-float-row { display: flex; justify-content: space-between; gap: 12px; font-size: 11.5px; line-height: 1.65; }
+.cmp-float-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 165px; }
+.cmp-float-chg { font-weight: 700; font-variant-numeric: tabular-nums; }
+/* ⓘ 使用说明：速记行 + 按钮 + 展开卡片 */
+.cmp-help-tip { font-size: 11.5px; color: var(--text-3); margin-top: 6px; line-height: 1.5; }
+/* 搜索历史下拉（点击搜索框弹出最近记录，键盘上下选择） */
+.search-hist { position: absolute; z-index: 200; background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, .35); overflow: hidden; padding: 4px; }
+.search-hist-item { padding: 6px 10px; font-size: 12px; color: var(--text-2); cursor: pointer; border-radius: 5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.search-hist-item:hover, .search-hist-item.sel { background: var(--input-bg); color: var(--text); }
+/* 行业筛选下拉（股票历史列表，位于标题右侧） */
+.ind-filter { margin: 0; padding: 3px 8px; font-size: 12px; color: var(--text-2);
+  background: var(--input-bg); border: 1px solid var(--border); border-radius: 7px; outline: none; cursor: pointer; max-width: 140px; }
+.ind-filter:hover { border-color: var(--brand); }
+.ind-filter option { background: var(--surface); color: var(--text-2); }
+.ticker-head .seg-btn:disabled { opacity: .45; cursor: not-allowed; }
+.cmp-help-btn { font-size: 12.5px; line-height: 1; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-3); cursor: pointer; margin-left: 2px; transition: color .15s, border-color .15s; }
+.cmp-help-btn:hover, .cmp-help-btn.active { color: var(--brand); border-color: var(--brand); }
+.cmp-help-card { position: absolute; top: 34px; right: 8px; z-index: 5; width: 330px; max-width: calc(100% - 16px);
+  background: var(--tooltip-bg); border: 1px solid var(--border-strong); border-radius: 10px; padding: 10px 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .28); font-size: 11.5px; line-height: 1.6; color: var(--text-2); text-align: left; }
+.cmp-help-label { font-size: 10.5px; color: var(--brand); font-weight: 700; margin-bottom: 2px; }
+.cmp-help-sec { margin-bottom: 6px; }
+.cmp-help-sec:last-child { margin-bottom: 0; }
+.cmp-help-sec ul { margin: 0; padding-left: 16px; }
+.cmp-help-sec li { margin-bottom: 1px; }
+@media (max-width: 640px) {
+  .cmp-help-card { left: 8px; right: 8px; width: auto; top: 40px; }
+}
 .cmp-main { padding: var(--space-3); min-height: 420px; }
 .cmp-chart-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .cmp-chart-title { font-size: 13.5px; font-weight: 700; }

@@ -259,16 +259,27 @@ for pname, expect in snap.items():
         ok = False
         print(f"    000922 {pname}: 重算 {s:.1f} vs 快照 {expect}")
 check("000922 三档分数快照", ok)
-# 锚重算公式：buy == close × dy_now / dy_p90
+# 锚重算（新口径）：买入锚 == 近5年价格10分位，卖出锚 == 近5年价格90分位（反推口径，与主图统一；
+# 反推 dy_t=D/close_t 的分位 ⇔ 价格分位，锚天然落在历史价格区间内）
+import numpy as _np
 bad = []
 for c, v in by_code.items():
-    an, f = v["anchors"], v["factors"]
+    an = v["anchors"]
     if not an:
         continue
-    expect_buy = f["price"]["v"] * f["dy"]["v"] / v["dy_p90"]
-    if abs(an["buy"] - expect_buy) > 0.05:
-        bad.append((c, an["buy"], expect_buy))
-check("锚公式重算一致（40标的）", not bad, f"异常: {bad[:3]}")
+    typ, code = v["type"], c
+    if typ == "ETF":
+        code = v["track"]; typ = "指数"
+    cc = load(f"cache/{typ}_{code}.json")
+    closes = [r["close"] for r in cc["rows"] if "close" in r]
+    win = closes[-1250:]
+    if len(win) < 60:
+        continue
+    pb = round(float(_np.percentile(win, 10)), 2)
+    ps = round(float(_np.percentile(win, 90)), 2)
+    if an["buy"] != pb or an["sell"] != ps:
+        bad.append((c, an["buy"], pb, an["sell"], ps))
+check("锚==近5年价格10/90分位（反推口径）", not bad, f"异常: {bad[:3]}")
 # band 与分数一致性已由 T3.6 覆盖；dy 反向分位由 T3.4 覆盖
 
 # ── T8 backtest.json 产物（S2/S8，全量约360标的：指数/ETF/推荐20/其他成份股/自选股）──

@@ -47,6 +47,7 @@ export default {
     /* 列表信息全部来自 manifest（含最新价/涨跌/股息率/一二级行业），K线与指标选中后按需加载 */
     const toItem = (s) => ({
       code: s.code, name: s.name, price: s.last_close, chg: s.last_chg,
+      ind: s.ind || '',   // 一级行业（行业筛选用）
       subHtml: el('span', { class: 'txt-3', style: 'font-size:10.5px' },
         (s.ready === false ? '⚠ 待拉取 · ' : '') + (s.ind || '—') + ' · 股息率 ' + (s.last_dy == null ? '—' : fmt2(s.last_dy) + '%')),
     });

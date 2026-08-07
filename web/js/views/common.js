@@ -81,13 +81,93 @@ export function errorBox(message, onRetry) {
   return box;
 }
 
+/* ── 搜索历史：点击搜索框弹出最近 5 条（键盘 ↑/↓ 选择、Enter 确认、Esc 关闭、失焦记录）── */
+const HIST_PREFIX = 'pi_search_hist_';
+export function getSearchHistory(key) {
+  try { return JSON.parse(localStorage.getItem(HIST_PREFIX + key) || '[]') || []; } catch { return []; }
+}
+export function rememberSearch(key, kw) {
+  const s = String(kw || '').trim();
+  if (!s) return;
+  try {
+    const list = getSearchHistory(key).filter(x => x !== s);
+    list.unshift(s);
+    localStorage.setItem(HIST_PREFIX + key, JSON.stringify(list.slice(0, 5)));
+  } catch { /* 忽略 */ }
+}
+export function attachSearchHistory(searchBox, { key, onPick } = {}) {
+  if (!searchBox || !key) return;
+  let sel = -1, box = null;
+  const listOf = () => getSearchHistory(key);
+  const close = () => { if (box) { box.remove(); box = null; } sel = -1; };
+  const show = () => {
+    const list = listOf();
+    if (!list.length || document.activeElement !== searchBox) return;
+    close();
+    box = el('div', { class: 'search-hist', role: 'listbox' });
+    list.forEach((kw, i) => {
+      box.append(el('div', { class: 'search-hist-item' + (i === sel ? ' sel' : ''), role: 'option',
+        onclick: () => {
+          searchBox.value = kw;
+          rememberSearch(key, kw);
+          if (onPick) onPick(kw);
+          close();
+          searchBox.focus();
+        } }, kw));
+    });
+    const r = searchBox.getBoundingClientRect();
+    box.style.top = (r.bottom + 4) + 'px';
+    box.style.left = r.left + 'px';
+    box.style.width = Math.max(r.width, 180) + 'px';
+    document.body.appendChild(box);
+  };
+  searchBox.addEventListener('focus', show);
+  searchBox.addEventListener('input', () => close());   // 输入时隐藏历史
+  searchBox.addEventListener('keydown', (e) => {
+    const list = listOf();
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!list.length) return;
+      if (!box) { show(); return; }
+      e.preventDefault();
+      sel = e.key === 'ArrowDown' ? (sel + 1) % list.length : (sel - 1 + list.length) % list.length;
+      box.querySelectorAll('.search-hist-item').forEach((n, i) => n.classList.toggle('sel', i === sel));
+    } else if (e.key === 'Enter') {
+      if (box && sel >= 0) {
+        e.preventDefault();
+        const kw = list[sel];
+        searchBox.value = kw;
+        if (onPick) onPick(kw);
+        rememberSearch(key, kw);
+      } else {
+        const kw = searchBox.value.trim();
+        if (kw) rememberSearch(key, kw);
+      }
+      close();
+    } else if (e.key === 'Escape') {
+      close();
+    }
+  });
+  /* 失焦：关闭下拉并记录当前输入（延迟 150ms 等历史项 click 先执行，避免覆盖选中词） */
+  searchBox.addEventListener('blur', () => {
+    const kw = searchBox.value.trim();
+    setTimeout(() => {
+      close();
+      if (kw && listOf()[0] !== kw) rememberSearch(key, kw);
+    }, 150);
+  });
+  /* 点击外部关闭 */
+  document.addEventListener('click', (e) => {
+    if (box && !box.contains(e.target) && e.target !== searchBox) close();
+  });
+}
+
 /* ── 左侧标的列表 ── */
 /**
  * items: [{code, name, price, chg, sub, subDir}]
  * 选中回调 onSelect(item)
  * title: 可选标题区（Node），渲染在搜索框之前（注意本函数会清空 container）
  */
-export function renderTickerList(container, items, { onSelect, activeCode, searchable = true, title = null, searchItems = null }) {
+export function renderTickerList(container, items, { onSelect, activeCode, searchable = true, title = null, searchItems = null, searchKey = 'ticker' }) {
   container.innerHTML = '';
   if (title) container.append(title);
   const searchBox = searchable ? el('input', { class: 'ticker-search', type: 'search', placeholder: '搜索代码 / 名称…', 'aria-label': '搜索标的' }) : null;
@@ -121,12 +201,14 @@ export function renderTickerList(container, items, { onSelect, activeCode, searc
   paint(items);
 
   if (searchBox) {
-    searchBox.addEventListener('input', () => {
+    const applyQuery = () => {
       const q = searchBox.value.trim().toLowerCase();
       /* 搜索范围：searchItems（如全量分组）优先，否则当前列表 */
       current = q ? (searchItems || items).filter(i => i.name.toLowerCase().includes(q) || i.code.includes(q)) : items;
       paint(current);
-    });
+    };
+    searchBox.addEventListener('input', applyQuery);
+    attachSearchHistory(searchBox, { key: searchKey, onPick: applyQuery });
   }
   return {
     setActive(code) { activeCode = code; paint(current); },
@@ -136,6 +218,8 @@ export function renderTickerList(container, items, { onSelect, activeCode, searc
       if (searchBox) searchBox.value = '';
       paint(newItems);
     },
+    /* 动态收窄搜索范围（行业筛选联动：搜索只在筛选范围内进行） */
+    setSearchItems(list) { searchItems = list; },
   };
 }
 
