@@ -130,8 +130,9 @@ def build_stock_factors(code):
         return round(pct_rank(cur, pos[-WINDOW:]), 1)
 
     cur_pe, cur_pb, cur_peg = last_of("pe_ttm"), last_of("pb"), last_of("peg")
-    return {"pe": pct_of("pe_ttm", cur_pe, True), "pb": pct_of("pb", cur_pb, True),
-            "peg": peg_pct(cur_peg)}
+    return {"pe": (cur_pe, pct_of("pe_ttm", cur_pe, True)),
+            "pb": (cur_pb, pct_of("pb", cur_pb, True)),
+            "peg": (cur_peg, peg_pct(cur_peg))}
 
 
 def get_close_arr(typ, code, info):
@@ -164,7 +165,7 @@ def build_factors():
         elif typ == "ETF":
             f["sent"] = build_sent_etf(code)
         if typ == "股票":
-            f.update({k: (None, v) for k, v in build_stock_factors(code).items()})
+            f.update(build_stock_factors(code))
         # 三档分数
         scores = {}
         for pname, pws in PRESETS.items():

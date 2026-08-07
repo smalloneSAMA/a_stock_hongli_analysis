@@ -413,8 +413,8 @@ button { font-family: inherit; }
 .comp-panel { padding: 6px var(--space-3) var(--space-2); }
 
 /* ── 区间分析面板（S6）── */
-.analysis-panel { padding: 6px var(--space-3) var(--space-2); display: grid; grid-template-columns: 340px 1fr; gap: var(--space-3); }
-.ana-dash { display: flex; flex-direction: column; gap: 10px; }
+.analysis-panel { padding: 6px var(--space-3) var(--space-2); }
+.ana-dash { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 10px; align-items: start; }
 .ana-card { background: var(--card-soft); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
 .ana-score-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .ana-score { font-size: 40px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
@@ -602,6 +602,7 @@ table.data-table { border-collapse: separate; border-spacing: 0; width: 100%; fo
   .ticker-item { min-width: 190px; }
   .ticker-item.active::before { left: 0; top: auto; bottom: 0; right: 0; width: auto; height: 3px; }
   .summary-grid { grid-template-columns: 1fr; }
+  .ana-dash { grid-template-columns: 1fr; }
   .chart { height: 420px; }
 }
 @media (max-width: 820px) {
