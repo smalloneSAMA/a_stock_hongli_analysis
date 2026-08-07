@@ -127,10 +127,20 @@ export function buildHistoryView(container, cfg) {
     if (!dyS) return;
     const closeCalc = calcRows[calcRows.length - 1].close;
     const dyNow = analysisEnt.factors.dy.v;
+    /* 初始全量视图：锚用后端 1250 窗口口径（与区间分析页一致）；缩放后按可见窗口重算（所见即所得） */
+    const fullView = sPct <= 0 && ePct >= 100;
     const mk = (name, p, color) => {
-      const anchor = closeCalc * dyNow / p;
+      let anchor, dist;
+      if (fullView && analysisEnt.anchors) {
+        const buy = name === '买入锚';
+        anchor = buy ? analysisEnt.anchors.buy : analysisEnt.anchors.sell;
+        dist = buy ? analysisEnt.anchors.dist_buy : analysisEnt.anchors.dist_sell;
+      } else {
+        anchor = closeCalc * dyNow / p;
+        dist = (anchor / closeCalc - 1) * 100;
+      }
       /* 锚 label 两行：上行文字（买入锚/卖出锚），下行数字（数值 + 距现价%） */
-      return { value: Number((anchor * analysisScale).toFixed(3)), label: `${name}\n${fmt2(anchor * analysisScale)}（${(anchor / closeCalc - 1) * 100 >= 0 ? '+' : ''}${fmt2((anchor / closeCalc - 1) * 100)}%）`, color };
+      return { value: Number((anchor * analysisScale).toFixed(3)), label: `${name}\n${fmt2(anchor * analysisScale)}（${dist >= 0 ? '+' : ''}${fmt2(dist)}%）`, color };
     };
     if (cfg.anchors !== false) {
       chartApi.addAnchorLines([mk('买入锚', dyS.p90, cssVar('--up')), mk('卖出锚', dyS.p10, cssVar('--mint'))]);
