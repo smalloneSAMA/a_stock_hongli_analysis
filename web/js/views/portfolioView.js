@@ -95,7 +95,7 @@ export default {
       const rows = periods.map((p, i) => ({
         i: i + 1, t0: p.t0, r: p.r, rd: (p.r == null || p.r_div == null) ? null : p.r + p.r_div,
         r_idx: p.r_idx, r_fb: p.r_fb, r_pool: p.r_pool,
-        vs: p.r_idx == null ? '—' : (p.r > p.r_idx ? el('span', { class: 'txt-up' }, '▲ 胜') : el('span', { class: 'txt-down' }, '▼ 负')),
+        vs: p.r_idx == null ? '—' : (p.r > p.r_idx ? '▲ 胜' : '▼ 负'),
       }));
       renderTable(tableBox, { columns: COLS, rows, pageSize: 15 });
       const pickBox = el('div', { class: 'pf-picks' });
