@@ -6,6 +6,7 @@
 import { el, renderTickerList, renderTable, skeleton, errorBox, emptyState, fmt2, fmtPct, dirOf, dailyChg, attachDatePicker } from './common.js';
 import { loadJSON, klineUrl, indiUrl, COMPONENTS_URL, ANALYSIS_URL } from '../data.js';
 import { createKlineChart, createDonut } from '../charts.js';
+import { cssVar } from '../theme.js';
 
 const D = { volume: 1e4, amount: 1e8 };  // 默认除数：ETF/股票（腾讯源）手→万手、元→亿元
 
@@ -132,16 +133,16 @@ export function buildHistoryView(container, cfg) {
       return { value: Number((anchor * analysisScale).toFixed(3)), label: `${name}\n${fmt2(anchor * analysisScale)}（${(anchor / closeCalc - 1) * 100 >= 0 ? '+' : ''}${fmt2((anchor / closeCalc - 1) * 100)}%）`, color };
     };
     if (cfg.anchors !== false) {
-      chartApi.addAnchorLines([mk('买入锚', dyS.p90, '#F6465D'), mk('卖出锚', dyS.p10, '#34D399')]);
+      chartApi.addAnchorLines([mk('买入锚', dyS.p90, cssVar('--up')), mk('卖出锚', dyS.p10, cssVar('--mint'))]);
     }
     /* dy 副图数据对齐图表日期（ETF 的指数序列按日期映射） */
     const data = new Array(chartRows.length).fill(null);
     for (let i = 0; i < chartRows.length; i++) data[i] = dyS.dataByDate.get(chartRows[i].date) ?? null;
     chartApi.setSubSeries([{
-      name: '股息率', data, color: '#FBBF24', unit: '%',
+      name: '股息率', data, color: cssVar('--brand'), unit: '%',
       markLines: [
-        { value: dyS.p90, label: '90分位 ' + dyS.p90.toFixed(2), color: '#F6465D' },
-        { value: dyS.p10, label: '10分位 ' + dyS.p10.toFixed(2), color: '#34D399' },
+        { value: dyS.p90, label: '90分位 ' + dyS.p90.toFixed(2), color: cssVar('--up') },
+        { value: dyS.p10, label: '10分位 ' + dyS.p10.toFixed(2), color: cssVar('--mint') },
       ],
     }]);
   };

@@ -1,12 +1,13 @@
 /* ECharts 工厂：行情图（K线或收盘折线+成交量）、环形图、条形图
    A股习惯：红涨绿跌 */
+import { cssVar } from './theme.js';
 
 const C = {
-  up: '#F6465D', down: '#22C55E',
-  ma5: '#FBBF24', ma20: '#22D3EE', ma60: '#A78BFA',
-  volUp: 'rgba(246,70,93,0.42)', volDown: 'rgba(34,197,94,0.42)',
-  axis: '#64748B', split: 'rgba(148,163,184,0.09)', text2: '#94A3B8', text3: '#64748B',
-  accent: '#22D3EE', brand: '#FBBF24', indigo: '#818CF8',
+  up: cssVar('--up'), down: cssVar('--down'),
+  ma5: cssVar('--brand'), ma20: cssVar('--accent'), ma60: '#A78BFA',
+  volUp: cssVar('--up-bg'), volDown: cssVar('--down-bg'),
+  axis: cssVar('--text-3'), split: cssVar('--grid-line'), text2: cssVar('--text-2'), text3: cssVar('--text-3'),
+  accent: cssVar('--accent'), brand: cssVar('--brand'), indigo: cssVar('--indigo'),
 };
 
 const MA_STYLE = { type: 'line', smooth: true, symbol: 'none', sampling: 'lttb', lineStyle: { width: 1.2 }, z: 6 };
@@ -50,19 +51,19 @@ export function createKlineChart(el, opts) {
 
   const tooltipBase = {
     trigger: 'axis', axisPointer: { type: 'cross' },
-    backgroundColor: 'rgba(10,16,30,0.94)', borderColor: '#334155', borderWidth: 1,
-    padding: [10, 14], textStyle: { color: '#E2E8F0', fontSize: 12 },
+    backgroundColor: cssVar('--tooltip-bg'), borderColor: cssVar('--border-strong'), borderWidth: 1,
+    padding: [10, 14], textStyle: { color: cssVar('--text'), fontSize: 12 },
   };
 
   /* 浮动面板行：一行一个字段（字段名左对齐、值右对齐） */
   const tipRow = (k, v, color) =>
     '<div style="display:flex;justify-content:space-between;gap:18px;line-height:1.9;white-space:nowrap">'
     + `<span style="color:#94A3B8">${k}</span>`
-    + `<b style="font-weight:600;color:${color || '#E2E8F0'}">${v}</b></div>`;
+    + `<b style="font-weight:600;color:${color || cssVar('--text')}">${v}</b></div>`;
 
   const dataZoomBase = [
     // slider 拖拉条（index 0，zoomDispatch 依赖）
-    { type: 'slider', bottom: 2, height: 16, borderColor: 'rgba(51,65,85,0.5)', backgroundColor: 'rgba(15,23,42,0.5)', fillerColor: 'rgba(251,191,36,0.14)', handleStyle: { color: '#FBBF24' }, moveHandleStyle: { color: '#FBBF24' }, textStyle: { color: C.text3, fontSize: 9 }, dataBackground: { lineStyle: { color: '#334155' }, areaStyle: { color: 'rgba(51,65,85,0.25)' } }, minValueSpan: 20 },
+    { type: 'slider', bottom: 2, height: 16, borderColor: cssVar('--border-strong'), backgroundColor: cssVar('--input-bg'), fillerColor: cssVar('--brand-dim'), handleStyle: { color: C.brand }, moveHandleStyle: { color: C.brand }, textStyle: { color: C.text3, fontSize: 9 }, dataBackground: { lineStyle: { color: cssVar('--border-strong') }, areaStyle: { color: cssVar('--row-line') } }, minValueSpan: 20 },
     // 鼠标按住左右拖动平移（滚轮缩放按用户要求保持关闭）
     { type: 'inside', zoomOnMouseWheel: false, moveOnMouseMove: true, moveOnMouseWheel: false, preventDefaultMouseMove: true, minValueSpan: 20 },
   ];
@@ -139,7 +140,7 @@ export function createKlineChart(el, opts) {
       animationEasing: 'cubicOut',
       backgroundColor: 'transparent',
       textStyle: { fontFamily: "'Fira Code','Consolas',monospace", color: C.text2 },
-      axisPointer: { link: [{ xAxisIndex: 'all' }], label: { backgroundColor: '#1E293B' } },
+      axisPointer: { link: [{ xAxisIndex: 'all' }], label: { backgroundColor: cssVar('--surface-3') } },
       tooltip: {
         ...tooltipBase,
         formatter(params) {
@@ -149,7 +150,7 @@ export function createKlineChart(el, opts) {
             `<div style="font-weight:700;font-size:12.5px;margin-bottom:5px">${dates[i]}</div>`,
             '<div style="border-top:1px solid #334155;margin-bottom:4px"></div>',
             tipRow('收盘', `${closes[i].toFixed(2)} ${unit}`),
-            tipRow('涨跌', c == null ? '—' : (c >= 0 ? '+' : '') + c.toFixed(2) + '%', c == null ? '#94A3B8' : (c >= 0 ? C.up : C.down)),
+            tipRow('涨跌', c == null ? '—' : (c >= 0 ? '+' : '') + c.toFixed(2) + '%', c == null ? C.text2 : (c >= 0 ? C.up : C.down)),
           ];
           if (volumes[i] != null) rows.push(tipRow('成交量', volumes[i].toFixed(0) + ' 万手'));
           rows.push(tipRow('成交额', amounts[i] == null ? '—' : amounts[i].toFixed(2) + ' 亿元'));
@@ -187,7 +188,7 @@ export function createKlineChart(el, opts) {
           ...(anchorLines.length ? {
             markLine: {
               silent: true, symbol: 'none', z: 7,
-              label: { position: 'end', fontSize: 11.5, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
+              label: { position: 'end', fontSize: 11.5, fontWeight: 700, backgroundColor: cssVar('--tooltip-bg'), borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
               data: anchorLines.map(a => ({
                 yAxis: a.value, name: a.label,
                 lineStyle: { color: a.color, type: 'dashed', width: 1 },
@@ -214,7 +215,7 @@ export function createKlineChart(el, opts) {
       animationEasing: 'cubicOut',
       backgroundColor: 'transparent',
       textStyle: { fontFamily: "'Fira Code','Consolas',monospace", color: C.text2 },
-      axisPointer: { link: [{ xAxisIndex: 'all' }], label: { backgroundColor: '#1E293B' } },
+      axisPointer: { link: [{ xAxisIndex: 'all' }], label: { backgroundColor: cssVar('--surface-3') } },
       tooltip: {
         ...tooltipBase,
         formatter(params) {
@@ -232,7 +233,7 @@ export function createKlineChart(el, opts) {
             rows.push(tipRow('最高', k[3].toFixed(2)));
             rows.push(tipRow('最低', k[2].toFixed(2)));
           }
-          rows.push(tipRow('涨跌', c == null ? '—' : (c >= 0 ? '+' : '') + c.toFixed(2) + '%', c == null ? '#94A3B8' : (c >= 0 ? C.up : C.down)));
+          rows.push(tipRow('涨跌', c == null ? '—' : (c >= 0 ? '+' : '') + c.toFixed(2) + '%', c == null ? C.text2 : (c >= 0 ? C.up : C.down)));
           if (volumes[i] != null) rows.push(tipRow('成交量', volumes[i].toFixed(0) + ' 万手'));
           rows.push(tipRow('成交额', amounts[i] == null ? '—' : amounts[i].toFixed(2) + ' 亿元'));
           // N 交易日涨跌幅（缓存行 chg30/chg60/chg90，存在才显示；交易日口径）
@@ -287,7 +288,7 @@ export function createKlineChart(el, opts) {
           ...(anchorLines.length ? {
             markLine: {
               silent: true, symbol: 'none', z: 7,
-              label: { position: 'end', fontSize: 11.5, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
+              label: { position: 'end', fontSize: 11.5, fontWeight: 700, backgroundColor: cssVar('--tooltip-bg'), borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
               data: anchorLines.map(a => ({
                 yAxis: a.value, name: a.label,
                 lineStyle: { color: a.color, type: 'dashed', width: 1 },
@@ -333,7 +334,7 @@ export function createKlineChart(el, opts) {
   /* ── 左上角浮层：光标日期 → 最新日期的累计涨幅（跟随鼠标/键盘/点击）── */
   if (!el.style.position || el.style.position === 'static') el.style.position = 'relative';
   const floatEl = document.createElement('div');
-  floatEl.style.cssText = "position:absolute;top:28px;left:64px;z-index:6;pointer-events:none;display:none;background:rgba(10,16,30,.88);border:1px solid #334155;border-radius:8px;padding:6px 10px;font-family:'Fira Code',monospace;line-height:1.55";
+  floatEl.style.cssText = "position:absolute;top:28px;left:64px;z-index:6;pointer-events:none;display:none;background:" + cssVar('--tooltip-bg') + ";border:1px solid " + cssVar('--border-strong') + ";border-radius:8px;padding:6px 10px;font-family:'Fira Code',monospace;line-height:1.55";
   el.appendChild(floatEl);
   let lastFloatIdx = -2;
   const updateFloating = (i) => {
@@ -398,7 +399,7 @@ export function createKlineChart(el, opts) {
       ...(d.markLines ? {
         markLine: {
           silent: true, symbol: 'none',
-          label: { position: 'end', fontSize: 11, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [2, 5], formatter: (p) => p.name },
+          label: { position: 'end', fontSize: 11, fontWeight: 700, backgroundColor: cssVar('--tooltip-bg'), borderWidth: 1, borderRadius: 4, padding: [2, 5], formatter: (p) => p.name },
           data: d.markLines.map(m => ({
             yAxis: m.value, name: m.label,
             lineStyle: { color: m.color, type: 'dashed', width: 1 },
@@ -485,7 +486,7 @@ export function createKlineChart(el, opts) {
       series: [{
         markLine: {
           silent: true, symbol: 'none', z: 7,
-          label: { position: 'end', fontSize: 11.5, fontWeight: 700, backgroundColor: 'rgba(10,16,30,0.92)', borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
+          label: { position: 'end', fontSize: 11.5, fontWeight: 700, backgroundColor: cssVar('--tooltip-bg'), borderWidth: 1, borderRadius: 4, padding: [3, 6], formatter: (p) => p.name },
           data: list.map(a => ({
             yAxis: a.value, name: a.label,
             lineStyle: { color: a.color, type: 'dashed', width: 1 },
@@ -508,15 +509,15 @@ export function createDonut(el, data, { title = '', selectable = false } = {}) {
       trigger: 'item',
       appendToBody: true,   // 挂到 body 顶层（DOM 层），永不裁剪，左侧扇区 hover 也完整可见
       formatter: (p) => `${p.name}：${p.value} 只（${p.percent.toFixed(1)}%）`,
-      backgroundColor: 'rgba(10,16,30,0.94)', borderColor: '#334155', textStyle: { color: '#E2E8F0', fontSize: 12 },
+      backgroundColor: cssVar('--tooltip-bg'), borderColor: cssVar('--border-strong'), textStyle: { color: cssVar('--text'), fontSize: 12 },
     },
     legend: { type: 'scroll', orient: 'vertical', right: 2, top: 'middle', itemWidth: 10, itemHeight: 10, textStyle: { color: C.text2, fontSize: 11 }, pageIconColor: C.accent, pageTextStyle: { color: C.text3 } },
     title: { text: title, left: 6, top: 4, textStyle: { color: C.text3, fontSize: 12, fontWeight: 600 } },
-    color: ['#22D3EE', '#FBBF24', '#818CF8', '#F6465D', '#34D399', '#F472B6', '#60A5FA', '#F87171', '#A3E635', '#2DD4BF', '#C084FC', '#FB923C', '#94A3B8'],
+    color: [C.accent, C.brand, C.indigo, C.up, cssVar('--mint'), '#F472B6', '#60A5FA', '#F87171', '#A3E635', '#2DD4BF', '#C084FC', '#FB923C', C.text2],
     series: [{
       type: 'pie', radius: ['44%', '62%'], center: ['36%', '50%'],
       selectedMode: selectable ? 'single' : false,   // 点击扇区选中偏移（成分股视图行业筛选用）
-      avoidLabelOverlap: true, itemStyle: { borderColor: '#0F172A', borderWidth: 2 },
+      avoidLabelOverlap: true, itemStyle: { borderColor: cssVar('--surface'), borderWidth: 2 },
       label: { show: false },
       emphasis: {
         scaleSize: 6,          // 扇区放大作为 hover 反馈
@@ -538,7 +539,7 @@ export function createBar(el, data, { title = '', unit = '%' } = {}) {
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'shadow' },
       formatter: (p) => `${p[0].name}<br>股息率 <b style="color:#FBBF24">${p[0].value.toFixed(2)}%</b>`,
-      backgroundColor: 'rgba(10,16,30,0.94)', borderColor: '#334155', textStyle: { color: '#E2E8F0', fontSize: 12 },
+      backgroundColor: cssVar('--tooltip-bg'), borderColor: cssVar('--border-strong'), textStyle: { color: cssVar('--text'), fontSize: 12 },
     },
     title: { text: title, left: 6, top: 4, textStyle: { color: C.text3, fontSize: 12, fontWeight: 600 } },
     grid: { left: 62, right: 24, top: 30, bottom: 16 },

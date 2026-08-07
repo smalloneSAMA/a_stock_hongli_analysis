@@ -2,16 +2,17 @@
 
 import { buildHistoryView } from './historyLayout.js';
 import { loadJSON, MANIFEST_URL } from '../data.js';
+import { cssVar } from '../theme.js';
 import { el, fmt2, fmtPct, fmt0, dirOf, dailyChg } from './common.js';
 
 /* 指标副图选项（key 对应 web/data/stocks/{code}.json 字段，与 Excel 口径一致） */
 const INDICATORS = [
-  { key: 'dy', label: '股息率', color: '#FBBF24', unit: '%' },
-  { key: 'pe_ttm', label: 'PE-TTM', color: '#22D3EE', unit: '倍' },
+  { key: 'dy', label: '股息率', color: cssVar('--brand'), unit: '%' },
+  { key: 'pe_ttm', label: 'PE-TTM', color: cssVar('--accent'), unit: '倍' },
   { key: 'pe_dyn', label: 'PE(动)', color: '#60A5FA', unit: '倍' },
-  { key: 'pb', label: 'PB', color: '#818CF8', unit: '倍' },
+  { key: 'pb', label: 'PB', color: cssVar('--indigo'), unit: '倍' },
   { key: 'peg', label: 'PEG', color: '#F472B6', unit: '' },
-  { key: 'roe', label: 'ROE', color: '#34D399', unit: '%' },
+  { key: 'roe', label: 'ROE', color: cssVar('--mint'), unit: '%' },
   { key: 'roa', label: 'ROA', color: '#F87171', unit: '%' },
 ];
 

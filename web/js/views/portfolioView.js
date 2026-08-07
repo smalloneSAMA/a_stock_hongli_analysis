@@ -4,11 +4,12 @@
 
 import { el, renderTable, skeleton, errorBox, fmt2 } from './common.js';
 import { loadJSON, PORTFOLIO_URL } from '../data.js';
+import { cssVar } from '../theme.js';
 
 const NAV = [
-  { key: 'top20', label: 'TOP20（量化）', color: '#F6465D', dash: false },
-  { key: 'idx', label: '000922 中证红利', color: '#34D399', dash: true },
-  { key: 'fallback', label: '旧人工20只', color: '#FBBF24', dash: true },
+  { key: 'top20', label: 'TOP20（量化）', color: cssVar('--up'), dash: false },
+  { key: 'idx', label: '000922 中证红利', color: cssVar('--mint'), dash: true },
+  { key: 'fallback', label: '旧人工20只', color: cssVar('--brand'), dash: true },
   { key: 'pool', label: '候选池等权', color: '#60A5FA', dash: true },
 ];
 
@@ -75,11 +76,11 @@ export default {
       const chart = echarts.init(chartBox);
       chart.setOption({
         backgroundColor: 'transparent',
-        tooltip: { trigger: 'axis', backgroundColor: 'rgba(10,16,30,.92)', borderColor: '#334155', textStyle: { color: '#E2E8F0', fontSize: 11 }, valueFormatter: (v) => (v * 100).toFixed(1) + '%' },
-        legend: { data: NAV.map(n => n.label), textStyle: { color: '#94A3B8', fontSize: 11 }, top: 0, itemWidth: 14 },
+        tooltip: { trigger: 'axis', backgroundColor: cssVar('--tooltip-bg'), borderColor: cssVar('--border-strong'), textStyle: { color: cssVar('--text'), fontSize: 11 }, valueFormatter: (v) => (v * 100).toFixed(1) + '%' },
+        legend: { data: NAV.map(n => n.label), textStyle: { color: cssVar('--text-2'), fontSize: 11 }, top: 0, itemWidth: 14 },
         grid: { left: 58, right: 16, top: 30, bottom: 42 },
-        xAxis: { type: 'category', data: xs, axisLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#94A3B8', fontSize: 10 } },
-        yAxis: { type: 'value', scale: true, axisLabel: { color: '#94A3B8', fontSize: 10, formatter: (v) => (v * 100).toFixed(0) + '%' }, splitLine: { lineStyle: { color: 'rgba(148,163,184,.12)' } } },
+        xAxis: { type: 'category', data: xs, axisLine: { lineStyle: { color: cssVar('--border-strong') } }, axisLabel: { color: cssVar('--text-2'), fontSize: 10 } },
+        yAxis: { type: 'value', scale: true, axisLabel: { color: cssVar('--text-2'), fontSize: 10, formatter: (v) => (v * 100).toFixed(0) + '%' }, splitLine: { lineStyle: { color: cssVar('--grid-line') } } },
         series: NAV.map(n => ({
           name: n.label, type: 'line', data: navs[n.key].slice(1).map(v => +v.toFixed(4)),
           showSymbol: false, lineStyle: { width: 1.8, type: n.dash ? 'dashed' : 'solid' },

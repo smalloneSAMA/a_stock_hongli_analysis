@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>红利研究终端 · A股红利数据</title>
+<script>
+  /* 主题预置（防闪烁）：CSS 加载前设置 data-theme */
+  (function () {
+    try { if (localStorage.getItem('pi_theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch (e) {}
+  })();
+</script>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="fonts/fonts-local.css">
@@ -53,6 +59,7 @@
     </nav>
     <div class="topbar-right">
       <span class="data-date" id="data-date" title="全部缓存中最新交易日">数据日期 —</span>
+      <div id="theme-toggle"></div>
     </div>
   </div>
 </header>

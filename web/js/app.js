@@ -1,11 +1,15 @@
 /* 应用入口：hash 路由 + 视图懒加载（容器常驻，切换不销毁——保留各板块操作状态）+ 数据日期徽章 */
 
 import { loadJSON, MANIFEST_URL } from './data.js';
+import { mountThemeToggle } from './theme.js';
 
 const VIEWS = ['index', 'etf', 'stock', 'summary', 'backtest', 'portfolio'];
 
 const viewEl = document.getElementById('view');
 const dateEl = document.getElementById('data-date');
+
+/* 主题切换按钮 */
+mountThemeToggle(document.getElementById('theme-toggle'));
 
 function currentView() {
   const h = location.hash.replace(/^#\/?/, '');
