@@ -212,7 +212,8 @@ export function renderTickerList(container, items, { onSelect, activeCode, searc
     }
     for (const it of list) {
       const priceTxt = it.price == null ? '—' : Number(it.price).toFixed(2);
-      const nameBox = el('div', { class: 'ticker-name' }, it.name);
+      const nameBox = el('div', { class: 'ticker-name' },
+        el('span', { class: 'ticker-name-text' }, it.name));   // 名称 span 包裹：长名省略号收缩，星标不被挤出
       if (it.scale != null) nameBox.append(el('span', { class: 'ticker-scale' }, fmtScale(it.scale)));
       nameBox.append(favStar(it.code));   // 收藏星标（金色突出，跨板块同步）
       const li = el('li', { class: 'ticker-item' + (it.code === activeCode ? ' active' : '') + (isFav(it.code) ? ' fav' : ''), role: 'button', tabindex: '0', 'aria-label': `${it.name} ${it.code}，最新价 ${priceTxt}` },

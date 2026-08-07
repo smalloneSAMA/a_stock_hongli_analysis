@@ -883,7 +883,8 @@ export default {
         const sel = selected.has(it.code);
         /* 复用股票历史板块列表样式：名称行（含分组标签）+ 价格 + 代码 + 副信息；
            选中由打钩改为框选高亮（ticker-item.active）；ETF 不显示黄色规模小标签（副信息保留） */
-        const nameBox = el('div', { class: 'ticker-name' }, it.name,
+        const nameBox = el('div', { class: 'ticker-name' },
+          el('span', { class: 'ticker-name-text' }, it.name),
           it.grp ? el('span', { class: 'cmp-grp' }, it.grp) : null);
         nameBox.append(favStar(it.code));   // 收藏星标（跨板块同步）
         const subTxt = it.type === 'stock'
