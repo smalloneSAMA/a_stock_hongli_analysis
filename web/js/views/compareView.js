@@ -66,8 +66,8 @@ export default {
     let navMode = true;      // ETF 净值/场内价
     let divMode = false;     // 含分红模式
     let rangeKey = 'all';
-    let chartTab = 'nav';    // nav 净值 / dy 股息率 / dd 回撤 / bars 涨跌幅 / rs 相对强弱
-    let cmp = null;          // 已加载数据 {dates, aligned}
+    let chartTab = 'nav';    // nav 净值 / dy 股息率 / dd 回撤 / bars 涨跌幅 / rs 相对强弱 / corr 相关矩阵 / trk 跟踪偏离
+    let cmp = null;          // 已加载数据 {dates, aligned, tracks}
     const rangeBtns = [];
 
     /* 开始对比：拉数据 → 共同起点对齐 → 归一化 → 图表 */
@@ -79,10 +79,22 @@ export default {
         const series = [];
         /* 股息率序列：指数/ETF 读 analysis_dy.json（series），股票读指标文件 dy 列 */
         const dyAll = items.some(it => it.type !== 'stock') ? await loadJSON('/cache/analysis_dy.json') : null;
+        const an = await loadAnalysis();   // 拿 ETF track（同跟踪偏离用）
+        const tracks = new Map();          // track -> {rows, name}（ETF 同跟踪指数，参考线用）
         for (const it of items) {
           const obj = await loadJSON(klineUrl(KIND[it.type], it.code));
           const rows = (obj && obj.rows) || [];
           if (!rows.length) throw new Error(`${it.name}（${it.code}）缓存无数据`);
+          /* ETF 跟踪指数：同 track 偏离分析的参考基准（不算对比标的，灰色虚线） */
+          const ent = an.by_code[it.code];
+          const track = it.type === 'etf' && ent ? ent.track : null;
+          if (track && !tracks.has(track)) {
+            try {
+              const tobj = await loadJSON(klineUrl('指数', track));
+              const idxx = m.indices.find(x => x.code === track);
+              tracks.set(track, { rows: (tobj && tobj.rows) || [], name: (idxx && idxx.name) || track });
+            } catch { tracks.set(track, { rows: [], name: track }); }
+          }
           /* 股票：含分红重建需要分红缓存（ex_date/bonus10），缺失则退化为价格 */
           let divRows = null;
           if (it.type === 'stock') {
@@ -102,7 +114,7 @@ export default {
             const e = dyAll ? dyAll[it.code] : null;
             dyPts = (e && e.series) || null;
           }
-          series.push({ it, rows, divRows, dyPts });
+          series.push({ it, rows, divRows, dyPts, track });
         }
         /* 共同起点 = 各序列起始日期的最大值（保证窗口内全部有数据） */
         const start = series.reduce((mx, s) => (mx < s.rows[0].date ? s.rows[0].date : mx), '');
@@ -125,10 +137,11 @@ export default {
             /* 含分红口径：ETF 用累计净值（缺失断线，绝不回退 close——与 acc_nav 不可比）；股票用 价格+累计每股分红 */
             if (s.it.type === 'etf') div = r.acc_nav ?? r.nav ?? null;
             else if (s.it.type === 'stock') div = cum.has(r.date) ? plain + cum.get(r.date) : null;
-            return { date: r.date, plain, div };
+            return { date: r.date, plain, div, nav: s.it.type === 'etf' ? (r.nav ?? null) : null };
           });
+          const firstNav = pts.find(p => p.nav != null);
           if (!pts.length || !pts[0].plain) throw new Error(`${s.it.name} 起点无数据`);
-          return { it: s.it, pts, basePlain: pts[0].plain, baseDiv: pts[0].div, dyPts: s.dyPts };
+          return { it: s.it, pts, basePlain: pts[0].plain, baseDiv: pts[0].div, baseNav: firstNav ? firstNav.nav : null, dyPts: s.dyPts, track: s.track };
         });
         /* 日期轴 = 共同起点后全部交易日并集（缺失填 null 断线） */
         const dateSet = new Set();
@@ -138,6 +151,8 @@ export default {
           const mPlain = new Map(a.pts.map(p => [p.date, p.plain / a.basePlain * 100]));
           const mDiv = a.baseDiv ? new Map(a.pts.filter(p => p.div != null).map(p => [p.date, p.div / a.baseDiv * 100])) : null;
           const mDy = a.dyPts ? new Map(a.dyPts.filter(p => p[0] >= start).map(p => [p[0], p[1]])) : null;
+          /* ETF 净值序列（跟踪偏离固定用净值，不随场内价切换） */
+          const mNav = a.it.type === 'etf' && a.baseNav ? new Map(a.pts.filter(p => p.nav != null).map(p => [p.date, p.nav / a.baseNav * 100])) : null;
           /* 水下回撤（固定用 plain 价格口径）：v/峰值-1 */
           const vals = dates.map(d => mPlain.get(d) ?? null);
           const dd = [];
@@ -148,9 +163,18 @@ export default {
             dd.push((v / peak - 1) * 100);
           }
           return { it: a.it, vals, valsDiv: mDiv ? dates.map(d => mDiv.get(d) ?? null) : null,
-            dyVals: mDy ? dates.map(d => mDy.get(d) ?? null) : null, ddVals: dd };
+            dyVals: mDy ? dates.map(d => mDy.get(d) ?? null) : null, ddVals: dd,
+            navVals: mNav ? dates.map(d => mNav.get(d) ?? null) : null, track: a.track };
         });
-        cmp = { dates, aligned: rows2 };
+        /* 日收益序列（相关矩阵用；全窗口 + 近1年） */
+        for (const r of rows2) {
+          const rets = [null];
+          for (let i = 1; i < r.vals.length; i++) {
+            rets.push(r.vals[i] != null && r.vals[i - 1] != null ? r.vals[i] / r.vals[i - 1] - 1 : null);
+          }
+          r.rets = rets;
+        }
+        cmp = { dates, aligned: rows2, tracks };
         buildMain();
       } catch (err) {
         mainEl.innerHTML = '';
@@ -159,10 +183,11 @@ export default {
     }
 
     /* ═══ 主区构建：图 tab + 工具条 + 各图分发 ═══ */
-    const CHART_TABS = [['nav', '净值'], ['dy', '股息率'], ['dd', '回撤'], ['bars', '涨跌幅'], ['rs', '相对强弱']];
+    const CHART_TABS = [['nav', '净值'], ['dy', '股息率'], ['dd', '回撤'], ['bars', '涨跌幅'], ['rs', '相对强弱'], ['corr', '相关性'], ['trk', '跟踪偏离']];
     const tabTitle = () => ({ nav: divMode && curType !== 'index' ? '归一化含分红净值（起点=100）' : '归一化净值（起点=100）',
       dy: '股息率对比（%）', dd: '水下回撤对比（%）', bars: '区间涨跌幅对比',
-      rs: `相对强弱（基准：${order[0] ? selected.get(order[0]).name : ''}，>100=跑赢基准）` }[chartTab]);
+      rs: `相对强弱（基准：${order[0] ? selected.get(order[0]).name : ''}，>100=跑赢基准）`,
+      corr: '日收益相关性矩阵（全窗口）', trk: '同跟踪 ETF 偏离（vs 跟踪指数）' }[chartTab]);
 
     function buildMain() {
       if (!cmp) return;
@@ -172,7 +197,7 @@ export default {
         mainEl.append(el('div', { class: 'cmp-warn' }, `⚠ 共同窗口仅 ${n} 个交易日（不足1年），建议移除上市较晚的标的`));
       }
       const tabs = el('div', { class: 'seg-group', role: 'group', 'aria-label': '图表类型' },
-        CHART_TABS.map(([k, lab]) => el('button', { class: 'seg-btn' + (k === chartTab ? ' active' : ''),
+        CHART_TABS.filter(([k]) => k !== 'trk' || (curType === 'etf' && cmp.tracks && cmp.tracks.size)).map(([k, lab]) => el('button', { class: 'seg-btn' + (k === chartTab ? ' active' : ''),
           onclick: () => { chartTab = k; buildMain(); } }, lab)));
       /* 工具条：ETF 净值/场内价切换（仅 ETF 对比）+ 含分红切换 + 时间范围 */
       const segNav = el('div', { class: 'seg-group', role: 'group' },
@@ -240,11 +265,142 @@ export default {
         buildBarsChart(chartApi, base);
       } else if (chartTab === 'rs') {
         buildRsChart(chartApi, base);
+      } else if (chartTab === 'corr') {
+        buildCorrChart(chartApi, base);
+      } else if (chartTab === 'trk') {
+        buildTrkChart(chartApi, base);
       } else {
         chartApi.setOption({ ...base, series: lineSeries(cmp.aligned.map(r => divMode && curType !== 'index' ? r.valsDiv : r.vals)) });
       }
       applyRange();
       renderDetailCards();
+    }
+
+    /* 相关性：全窗口 + 近1年 pairwise 日收益相关（两者都有值才参与） */
+    function corrPair(retsA, retsB, n) {
+      let cnt = 0, ma = 0, mb = 0;
+      const a = retsA.slice(-n), b = retsB.slice(-n);
+      for (let i = 0; i < a.length; i++) if (a[i] != null && b[i] != null) { ma += a[i]; mb += b[i]; cnt++; }
+      if (cnt < 30) return null;
+      ma /= cnt; mb /= cnt;
+      let sxy = 0, sxx = 0, syy = 0;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] != null && b[i] != null) {
+          const x = a[i] - ma, y = b[i] - mb;
+          sxy += x * y; sxx += x * x; syy += y * y;
+        }
+      }
+      return sxx && syy ? sxy / Math.sqrt(sxx * syy) : null;
+    }
+
+    function buildCorrChart(chartApi, base) {
+      const names = cmp.aligned.map(r => r.it.name);
+      const n = cmp.aligned.length;
+      const cells = [];
+      const pairs = [];
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+          const r = i === j ? 1 : corrPair(cmp.aligned[i].rets, cmp.aligned[j].rets, 1e9);
+          cells.push([j, i, r == null ? 0 : +r.toFixed(3)]);
+        }
+        for (let j = i + 1; j < n; j++) {
+          const rAll = corrPair(cmp.aligned[i].rets, cmp.aligned[j].rets, 1e9);
+          const r1y = corrPair(cmp.aligned[i].rets, cmp.aligned[j].rets, 250);
+          pairs.push({ a: names[i], b: names[j], rAll, r1y });
+        }
+      }
+      pairs.sort((x, y) => (y.rAll ?? -2) - (x.rAll ?? -2));
+      chartApi.setOption({
+        animation: false,
+        tooltip: { position: 'top', backgroundColor: cssVar('--tooltip-bg'), borderColor: cssVar('--border'),
+          textStyle: { color: cssVar('--text'), fontSize: 12 },
+          formatter: (p) => `${names[p.value[1]]} × ${names[p.value[0]]}<br/>相关系数 ${p.value[2].toFixed(3)}` },
+        grid: { left: 110, top: 20, bottom: 50, right: 30 },
+        xAxis: { type: 'category', data: names, splitArea: { show: true }, axisLabel: { color: base.xAxis.axisLabel.color, fontSize: 10.5, rotate: 25 },
+          axisLine: { lineStyle: { color: base.xAxis.axisLine.lineStyle.color } } },
+        yAxis: { type: 'category', data: names, splitArea: { show: true }, axisLabel: { color: base.xAxis.axisLabel.color, fontSize: 10.5 },
+          axisLine: { lineStyle: { color: base.xAxis.axisLine.lineStyle.color } } },
+        visualMap: { min: -1, max: 1, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, itemWidth: 12, itemHeight: 90,
+          text: ['1', '-1'], textStyle: { color: base.xAxis.axisLabel.color, fontSize: 10.5 },
+          inRange: { color: ['#22C55E', '#FBBF24', '#F6465D'] } },
+        series: [{ type: 'heatmap', data: cells, label: { show: true, fontSize: 10, color: base.xAxis.axisLabel.color,
+          formatter: (p) => p.value[2].toFixed(2) },
+          emphasis: { itemStyle: { borderColor: cssVar('--brand'), borderWidth: 1.5 } } }],
+      });
+      /* 配对排序表（全窗口 desc） */
+      const tbl = el('table', { class: 'cmp-table' },
+        el('thead', {}, el('tr', {}, ['标的对', '全窗口', '近1年'].map(c => el('th', {}, c)))),
+        el('tbody', {}, pairs.map((p) => el('tr', {}, [
+          el('td', {}, `${p.a} × ${p.b}`),
+          el('td', {}, p.rAll == null ? '—' : p.rAll.toFixed(3)),
+          el('td', {}, p.r1y == null ? '—' : p.r1y.toFixed(3)),
+        ]))));
+      const card = el('div', { class: 'card cmp-detail', style: 'margin-top:10px' },
+        el('div', { class: 'cmp-detail-title' }, `配对相关性（共 ${pairs.length} 对，按全窗口降序）`),
+        el('div', { style: 'overflow-x:auto' }, tbl));
+      mainEl.append(card);
+    }
+
+    /* 同跟踪 ETF 偏离：净值归一化 vs 跟踪指数归一化（虚线基准）+ 跟踪误差表 */
+    function buildTrkChart(chartApi, base) {
+      const grpByTrack = new Map();
+      for (const r of cmp.aligned) {
+        if (r.it.type !== 'etf' || !r.track) continue;
+        if (!grpByTrack.has(r.track)) grpByTrack.set(r.track, []);
+        grpByTrack.get(r.track).push(r);
+      }
+      const series = [];
+      const errRows = [];
+      let si = 0;
+      for (const [track, grp] of grpByTrack) {
+        const t = cmp.tracks.get(track);
+        const trows = (t && t.rows) || [];
+        if (!trows.length) continue;
+        const idxVals = cmp.dates.map(d => {
+          const row = trows.find(x => x.date === d);
+          return row && row.close ? row.close : null;
+        });
+        /* 指数归一化：以首个非 null 为基准 */
+        let ibase = null;
+        for (const v of idxVals) { if (v != null) { ibase = v; break; } }
+        if (!ibase) continue;
+        const idxNorm = idxVals.map(v => (v != null ? v / ibase * 100 : null));
+        series.push({ name: `${track}（${(t && t.name) || track}）`, type: 'line', data: idxNorm, showSymbol: false,
+          lineStyle: { width: 1, type: 'dashed', color: cssVar('--text-3') }, itemStyle: { color: cssVar('--text-3') }, silent: true });
+        for (const r of grp) {
+          series.push({ name: r.it.name, type: 'line', data: r.navVals, showSymbol: false, sampling: 'lttb',
+            lineStyle: { width: 1.6, color: PALETTE[si % PALETTE.length] }, itemStyle: { color: PALETTE[si % PALETTE.length] } });
+          si++;
+          /* 年化跟踪误差：净值日收益 vs 指数日收益（pairwise）的 std ×√252 */
+          const a = r.navVals, b = idxNorm;
+          const diffs = [];
+          for (let i = 1; i < a.length; i++) {
+            if (a[i] != null && a[i - 1] != null && b[i] != null && b[i - 1] != null) {
+              diffs.push((a[i] / a[i - 1] - 1) - (b[i] / b[i - 1] - 1));
+            }
+          }
+          let te = null;
+          if (diffs.length > 30) {
+            const mean = diffs.reduce((x, y) => x + y, 0) / diffs.length;
+            const sd = Math.sqrt(diffs.reduce((x, y) => x + (y - mean) * (y - mean), 0) / diffs.length);
+            te = sd * Math.sqrt(252) * 100;
+          }
+          const lastA = a[a.length - 1], lastB = b[b.length - 1];
+          const cumDev = lastA != null && lastB != null ? (lastA / lastB - 1) * 100 : null;
+          errRows.push({ name: r.it.name, idx: (t && t.name) || track, te, cumDev });
+        }
+      }
+      chartApi.setOption({ ...base, series });
+      const tbl = el('table', { class: 'cmp-table' },
+        el('thead', {}, el('tr', {}, ['ETF', '跟踪指数', '年化跟踪误差', '累计偏离（净值/指数-1）'].map(c => el('th', {}, c)))),
+        el('tbody', {}, errRows.map(x => el('tr', {}, [
+          el('td', {}, x.name), el('td', {}, x.idx),
+          el('td', {}, x.te == null ? '—' : x.te.toFixed(2) + '%'),
+          el('td', {}, x.cumDev == null ? '—' : (x.cumDev >= 0 ? '+' : '') + x.cumDev.toFixed(2) + '%'),
+        ]))));
+      mainEl.append(el('div', { class: 'card cmp-detail', style: 'margin-top:10px' },
+        el('div', { class: 'cmp-detail-title' }, '跟踪误差（虚线=跟踪指数归一化，净值含折溢价剔除）'),
+        el('div', { style: 'overflow-x:auto' }, tbl)));
     }
 
     /* 区间涨跌幅：1月/3月/1年/3年/年初至今（基于 plain 归一化序列） */
