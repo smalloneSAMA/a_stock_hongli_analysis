@@ -445,6 +445,42 @@ button { font-family: inherit; }
 .ana-fscore { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
 .ana-tip { grid-column: 1 / -1; font-size: 11.5px; color: var(--text-3); line-height: 1.7; padding: 4px 2px; }
 
+/* ── 对比分析页 ── */
+.cmp-panel { padding: var(--space-3); }
+.cmp-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 2px 2px 10px; }
+.cmp-toolbar-right { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 260px; justify-content: flex-end; }
+.cmp-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1; }
+.cmp-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 3px 8px; border-radius: 999px;
+  background: var(--card-soft); border: 1px solid var(--brand); color: var(--text); }
+.cmp-chip-x { font-style: normal; cursor: pointer; color: var(--text-3); font-size: 13px; padding: 0 2px; }
+.cmp-chip-x:hover { color: var(--down); }
+.cmp-actions { display: flex; gap: 8px; }
+.cmp-go { font-size: 12.5px; font-weight: 700; padding: 6px 18px; border-radius: 8px; border: 1px solid var(--brand);
+  background: linear-gradient(180deg, rgba(251, 191, 36, .18), rgba(251, 191, 36, .08)); color: var(--brand); cursor: pointer; }
+.cmp-go:disabled { opacity: .4; cursor: not-allowed; }
+.cmp-body { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: var(--space-3); align-items: start; }
+.cmp-list-panel { padding: 10px; max-height: calc(100dvh - var(--topbar-h) - 210px); overflow: hidden; display: flex; flex-direction: column; }
+.cmp-groups { display: flex; gap: 4px; padding: 6px 2px 8px; flex-wrap: wrap; }
+.cmp-gtab { font-size: 11.5px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text-2); cursor: pointer; }
+.cmp-gtab.active { border-color: var(--brand); color: var(--brand); background: rgba(251, 191, 36, .1); }
+.cmp-gtab em { font-style: normal; opacity: .65; margin-left: 3px; font-size: 10.5px; }
+.cmp-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+.cmp-item { display: grid; grid-template-columns: 16px 1fr auto auto; align-items: center; gap: 8px; padding: 7px 8px;
+  border-radius: 8px; cursor: pointer; font-size: 12.5px; border: 1px solid transparent; }
+.cmp-item:hover { background: var(--input-bg); }
+.cmp-item.sel { background: rgba(251, 191, 36, .08); border-color: var(--brand); }
+.cmp-check { width: 15px; height: 15px; border-radius: 4px; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: var(--brand); }
+.cmp-item.sel .cmp-check { border-color: var(--brand); }
+.cmp-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-scale { font-style: normal; font-size: 10.5px; color: var(--brand); margin-left: 5px; }
+.cmp-item-code { color: var(--text-3); font-size: 11px; }
+.cmp-item-price { font-variant-numeric: tabular-nums; font-size: 12px; }
+.cmp-main { padding: var(--space-3); min-height: 420px; }
+@media (max-width: 1180px) {
+  .cmp-body { grid-template-columns: 1fr; }
+  .cmp-list-panel { max-height: 320px; }
+}
+
 /* ── 回测报告页（S8）── */
 .bt-head { padding: 4px 2px 2px; }
 .bt-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 12px 2px; }
