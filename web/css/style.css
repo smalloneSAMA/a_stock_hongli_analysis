@@ -335,6 +335,10 @@ button { font-family: inherit; }
 .bt-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 12px 2px; }
 .bt-cell { background: rgba(30, 41, 59, 0.35); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
 .bt-val { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+/* 组合回测页：持仓 chips */
+.pf-picks { margin: 12px 2px 4px; padding: 10px 12px; background: rgba(30, 41, 59, 0.25); border: 1px solid var(--border); border-radius: 8px; min-height: 20px; }
+.pf-chip { padding: 3px 9px; background: rgba(246, 70, 93, 0.08); border: 1px solid rgba(246, 70, 93, 0.25); border-radius: 6px; font-size: 11px; color: #CBD5E1; font-family: var(--font-num); }
+.pf-chip:hover { background: rgba(246, 70, 93, 0.16); }
 /* 回测页：阅读说明（折叠）+ 本档解读 */
 .bt-guide-btn { margin-top: 10px; padding: 5px 12px; background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.35); color: #FBBF24; border-radius: 8px; font-size: 12px; cursor: pointer; transition: background 0.15s; }
 .bt-guide-btn:hover { background: rgba(251, 191, 36, 0.16); }

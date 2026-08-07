@@ -32,6 +32,7 @@ export const ANALYSIS_URL = '/web/data/analysis.json';
 export const MANIFEST_URL = '/web/data/manifest.json';
 export const SUMMARY_URL = '/web/data/summary.json';
 export const BACKTEST_URL = '/web/data/backtest.json';
+export const PORTFOLIO_URL = '/web/data/portfolio_backtest.json';
 
 export function has(url) {
   return cache.has(url);
