@@ -270,6 +270,7 @@ def main(only=None, p_buy=None):
                 "pos12": sum(1 for r in sub if r["excess"]["12M"] > 0),
                 "avg6": round(float(np.mean([r["excess"]["6M"] for r in sub])), 2) if sub else None,
                 "avg12": round(float(np.mean([r["excess"]["12M"] for r in sub])), 2) if sub else None,
+                "base12": round(float(np.mean([r["base"]["12M"] for r in sub])), 2) if sub else None,
             }
         summary[str(p)] = {
             "n": len(valid),

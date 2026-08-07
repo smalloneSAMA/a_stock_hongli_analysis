@@ -66,7 +66,7 @@ export default {
       const presetBar = el('div', { class: 'seg-group', style: 'margin-top:10px' },
         bt.order.map(p => el('button', { class: 'seg-btn' + (p === 90 ? ' active' : ''), onclick: () => render(p) }, 'p' + p)));
       const sumCard = el('div', { class: 'bt-summary' });
-      const groupTitle = el('div', { class: 'txt-3', style: 'font-size:11px;margin:12px 2px 0' }, '分组统计（有效数 · 12M 平均超额 · 12M 正超额占比）');
+      const groupTitle = el('div', { class: 'txt-3', style: 'font-size:11px;margin:12px 2px 0' }, '分组统计（有效数 · 基准12M · 12M 平均超额 · 12M 正超额占比）');
       const groupCard = el('div', { class: 'bt-summary' });
       const insightEl = el('div', { class: 'bt-insight' });
       const tableBox = el('div', {});
@@ -99,11 +99,13 @@ export default {
         const gs = s.groups || {};
         for (const [g, v] of Object.entries(gs)) {
           const gCls = v.avg12 == null ? '' : (v.avg12 > 0 ? 'txt-up' : (v.avg12 < 0 ? 'txt-down' : ''));
+          const bCls = v.base12 == null ? '' : (v.base12 >= 0 ? 'txt-up' : 'txt-down');
           groupCard.append(el('div', { class: 'bt-cell' },
             el('div', { class: 'txt-3', style: 'font-size:11px' }, g),
             el('div', { class: 'bt-val' }, v.n + ' 个'),
             el('div', { class: 'txt-3', style: 'font-size:10.5px;line-height:1.7' },
-              '12M ', el('span', { class: gCls }, v.avg12 == null ? '—' : (v.avg12 >= 0 ? '+' : '') + fmt2(v.avg12) + '%'),
+              '基准12M ', el('span', { class: bCls }, v.base12 == null ? '—' : (v.base12 >= 0 ? '+' : '') + fmt2(v.base12) + '%'),
+              ' · 12M ', el('span', { class: gCls }, v.avg12 == null ? '—' : (v.avg12 >= 0 ? '+' : '') + fmt2(v.avg12) + '%'),
               ' · 正超额 ' + (v.n ? Math.round(v.pos12 / v.n * 100) + '%' : '—'))));
         }
         /* 本档解读（中性描述，随档位切换刷新） */
