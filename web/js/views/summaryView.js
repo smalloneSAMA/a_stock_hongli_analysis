@@ -1,12 +1,12 @@
 /* 视图：成分股汇总（289只，统计卡+筛选+行业分布+股息率TOP+全量表格） */
 
-import { loadJSON, SUMMARY_URL } from '../data.js';
+/* 入选推荐20只：动态读 manifest 的 rec 标记（由 scripts/_recommend_stocks.py 评分产物驱动），
+   替代原硬编码清单（旧人工20只） */
+import { loadJSON, SUMMARY_URL, MANIFEST_URL } from '../data.js';
 import { el, fmt2, fmt0, fmtPct, dirOf, renderTable, skeleton, errorBox } from './common.js';
 import { createDonut, createBar } from '../charts.js';
 
-const FINAL20 = new Set(['600036', '601838', '601088', '601225', '600938', '601857', '600350', '601006',
-  '600900', '600795', '000858', '000895', '000651', '000333', '000423', '600566',
-  '600019', '601668', '600582', '600757']);
+/* 入选推荐20只标记：动态读 manifest（rec 由评分产物驱动），删除原硬编码清单 */
 
 const columns = [
   { key: 'code', label: '证券代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
@@ -42,9 +42,10 @@ export default {
     let all = [];
 
     const load = async () => {
-      const data = await loadJSON(SUMMARY_URL);
+      const [data, m] = await Promise.all([loadJSON(SUMMARY_URL), loadJSON(MANIFEST_URL)]);
       if (!Array.isArray(data) || !data.length) throw new Error('summary.json 无数据');
-      all = data.map((r) => ({ ...r, _rec: FINAL20.has(r.code) }));
+      const recSet = new Set((m.stocks || []).filter(s => s.rec).map(s => s.code));
+      all = data.map((r) => ({ ...r, _rec: recSet.has(r.code) }));
       render(data, all);
     };
 
@@ -72,7 +73,7 @@ export default {
         statCard('一级行业', String(new Set(rows.map(r => r.ind)).size), '个行业', 'amber'),
         statCard('平均股息率', fmt2(avgDy) + '%', '近12个月口径'),
         statCard('最高股息率', fmt2(maxDy) + '%', maxDyStock ? `${maxDyStock.name}（${maxDyStock.code}）` : '', 'amber'),
-        statCard('入选20只推荐', String(recCount), '《红利股票推荐20只.md》'));
+        statCard('入选20只推荐', String(recCount), '量化评分产物 cache/_推荐20.json'));
       body.append(stats);
 
       /* ── 筛选栏 ── */
