@@ -253,6 +253,7 @@ def main(only=None, p_buy=None):
             return {"code": r["code"], "name": r["name"], "type": r["type"], "group": r.get("group"), "skip": r["skip"]}
         return {"code": r["code"], "name": r["name"], "type": r["type"], "group": r.get("group"),
                 "n_buy": r["n_buy"], "win6": r["win_rate"]["6M"], "win12": r["win_rate"]["12M"],
+                "base6": r["base"]["6M"], "base12": r["base"]["12M"],
                 "ex6": r["excess"]["6M"], "ex12": r["excess"]["12M"]}
     by_p = {str(p): [slim(r) for r in results_by_p[p]] for p in order}
     summary = {}

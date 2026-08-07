@@ -12,6 +12,8 @@ const COLS = [
   { key: 'n_buy', label: '信号数', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : v) },
   { key: 'win6', label: '胜率6M', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : v + '%') },
   { key: 'win12', label: '胜率12M', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : v + '%') },
+  { key: 'base6', label: '基准6M', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v) + '%') },
+  { key: 'base12', label: '基准12M', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v) + '%') },
   { key: 'ex6', label: '超额6M', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v) + '%') },
   { key: 'ex12', label: '超额12M', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v) + '%') },
 ];
