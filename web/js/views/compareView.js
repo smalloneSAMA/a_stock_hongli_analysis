@@ -2,7 +2,7 @@
    数据全部来自现有缓存（klineUrl 直读 /cache/），零后端改动 */
 
 import { loadJSON, klineUrl, indiUrl, MANIFEST_URL, ANALYSIS_URL } from '../data.js';
-import { el, fmt2, fmtSigned, dirOf, fmtScale, skeleton, errorBox, emptyState, attachSearchHistory } from './common.js';
+import { el, fmt2, fmtSigned, dirOf, fmtScale, skeleton, errorBox, emptyState, attachSearchHistory, favStar, isFav } from './common.js';
 import { cssVar } from '../theme.js';
 
 const MAX = 8;   // 最多同时对比的标的数
@@ -885,10 +885,11 @@ export default {
            选中由打钩改为框选高亮（ticker-item.active）；ETF 不显示黄色规模小标签（副信息保留） */
         const nameBox = el('div', { class: 'ticker-name' }, it.name,
           it.grp ? el('span', { class: 'cmp-grp' }, it.grp) : null);
+        nameBox.append(favStar(it.code));   // 收藏星标（跨板块同步）
         const subTxt = it.type === 'stock'
           ? (it.ind ? it.ind + ' · ' : '') + (it.dy != null ? '股息率 ' + it.dy.toFixed(2) + '%' : '—')
           : (it.type === 'etf' && it.scale != null ? '规模 ' + fmtScale(it.scale) : '');
-        const li = el('li', { class: 'ticker-item' + (sel ? ' active' : ''), role: 'button', tabindex: '0',
+        const li = el('li', { class: 'ticker-item' + (sel ? ' active' : '') + (isFav(it.code) ? ' fav' : ''), role: 'button', tabindex: '0',
             'aria-label': it.name + it.code },
           nameBox,
           el('div', { class: 'ticker-price txt-' + dirOf(it.chg) }, it.price == null ? '—' : fmt2(it.price)),

@@ -306,6 +306,8 @@ button { font-family: inherit; }
   transition: background var(--t-fast) var(--ease);
 }
 .ticker-item:hover { background: var(--hover-bg); }
+.ticker-item.fav { background: rgba(251, 191, 36, 0.07); }   /* 收藏标的金色底突出 */
+.ticker-item.active.fav { background: linear-gradient(90deg, rgba(34, 211, 238, 0.13), rgba(251, 191, 36, 0.10)); }
 .ticker-item.active {
   background: linear-gradient(90deg, rgba(34, 211, 238, 0.13), rgba(34, 211, 238, 0.03));
 }
@@ -491,6 +493,11 @@ button { font-family: inherit; }
 .cmp-float-chg { font-weight: 700; font-variant-numeric: tabular-nums; }
 /* ⓘ 使用说明：速记行 + 按钮 + 展开卡片 */
 .cmp-help-tip { font-size: 11.5px; color: var(--text-3); margin-top: 6px; line-height: 1.5; }
+/* 收藏星标（★ 金色突出，跨板块同步） */
+.fav-star { background: none; border: none; cursor: pointer; font-size: 13px; line-height: 1;
+  color: var(--text-3); padding: 0 2px; flex-shrink: 0; transition: color .15s, transform .15s; }
+.fav-star:hover { color: var(--brand); transform: scale(1.2); }
+.fav-star.on { color: var(--brand); }
 /* 搜索历史下拉（点击搜索框弹出最近记录，键盘上下选择） */
 .search-hist { position: absolute; z-index: 200; background: var(--surface); border: 1px solid var(--border-strong);
   border-radius: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, .35); overflow: hidden; padding: 4px; }

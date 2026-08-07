@@ -81,6 +81,34 @@ export function errorBox(message, onRetry) {
   return box;
 }
 
+/* ── 收藏：localStorage 全局标记（所有板块通用；★ 金色突出，fav-change 事件跨视图同步）── */
+const FAV_KEY = 'pi_favs';
+export function getFavs() { try { return JSON.parse(localStorage.getItem(FAV_KEY) || '[]') || []; } catch { return []; } }
+export function isFav(code) { return getFavs().includes(code); }
+export function toggleFav(code) {
+  const list = getFavs();
+  const next = list.includes(code) ? list.filter(c => c !== code) : [...list, code];
+  try { localStorage.setItem(FAV_KEY, JSON.stringify(next)); } catch { /* 忽略 */ }
+  window.dispatchEvent(new CustomEvent('fav-change', { detail: { code } }));
+  return next.includes(code);
+}
+/* 星标按钮（点击收藏/取消；监听 fav-change 跨视图同步；点击不冒泡，不影响行选中） */
+export function favStar(code) {
+  const star = el('button', { type: 'button', class: 'fav-star' + (isFav(code) ? ' on' : ''), 'aria-label': '收藏/取消收藏', title: '收藏' }, isFav(code) ? '★' : '☆');
+  star.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const on = toggleFav(code);
+    star.classList.toggle('on', on);
+    star.textContent = on ? '★' : '☆';
+  });
+  window.addEventListener('fav-change', () => {
+    const on = isFav(code);
+    star.classList.toggle('on', on);
+    star.textContent = on ? '★' : '☆';
+  });
+  return star;
+}
+
 /* ── 搜索历史：点击搜索框弹出最近 5 条（键盘 ↑/↓ 选择、Enter 确认、Esc 关闭、失焦记录）── */
 const HIST_PREFIX = 'pi_search_hist_';
 export function getSearchHistory(key) {
@@ -186,7 +214,8 @@ export function renderTickerList(container, items, { onSelect, activeCode, searc
       const priceTxt = it.price == null ? '—' : Number(it.price).toFixed(2);
       const nameBox = el('div', { class: 'ticker-name' }, it.name);
       if (it.scale != null) nameBox.append(el('span', { class: 'ticker-scale' }, fmtScale(it.scale)));
-      const li = el('li', { class: 'ticker-item' + (it.code === activeCode ? ' active' : ''), role: 'button', tabindex: '0', 'aria-label': `${it.name} ${it.code}，最新价 ${priceTxt}` },
+      nameBox.append(favStar(it.code));   // 收藏星标（金色突出，跨板块同步）
+      const li = el('li', { class: 'ticker-item' + (it.code === activeCode ? ' active' : '') + (isFav(it.code) ? ' fav' : ''), role: 'button', tabindex: '0', 'aria-label': `${it.name} ${it.code}，最新价 ${priceTxt}` },
         nameBox,
         el('div', { class: 'ticker-price txt-' + dirOf(it.chg) }, priceTxt),
         el('div', { class: 'ticker-code' }, it.code),
@@ -531,7 +560,8 @@ export function renderTable(container, { columns, rows, pageSize = 50 }) {
         let v = get(row, c.key);
         const td = el('td', { class: c.align === 'left' ? 'left' : (c.align === 'center' ? 'center' : 'num') });
         if (c.color && v !== null && v !== undefined && !Number.isNaN(v)) td.classList.add('txt-' + (typeof c.color === 'function' ? c.color(v, row) : c.color));
-        td.textContent = c.fmt ? c.fmt(v, row) : (v === null || v === undefined ? '—' : String(v));
+        const fv = c.fmt ? c.fmt(v, row) : (v === null || v === undefined ? '—' : String(v));
+        if (fv instanceof Node) td.append(fv); else td.textContent = fv;   // fmt 支持返回元素（如收藏星标）
         tr.append(td);
       }
       tbody.append(tr);

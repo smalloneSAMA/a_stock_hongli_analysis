@@ -3,12 +3,13 @@
 /* 入选推荐20只：动态读 manifest 的 rec 标记（由 scripts/_recommend_stocks.py 评分产物驱动），
    替代原硬编码清单（旧人工20只） */
 import { loadJSON, SUMMARY_URL, MANIFEST_URL } from '../data.js';
-import { el, fmt2, fmt0, fmtPct, dirOf, renderTable, skeleton, errorBox } from './common.js';
+import { el, fmt2, fmt0, fmtPct, dirOf, renderTable, skeleton, errorBox, favStar, getFavs } from './common.js';
 import { createDonut, createBar } from '../charts.js';
 
 /* 入选推荐20只标记：动态读 manifest（rec 由评分产物驱动），删除原硬编码清单 */
 
 const columns = [
+  { key: 'fav', label: '★', align: 'center', sortable: false, filter: false, fmt: (_v, row) => favStar(row.code) },
   { key: 'code', label: '证券代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
   { key: 'name', label: '证券名称', align: 'left', sortable: true, cmp: (a, b) => a.localeCompare(b, 'zh') },
   { key: 'ind', label: '一级行业', align: 'left', sortable: true, cmp: (a, b) => a.localeCompare(b, 'zh') },
@@ -83,8 +84,10 @@ export default {
         el('option', { value: '' }, '全部行业'), ...industries.map(i => el('option', { value: i }, i)));
       const recCheck = el('label', { class: 'check-toggle', style: 'cursor:pointer' },
         el('input', { type: 'checkbox', 'aria-label': '仅看推荐20只' }), '仅看推荐20只');
+      const favCheck = el('label', { class: 'check-toggle', style: 'cursor:pointer' },
+        el('input', { type: 'checkbox', 'aria-label': '仅看收藏' }), '仅看收藏');
       const countSpan = el('span', { class: 'filter-count' });
-      const filterBar = el('div', { class: 'filter-bar card' }, searchInput, indSelect, recCheck, countSpan);
+      const filterBar = el('div', { class: 'filter-bar card' }, searchInput, indSelect, recCheck, favCheck, countSpan);
       body.append(filterBar);
 
       /* ── 图表 + 表格 ── */
@@ -103,15 +106,22 @@ export default {
         const q = searchInput.value.trim().toLowerCase();
         const ind = indSelect.value;
         const recOnly = recCheck.querySelector('input').checked;
+        const favOnly = favCheck.querySelector('input').checked;
+        const favs = new Set(getFavs());
         let out = base;
         if (q) out = out.filter(r => r.name.toLowerCase().includes(q) || r.code.includes(q));
         if (ind) out = out.filter(r => r.ind === ind);
         if (recOnly) out = out.filter(r => r._rec);
+        if (favOnly) out = out.filter(r => favs.has(r.code));
         if (donutFilterInd) out = out.filter(r => r.ind === donutFilterInd);   // 环形图行业筛选
         countSpan.textContent = `筛选结果 ${out.length} / ${base.length}`;
         tableApi.refresh(out);
         renderCharts(out);
       };
+      /* 收藏变化：星标自身已同步；"仅看收藏"勾选时表格结果联动刷新 */
+      const favInput = favCheck.querySelector('input');
+      favInput.addEventListener('change', () => { favCheck.classList.toggle('on', favInput.checked); applyFilter(); });
+      window.addEventListener('fav-change', () => { if (favInput.checked) applyFilter(); });
 
       /* ── 表格 ── */
       const tableBox = grid.querySelector('.table-card');

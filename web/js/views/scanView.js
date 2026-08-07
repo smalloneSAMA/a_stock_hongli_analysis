@@ -5,7 +5,7 @@
    数据：cache/analysis_dy.json（dy_pct=股息率分位，高=便宜）+ analysis.json（均衡分）+ manifest（分组） */
 
 import { loadJSON, MANIFEST_URL, ANALYSIS_URL } from '../data.js';
-import { el, fmt2, dirOf, skeleton, errorBox, renderTable } from './common.js';
+import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar } from './common.js';
 
 const DY_URL = '/cache/analysis_dy.json';
 
@@ -77,7 +77,13 @@ export default {
         return null;
       };
       const inZone = (r, z) => (z === 'buy' ? buyOf(r) : z === 'sell' ? sellOf(r) : watchSide(r) != null);
-      const zoneList = (z) => all.filter(r => (typeF === '全部' || r.group === typeF) && inZone(r, z));
+      /* 类型筛选：全部 / 指数 / ETF / 个股（池内全部股票） */
+      const typeMatch = (r) => {
+        if (typeF === '全部') return true;
+        if (typeF === '个股') return r.type === '股票';
+        return r.type === typeF;
+      };
+      const zoneList = (z) => all.filter(r => typeMatch(r) && inZone(r, z));
 
       /* ── DOM ── */
       root.append(el('div', { class: 'view-head' },
@@ -85,8 +91,8 @@ export default {
         el('div', { class: 'desc' }, '近5年股息率分位触发（与回测同口径）：指数/ETF 按 dy 分位 ≥90 买入 / ≤10 卖出（回测 12M 超额 +24% 有效）；个股触发模式可选')));
 
       const zoneTabs = el('div', { class: 'seg-group', role: 'group', 'aria-label': '区间' });
-      const typeSel = el('select', { class: 'ind-filter', 'aria-label': '类型筛选', title: '按类型/分组筛选' },
-        ['全部', '指数', 'ETF', '推荐20', '其他成份股', '自选股'].map(t => el('option', { value: t }, t)));
+      const typeSel = el('select', { class: 'ind-filter', 'aria-label': '类型筛选', title: '按类型筛选（个股=池内全部股票）' },
+        ['全部', '指数', 'ETF', '个股'].map(t => el('option', { value: t }, t)));
       const modeSel = el('select', { class: 'ind-filter', 'aria-label': '个股触发模式', title: '个股触发条件：仅dy分位 / 仅区间分数 / 两者都满足' },
         el('option', { value: 'dy' }, '个股:仅dy'),
         el('option', { value: 'score' }, '个股:仅区间分数'),
@@ -115,7 +121,7 @@ export default {
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '买入区'), el('b', { class: 'txt-up' }, zoneList('buy').length)),
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '卖出区'), el('b', { class: 'txt-down' }, zoneList('sell').length)),
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '观察区'), el('b', {}, zoneList('watch').length)),
-          el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '筛选池'), el('b', {}, all.filter(r => typeF === '全部' || r.group === typeF).length)));
+          el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '筛选池'), el('b', {}, all.filter(typeMatch).length)));
         /* 行构建（距阈值） */
         const rows = zoneList(zone).map(r => {
           let gap = null, side = '';
@@ -125,6 +131,7 @@ export default {
           return { ...r, gap, side };
         });
         const cols = [
+          { key: 'fav', label: '★', align: 'center', sortable: false, filter: false, fmt: (_v, row) => favStar(row.code) },
           { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
           { key: 'name', label: '名称', align: 'left', sortable: true },
           { key: 'type', label: '类型', sortable: true, filter: false },
