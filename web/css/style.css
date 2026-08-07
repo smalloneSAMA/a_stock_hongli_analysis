@@ -677,3 +677,7 @@ table.data-table { border-collapse: separate; border-spacing: 0; width: 100%; fo
 @media (max-width: 1180px) {
   .cmp-detail-grid { grid-template-columns: 1fr; }
 }
+
+/* 对比分析预设 */
+.cmp-presets { display: flex; gap: 6px; }
+.cmp-presets .seg-btn { font-size: 11.5px; padding: 5px 10px; }
