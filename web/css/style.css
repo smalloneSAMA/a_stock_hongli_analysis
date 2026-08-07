@@ -665,3 +665,15 @@ table.data-table { border-collapse: separate; border-spacing: 0; width: 100%; fo
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* 对比分析明细表 */
+.cmp-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); margin-top: var(--space-3); }
+.cmp-detail { padding: 14px; }
+.cmp-detail-title { font-size: 12.5px; font-weight: 700; margin-bottom: 8px; }
+.cmp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cmp-table th { text-align: left; color: var(--text-3); font-weight: 500; font-size: 11px; padding: 5px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.cmp-table td { padding: 6px 8px; border-bottom: 1px solid var(--grid-line); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cmp-table tr:hover td { background: var(--input-bg); }
+@media (max-width: 1180px) {
+  .cmp-detail-grid { grid-template-columns: 1fr; }
+}
