@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""自选股（自选股清单.xlsx）历史数据拉取 / 增量更新
+"""自选股（excel/自选股清单.xlsx）历史数据拉取 / 增量更新
 
-清单：自选股清单.xlsx 为唯一事实来源（表头：序号/股票名/股票代码），每次运行现读，
+清单：excel/自选股清单.xlsx 为唯一事实来源（表头：序号/股票名/股票代码），每次运行现读，
       代码列可能是数字存储（如 601899）→ zfill(6) 防丢前导零。
 数据：与 _fetch_pool_data 完全同构 —— K线（腾讯，增量）+ 分红/财报/股本（东财，缺失补齐）。
       清单内股票若已在精选池（已有缓存），自动复用零成本。
@@ -25,7 +25,7 @@ import _fetch_stock_data as fsd
 from _fetch_pool_data import market_prefix
 from _classify import map_ind
 
-XLSX = os.path.join(BASE, "自选股清单.xlsx")
+XLSX = os.path.join(BASE, "excel", "自选股清单.xlsx")   # 自选股清单（唯一事实来源）
 META_PATH = os.path.join(BASE, "cache", "_自选股清单.json")   # 仅行业等增强信息
 FAIL_PATH = os.path.join(BASE, "cache", "_watchlist_failed.json")
 SLEEP_KLINE = 0.8      # 腾讯 K 线节流（秒）
