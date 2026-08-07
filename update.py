@@ -373,8 +373,8 @@ def update_web():
     """前端数据包：web/data/ 四件套 + 买卖区间分析（S1反推+S3/S4打分） + 国证指数成分"""
     print("\n═══ 前端数据包更新（web/data/ + 区间分析 + 国证成分）═══")
     import _gen_web_data as gwd
-    gwd.build_manifest()
-    gwd.build_stock_indicators()
+    gwd.build_stock_indicators()   # 先指标（manifest 的 last_dy 读指标文件末行）
+    gwd.build_manifest()           # v1：元数据最新，rec=上次评分产物
     gwd.build_components()
     gwd.build_summary()
     import _fetch_etf_holdings as feh
@@ -382,7 +382,9 @@ def update_web():
     import _gen_analysis as ga
     ga.main()   # S1 股息率反推（重建 analysis_dy.json）→ S3/S4 因子打分与点位锚（analysis.json）
     import _recommend_stocks as rs
-    rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
+    rs.main()   # 推荐20量化评分（读 manifest v1 + 最新指标 → 更新 cache/_推荐20.json）
+    fsd.refresh_stocks()   # 评分产物刷新进程内 STOCKS（模块 import 时仅求值一次）
+    gwd.build_manifest()   # v2：rec 标记用本次评分产物（覆盖，约1秒）
     import _fetch_cnindex_components as fcc
     fcc.main()
     collect_etfs()   # 变更摘要采集
@@ -405,6 +407,8 @@ def update_pool(rerun_web=True):
         ga.main()
         import _recommend_stocks as rs
         rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
+        fsd.refresh_stocks()   # 刷新进程内 STOCKS
+        gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
         print("\n⚠️  季度末请执行：python scripts/_fetch_pool_data.py --check-fin（分红/财报/股本检测，约15分钟）")
         print("✅ 其他成份股更新完成（刷新浏览器即可）")
 
@@ -423,6 +427,8 @@ def update_watchlist(rerun_web=True):
         ga.main()
         import _recommend_stocks as rs
         rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
+        fsd.refresh_stocks()   # 刷新进程内 STOCKS
+        gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
         print("✅ 自选股更新完成（刷新浏览器即可）")
 
 
@@ -454,6 +460,8 @@ def retry_failed():
     ga.main()
     import _recommend_stocks as rs
     rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
+    fsd.refresh_stocks()   # 刷新进程内 STOCKS
+    gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
     print("✅ 重试完成（刷新浏览器即可）")
 
 def clear_cache():
@@ -525,6 +533,9 @@ def deep_update(auto=False):
         save_json(LAST_FIN, {"time": time.strftime("%Y-%m-%d %H:%M")})
         import _recommend_stocks as rs
         rs.main()   # check-fin 后质量因子更新，重算推荐评分
+        fsd.refresh_stocks()   # 刷新进程内 STOCKS
+        import _gen_web_data as gwd
+        gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
     update_pool(rerun_web=False)      # 9 其他成份（含新成分K线）
     update_watchlist(rerun_web=False)  # 10 自选
     export_excel()
@@ -600,6 +611,9 @@ def tools_menu():
             save_json(LAST_FIN, {"time": time.strftime("%Y-%m-%d %H:%M")})
             import _recommend_stocks as rs
             rs.main()   # check-fin 后质量因子更新，重算推荐评分
+            fsd.refresh_stocks()   # 刷新进程内 STOCKS
+            import _gen_web_data as gwd
+            gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
             print("✅ check-fin 完成（建议随后运行 单项→4 重算指标）")
         else:
             print("无效输入")

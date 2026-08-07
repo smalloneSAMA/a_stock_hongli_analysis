@@ -75,6 +75,14 @@ def _rec_stocks():
 
 
 STOCKS = _rec_stocks()
+
+
+def refresh_stocks():
+    """评分产物更新后刷新进程内 STOCKS（模块 import 时求值一次，产物驱动需手动重读）"""
+    global STOCKS
+    STOCKS = _rec_stocks()
+
+
 START = "2004-01-01"  # 最早时间上限
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
 
