@@ -18,6 +18,12 @@ const W = {
 };
 const bandOf = (s) => (s >= 75 ? '强烈推荐' : s >= 60 ? '推荐' : s >= 45 ? '关注' : '回避');
 const bandCls = (b) => ({ 强烈推荐: 'band-buy', 推荐: 'band-build', 关注: 'band-hold', 回避: 'band-sell2' }[b] || 'band-hold');
+/* 三档打分说明（悬停提示 + 动态标签 + 底部对照表） */
+const PRESET_DESC = {
+  稳健: { w: 'dy 50% · 贵贱度 25% · 回测 25%', tip: '股息为王：股息率分位占一半，最看重“便宜”与分红确定性' },
+  均衡: { w: 'dy 35% · 贵贱度 30% · 回测 35%', tip: '三分均衡：当前状态与历史胜率并重，默认档' },
+  进取: { w: 'dy 25% · 贵贱度 25% · 回测 50%', tip: '回测弹性：历史超额表现占半，追求进攻性' },
+};
 
 export default {
   async mount(root) {
@@ -104,24 +110,27 @@ export default {
         el('div', { class: 'desc' }, '信号扫描 × 回测报告 × 区间分析 三维融合：dy分位（高=便宜）+ 贵贱度反向 + 回测胜率/超额/样本')));
 
       const presetSel = el('div', { class: 'seg-group', role: 'group', 'aria-label': '权重档位' });
+      const presetNote = el('span', { class: 'txt-3', style: 'font-size:11.5px;white-space:nowrap' });   // 当前档位权重动态说明
       const typeSel = el('select', { class: 'ind-filter', 'aria-label': '类型筛选', title: '按类型筛选（个股=池内全部股票）' },
         ['全部', '指数', 'ETF', '个股'].map((t) => el('option', { value: t }, t)));
       const sumEl = el('div', { class: 'bt-summary' });
       const tableBox = el('div', { class: 'card table-card' }, el('div', { class: 'table-wrap' }, ''));
       root.append(sumEl,
-        el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 2px' }, presetSel, typeSel),
+        el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 2px' }, presetSel, presetNote, typeSel),
         tableBox,
         el('div', { class: 'txt-3', style: 'font-size:11.5px;margin:8px 2px;line-height:1.7' },
           '推荐分 = w_dy×dy分位 + w_ana×(100−贵贱度分) + w_bt×回测分；回测分 = 0.4×胜率12M + 0.4×max(0,超额12M) + 20×min(1,信号数/20)。',
           'dy分位≥90 = 信号触发中（与回测 p90 同口径）加 5 分并标记；无回测覆盖或近5年从未触发买入信号的标的已过滤。',
           '贵贱度分按类型用对应因子组（指数/ETF 四因子、股票六因子），类型内可比；悬停推荐分可见三项子分。',
+          '档位对照：稳健 dy50%/贵贱度25%/回测25% —— 股息为王，便宜优先；均衡 35%/30%/35% —— 三分均衡（默认档）；进取 25%/25%/50% —— 回测弹性，历史超额驱动。切档只改变权重与排序，候选池与评级阈值不变。',
           '评级：≥75 强烈推荐 / ≥60 推荐 / ≥45 关注 / <45 回避。回测为历史统计（p90 信号次一交易日买入，价格口径不含分红再投），非投资建议。'));
 
       const paint = () => {
         presetSel.innerHTML = '';
         for (const p of ['稳健', '均衡', '进取']) {
-          presetSel.append(el('button', { class: 'seg-btn' + (p === preset ? ' active' : ''), onclick: () => { preset = p; paint(); } }, p));
+          presetSel.append(el('button', { class: 'seg-btn' + (p === preset ? ' active' : ''), title: `${p}：${PRESET_DESC[p].w} —— ${PRESET_DESC[p].tip}`, onclick: () => { preset = p; paint(); } }, p));
         }
+        presetNote.textContent = `当前：${preset} → ${PRESET_DESC[preset].w}`;
         const rows = all
           .filter((r) => (typeF === '全部' ? true : typeF === '个股' ? r.type === '股票' : r.type === typeF))
           .map((r) => ({ ...r, ...recOf(r) }))
