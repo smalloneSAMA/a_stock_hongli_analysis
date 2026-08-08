@@ -165,6 +165,7 @@ export default {
             color: (v) => (v != null && v <= 25 ? 'up' : v != null && v >= 80 ? 'down' : '') },
           { key: 'win6', label: '胜率6M(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
           { key: 'win12', label: '胜率12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
+          { key: 'base12', label: '基准12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },
           { key: 'ex6', label: '超额6M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },
           { key: 'ex12', label: '超额12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },
           { key: 'n_buy', label: '信号数', sortable: true, filter: false },
