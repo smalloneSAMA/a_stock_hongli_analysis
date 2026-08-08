@@ -80,6 +80,14 @@ export default {
           ...b });
       }
 
+      /* 横截面绝对股息率分位（候选池内，高=股息率高）：高股息股不吃亏，且不受全市场估值水平影响 */
+      const dyVals = all.map((r) => r.dy).filter((v) => v != null).sort((a, b) => a - b);
+      for (const r of all) {
+        if (r.dy == null || !dyVals.length) { r.crossPct = 0; continue; }
+        const lo = dyVals.indexOf(r.dy), hi = dyVals.lastIndexOf(r.dy);
+        r.crossPct = dyVals.length > 1 ? (lo + hi) / 2 / (dyVals.length - 1) * 100 : 100;
+      }
+
       let preset = '均衡';
       let typeF = '全部';
 
@@ -95,14 +103,16 @@ export default {
         const ana = anaScoreOf(r.code, r.type, preset);
         const sAna = ana == null ? 0 : 100 - ana;
         const bt = btScore(r);
+        /* dy 混合分：横截面绝对分位 50% + 历史分位 50%（择时仍用历史分位判定触发/背离） */
+        const dyPart = 0.5 * (r.crossPct ?? 0) + 0.5 * r.pct;
         /* 背离惩罚：dy≥90（触发中）但价格分位也≥80 → 周期股假便宜（中远海特类），扣 5 */
         const pricePct = byCode[r.code] && byCode[r.code].factors && byCode[r.code].factors.price ? byCode[r.code].factors.price.pct : null;
         const diverge = (r.pct >= 90 && pricePct != null && pricePct >= 80) ? 5 : 0;
         /* 触发中 +5 / 卖出区 −5（对称） */
         const trig = r.pct >= 90 ? 5 : (r.pct <= 10 ? -5 : 0);
-        let s = (w.dy * r.pct + w.ana * sAna + w.bt * bt) / 100 + trig - diverge;
+        let s = (w.dy * dyPart + w.ana * sAna + w.bt * bt) / 100 + trig - diverge;
         s = Math.max(0, Math.min(100, s));
-        return { s, dyPart: r.pct, anaPart: sAna, btPart: bt, diverge, trig };
+        return { s, dyPart, cross: r.crossPct ?? 0, hist: r.pct, anaPart: sAna, btPart: bt, diverge, trig };
       };
 
       /* 跳转对应板块历史K线：__openTicker 兜底（视图未挂载时挂载后消费）+ open-ticker 事件（已挂载即响应） */
@@ -130,7 +140,8 @@ export default {
         el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 2px' }, presetSel, presetNote, typeSel),
         tableBox,
         el('div', { class: 'txt-3', style: 'font-size:11.5px;margin:8px 2px;line-height:1.7' },
-          '推荐分 = w_dy×dy分位 + w_ana×(100−贵贱度分) + w_bt×回测分，另加/减：触发中+5、卖出区−5、背离(dy≥90且价格分位≥80)−5；最终限幅 0~100。',
+          '推荐分 = w_dy×dy分 + w_ana×(100−贵贱度分) + w_bt×回测分，另加/减：触发中+5、卖出区−5、背离(dy≥90且价格分位≥80)−5；最终限幅 0~100。',
+          'dy分 = 横截面绝对分位×50% + 历史分位×50%：横截面=候选池内当前股息率排名（高股息股不吃亏，不受全市场估值水平影响），历史分位=自身近5年位置（择时）；触发/卖出/背离判定仍用历史分位。',
           '回测分 = 0.35×胜率12M + 0.15×胜率6M + 0.25×max(0,超额12M) + 0.1×max(0,基准12M) + 15×min(1,信号数/20) + 时效修正(胜率6M−12M)×0.05(限±5)。',
           'dy分位≥90 = 信号触发中（与回测 p90 同口径）；无回测覆盖或近5年从未触发买入信号的标的已过滤。',
           '贵贱度分按类型用对应因子组（指数/ETF 四因子、股票六因子），类型内可比；悬停推荐分可见三项子分与惩罚明细。',
@@ -164,11 +175,14 @@ export default {
           { key: 'type', label: '类型', sortable: true, filter: false },
           { key: 'group', label: '分组', sortable: true, filter: false },
           { key: 's', label: '推荐分', sortable: true,
-            fmt: (v, row) => el('span', { title: `dy分位 ${fmt2(row.dyPart)} × ${W[preset].dy}% + 贵贱度反向 ${fmt2(row.anaPart)} × ${W[preset].ana}% + 回测 ${fmt2(row.btPart)} × ${W[preset].bt}%${row.trig > 0 ? ' + 触发中 5' : row.trig < 0 ? ' − 卖出区 5' : ''}${row.diverge ? ' − 背离 5' : ''}` }, fmt2(v)),
+            fmt: (v, row) => el('span', { title: `dy 横截面 ${fmt2(row.cross)} ×50% + 历史 ${fmt2(row.hist)} ×50% = ${fmt2(row.dyPart)} × ${W[preset].dy}% + 贵贱度反向 ${fmt2(row.anaPart)} × ${W[preset].ana}% + 回测 ${fmt2(row.btPart)} × ${W[preset].bt}%${row.trig > 0 ? ' + 触发中 5' : row.trig < 0 ? ' − 卖出区 5' : ''}${row.diverge ? ' − 背离 5' : ''}` }, fmt2(v)),
             color: (v) => (v >= 75 ? 'up' : v >= 60 ? 'flat' : '') },
           { key: 'band', label: '评级', sortable: true, filter: false, fmt: (_v, row) => el('span', { class: 'band-pill ' + bandCls(bandOf(row.s)) }, bandOf(row.s)) },
           { key: 'dy', label: '股息率(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
           { key: 'pct', label: 'dy分位', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), color: (v) => (v >= 90 ? 'up' : v <= 10 ? 'down' : '') },
+          { key: 'crossPct', label: '绝对分位', sortable: true, filter: false,
+            fmt: (v) => (v == null ? '—' : el('span', { title: '候选池内当前股息率排名分位（高=股息率高），不受全市场估值水平影响' }, fmt2(v))),
+            color: (v) => (v >= 90 ? 'up' : '') },
           { key: 'trig', label: '状态', sortable: false, filter: false,
             fmt: (_v, row) => (row.pct >= 90 ? el('span', { class: 'trig-badge' }, '触发中')
               : row.pct <= 10 ? el('span', { class: 'trig-badge sell' }, '卖出区')
