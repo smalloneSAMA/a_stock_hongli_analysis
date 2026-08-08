@@ -172,7 +172,7 @@ def refresh_indicators_main():
     # 写回 xlsx（先落盘缓存，写 xlsx 失败可重跑不重拉）
     try:
         write_indicators_xlsx(metrics)
-        print("  ✅ 已写回 excel/自选股清单.xlsx（E/F/G 列 = 总市值(亿)/PE(TTM)/PB）")
+        print("  ✅ 已写回 excel/自选股清单.xlsx（追加列：总市值(亿)/PE(TTM)/PB，已有列未动）")
     except PermissionError:
         print("  ⚠️ xlsx 被占用（Excel 中打开？）请关闭后重跑 --indicators（缓存已存，重跑约30秒不重拉）")
     except Exception as e:
@@ -180,11 +180,28 @@ def refresh_indicators_main():
 
 
 def write_indicators_xlsx(metrics):
-    """写回 xlsx：表头第 1 行 E/F/G = 总市值(亿)/PE(TTM)/PB；数据行按 C 列代码逐行匹配；其余单元格不碰"""
+    """写回 xlsx：新三列（总市值(亿)/PE(TTM)/PB）**追加到现有表头之后**（H/I/J…），已有列一律不碰；
+    若表头已存在同名列则原位覆盖（幂等，重复运行不产生新列）。
+    表头在第 1 行，数据行按 C 列代码逐行匹配。"""
     from openpyxl import load_workbook
     wb = load_workbook(XLSX)
     ws = wb.worksheets[0]
-    ws.cell(1, 5, "总市值(亿)"); ws.cell(1, 6, "PE(TTM)"); ws.cell(1, 7, "PB")
+    # 探测表头：第 1 行全部列名 → 定位三列（已有则原位，否则追加）
+    headers, last_col = {}, 0
+    for c in range(1, ws.max_column + 1):
+        v = ws.cell(1, c).value
+        if v is not None:
+            headers[str(v).strip()] = c
+            last_col = c
+    order = ["总市值(亿)", "PE(TTM)", "PB"]
+    pos = {}
+    for k in order:
+        if k in headers:
+            pos[k] = headers[k]
+        else:
+            last_col += 1
+            ws.cell(1, last_col, k)
+            pos[k] = last_col
     n = 0
     for r in range(2, ws.max_row + 1):
         raw = ws.cell(r, 3).value
@@ -196,7 +213,7 @@ def write_indicators_xlsx(metrics):
         m = metrics.get(code.zfill(6))
         if not m:
             continue
-        ws.cell(r, 5, m["t_mcap"]); ws.cell(r, 6, m["t_pe"]); ws.cell(r, 7, m["t_pb"])
+        ws.cell(r, pos["总市值(亿)"], m["t_mcap"]); ws.cell(r, pos["PE(TTM)"], m["t_pe"]); ws.cell(r, pos["PB"], m["t_pb"])
         n += 1
     wb.save(XLSX)
     wb.close()
