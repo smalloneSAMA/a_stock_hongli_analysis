@@ -27,7 +27,6 @@ const PRESET_DESC = {
 
 export default {
   async mount(root) {
-    root.classList.add('rec-root');   // 底部留白给固定分页条
     root.innerHTML = '';
     root.append(skeleton());
     try {
