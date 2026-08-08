@@ -738,3 +738,14 @@ table.data-table { border-collapse: separate; border-spacing: 0; width: 100%; fo
 .trig-badge.sell { background: var(--down-bg); color: var(--down); border-color: var(--down); }
 .jump-link { color: var(--text); text-decoration: none; border-bottom: 1px dashed var(--border); cursor: pointer; }
 .jump-link:hover { color: var(--accent); }
+
+/* 智能推荐：分页器固定为视口底部工具条
+   注意：rec-root 入场动画必须用 backwards（both 会残留恒等 transform，创建 containing block，
+   导致 fixed 子元素相对 rec-root 而非视口定位） */
+.rec-root { padding-bottom: 56px; animation: view-in 0.34s var(--ease) backwards; }
+.rec-table-card .pagination {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  background: var(--surface-2); border-top: 1px solid var(--row-line);
+  margin: 0; padding: 8px 16px; justify-content: center;
+  box-shadow: 0 -6px 16px -8px rgba(0, 0, 0, 0.45);
+}

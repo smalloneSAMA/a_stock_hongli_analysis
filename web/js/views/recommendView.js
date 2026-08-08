@@ -27,6 +27,7 @@ const PRESET_DESC = {
 
 export default {
   async mount(root) {
+    root.classList.add('rec-root');   // 底部留白给固定分页条
     root.innerHTML = '';
     root.append(skeleton());
     try {
@@ -135,7 +136,7 @@ export default {
       const typeSel = el('select', { class: 'ind-filter', 'aria-label': '类型筛选', title: '按类型筛选（个股=池内全部股票）' },
         ['全部', '指数', 'ETF', '个股'].map((t) => el('option', { value: t }, t)));
       const sumEl = el('div', { class: 'bt-summary' });
-      const tableBox = el('div', { class: 'card table-card' }, el('div', { class: 'table-wrap' }, ''));
+      const tableBox = el('div', { class: 'card table-card rec-table-card' }, el('div', { class: 'table-wrap' }, ''));
       root.append(sumEl,
         el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 2px' }, presetSel, presetNote, typeSel),
         tableBox,
