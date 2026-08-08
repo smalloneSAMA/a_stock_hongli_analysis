@@ -381,7 +381,7 @@ def main(top=20, write=True):
             "filters": {"dy_min": DY_MIN, "amt_min": AMT_MIN},
             "list": [slim(it, i) for i, it in enumerate(picked, 1)],
             "backup": [slim(it, len(picked) + i + 1) for i, it in enumerate(backup[:10])],
-            "near_backup": [slim(it, i + 1) for i, (c2, sc2, g2, f2, m2) in enumerate(ranked)
+            "near_backup": [slim((c2, sc2, g2, f2, m2), i + 1) for i, (c2, sc2, g2, f2, m2) in enumerate(ranked)
                              if m2.get("last_dy") is not None and DY_MIN <= m2["last_dy"] < DY_NEAR][:20],
             "excluded": excluded,
         }
