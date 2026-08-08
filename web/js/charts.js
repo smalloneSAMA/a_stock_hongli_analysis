@@ -4,7 +4,7 @@ import { cssVar } from './theme.js';
 
 const C = {
   up: cssVar('--up'), down: cssVar('--down'),
-  ma5: cssVar('--brand'), ma20: cssVar('--accent'), ma60: '#A78BFA',
+  ma5: cssVar('--brand'), ma20: cssVar('--accent'), ma60: '#A78BFA', ma250: '#F59E0B',
   volUp: cssVar('--up-bg'), volDown: cssVar('--down-bg'),
   axis: cssVar('--text-3'), split: cssVar('--grid-line'), text2: cssVar('--text-2'), text3: cssVar('--text-3'),
   accent: cssVar('--accent'), brand: cssVar('--brand'), indigo: cssVar('--indigo'),
@@ -37,7 +37,7 @@ function chgArr(klines) {
  */
 export function createKlineChart(el, opts) {
   const { dates, klines, volumes, amounts = [], chgN = [], indData = null, unit = '', subUnit = '', mode = 'candlestick', showMA = true, showOHLC = true } = opts;
-  const maCount = showMA ? 3 : 0;   // MA5/MA20/MA60 数量（函数级作用域：setSubSeries 需要访问）
+  const maCount = showMA ? 4 : 0;   // MA5/MA20/MA60/MA250 数量（函数级作用域：setSubSeries 需要访问）
   const overlay = opts.overlay || [];
   const chg = chgArr(klines);
   const closes = klines.map(k => k[1]);
@@ -197,9 +197,11 @@ export function createKlineChart(el, opts) {
             },
           } : {}),
         },
+        { name: 'MA60', ...MA_STYLE, data: ma(closes, 60), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma60 } },
+        { name: 'MA250', ...MA_STYLE, data: ma(closes, 250), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma250 } },
         { name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volumes, barMaxWidth: 5, sampling: 'lttb', itemStyle: { color: 'rgba(251,191,36,0.30)' } },
       ],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['收盘', '成交量'] },
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['收盘', 'MA60', 'MA250', '成交量'] },
     };
   } else {
     /* ── candlestick 模式：K线 + MA(可关) + 成交量 + 副图（默认）；支持主图右轴叠加 overlay 折线（净值） ── */
@@ -301,6 +303,7 @@ export function createKlineChart(el, opts) {
           { name: 'MA5', ...MA_STYLE, data: ma(closes, 5), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma5 } },
           { name: 'MA20', ...MA_STYLE, data: ma(closes, 20), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma20 } },
           { name: 'MA60', ...MA_STYLE, data: ma(closes, 60), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma60 } },
+          { name: 'MA250', ...MA_STYLE, data: ma(closes, 250), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma250 } },
         ] : []),
         {
           name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volumes,
@@ -309,7 +312,7 @@ export function createKlineChart(el, opts) {
         },
         ...overlaySeries,
       ],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60'] : []), ...overlay.map(d => d.name)], selected: { ...Object.fromEntries(overlay.map(d => [d.name, d.visible !== false])) } },
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), ...overlay.map(d => d.name)], selected: { ...Object.fromEntries(overlay.map(d => [d.name, d.visible !== false])) } },
     };
   }
 
@@ -471,7 +474,7 @@ export function createKlineChart(el, opts) {
         { gridIndex: 1 },
         { gridIndex: 2, name: defs && defs[0] ? defs[0].unit || '' : '' },
       ],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60'] : []), '成交量', ...overlayPart.map(s => s.name), ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), '成交量', ...overlayPart.map(s => s.name), ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
       series: [mainSeries, ...maSeries, volSeries2, ...overlayPart, ...series],
     }, { replaceMerge: ['series', 'legend'] });
   }
