@@ -374,27 +374,7 @@ export function buildHistoryView(container, cfg) {
     const dateRangeApi = dateRangeGroup();
     const vsGroup = viewSwitchGroup();   // 全部视图都有切换（股票：图表|区间分析；指数/ETF：图表|成分股|区间分析）
 
-    /* 均线开关组（默认全关；与图例点击双向同步） */
-    function maGroup() {
-      const isLine = (cfg.chartType || 'candlestick') === 'line';
-      const names = isLine ? [['MA60', 'MA60'], ['MA250', 'MA250']]
-        : [['MA5', 'MA5'], ['MA20', 'MA20'], ['MA60', 'MA60'], ['MA250', 'MA250']];
-      const g = el('div', { class: 'ma-toggle-group', role: 'group', 'aria-label': '均线开关' });
-      const boxes = {};
-      for (const [key, label] of names) {
-        const cb = el('label', { class: 'ma-toggle', style: 'cursor:pointer' },
-          el('input', { type: 'checkbox', 'aria-label': label }), label);
-        cb.querySelector('input').addEventListener('change', () => chartApi.setMA(key));
-        boxes[key] = cb;
-        g.append(cb);
-      }
-      chartApi.onLegendChange((p) => {   // 图例点击 → 同步 checkbox 勾选态
-        const inp = boxes[p.name]?.querySelector('input');
-        if (inp) inp.checked = !!p.selected?.[p.name];
-      });
-      return g;
-    }
-
+    /* 均线开关：走主图图例点击（默认全关，图例灰色，点击即显隐） */
     const head = el('div', { class: 'chart-head' },
       el('div', {},
         el('h2', { class: 'chart-title' }, item.name, el('span', { class: 'code' }, item.code)),
@@ -405,7 +385,6 @@ export function buildHistoryView(container, cfg) {
         el('span', { class: 'txt-3', style: 'font-size:11.5px' }, unit)),
       el('div', { class: 'chart-meta' },
         rangeApi.el, dateRangeApi.el,
-        maGroup(),   // 均线开关（MA5/MA20/MA60/MA250，默认全关）
         cfg.subControl !== 'none' ? subControlGroup() : null,
         vsGroup ? vsGroup.el : null),
       );

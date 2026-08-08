@@ -514,9 +514,6 @@ export function createKlineChart(el, opts) {
   }
 
   return { chart, setRange, setDateRange, onZoom, getZoom, setSubSeries, addAnchorLines,
-           /* 均线开关（与工具栏 checkbox 互通；图例点击为同一 ECharts 事件，状态自动同步） */
-           setMA: (name) => chart.dispatchAction({ type: 'legendToggleSelect', name }),
-           onLegendChange: (cb) => chart.on('legendselectchanged', cb),
            dispose: () => { window.removeEventListener('keydown', kbdMove); chart.dispose(); } };
 }
 

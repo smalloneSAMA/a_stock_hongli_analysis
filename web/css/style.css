@@ -342,12 +342,6 @@ button { font-family: inherit; }
 .chart-quote .price { font-family: var(--font-num); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .chart-quote .chg { font-family: var(--font-num); font-size: 13px; font-weight: 600; }
 .chart-meta { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-/* 均线开关组（工具栏，与图例点击互通；默认全关） */
-.ma-toggle-group { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.ma-toggle { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-3);
-  padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); user-select: none; }
-.ma-toggle:hover { border-color: var(--border-strong); }
-.ma-toggle input { accent-color: var(--brand); width: 12px; height: 12px; margin: 0; }
 
 /* 分段按钮组（时间范围/副图切换） */
 .seg-group { display: inline-flex; background: var(--input-bg); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
