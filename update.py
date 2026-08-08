@@ -442,6 +442,14 @@ def update_watchlist(rerun_web=True):
         print("✅ 自选股更新完成（刷新浏览器即可）")
 
 
+def update_watchlist_indicators():
+    """自选股清单指标（总市值/PE-TTM/PB）：腾讯批量全量刷新 5000+ 只 → 缓存 → 写回 xlsx E/F/G 列（约1分钟）"""
+    print("\n═══ 自选股清单指标更新（腾讯批量 · 写回 xlsx）═══")
+    import _fetch_watchlist as fw
+    fw.refresh_indicators_main()
+    print("✅ 自选股清单指标更新完成")
+
+
 def update_fin_refresh():
     print("\n═══ 分红/财报更新检测（季度末/定期执行）═══")
     fsd.check_financials()
@@ -517,6 +525,7 @@ def daily_update(auto=False):
     update_stocks()
     update_pool(rerun_web=False)
     update_watchlist(rerun_web=False)
+    update_watchlist_indicators()   # 清单指标（市值/PE/PB → 写回 xlsx，约1分钟）
     export_excel()
     update_web()
     print_changes()
@@ -548,6 +557,7 @@ def deep_update(auto=False):
         gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
     update_pool(rerun_web=False)      # 9 其他成份（含新成分K线）
     update_watchlist(rerun_web=False)  # 10 自选
+    update_watchlist_indicators()   # 清单指标（市值/PE/PB → 写回 xlsx）
     export_excel()
     update_web()
     if ask("是否重跑回测（全量，约1分钟）？", default=False):
@@ -599,6 +609,7 @@ def tools_menu():
   3. 缓存清理（删除后全量重拉）
   4. 重导 Excel（指数/ETF/推荐股）
   5. 季度检测 check-fin（约15分钟）
+  6. 自选股清单指标更新（市值/PE/PB → 写回xlsx，约1分钟）
   0. 返回
 """)
         ch = input("请输入编号: ").strip()
@@ -625,6 +636,8 @@ def tools_menu():
             import _gen_web_data as gwd
             gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
             print("✅ check-fin 完成（建议随后运行 单项→4 重算指标）")
+        elif ch == "6":
+            update_watchlist_indicators()
         else:
             print("无效输入")
 
@@ -663,6 +676,7 @@ CMDS = {
     "rec":     update_stocks,
     "pool":    update_pool,
     "watch":   update_watchlist,
+    "wq":      update_watchlist_indicators,   # 自选股清单指标（市值/PE/PB 写回xlsx）
     "web":     update_web,
     "comp":    update_components,
     "summary": update_summary,

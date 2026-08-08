@@ -11,10 +11,11 @@
 
 用法:
   python scripts/_fetch_watchlist.py               # 增量：K线增量 + 缺失补齐（分钟级）
+  python scripts/_fetch_watchlist.py --indicators  # 全量刷新清单全部股票的 总市值/PE-TTM/PB（腾讯批量）→ 写回 xlsx E/F/G 列
   python scripts/_fetch_watchlist.py --retry-failed # 只重试失败清单
   python scripts/_fetch_watchlist.py --check-fin   # 季度分红/财报/股本检测（约 2s/只）
 """
-import sys, os, json, time, argparse
+import sys, os, json, time, argparse, urllib.request
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -27,6 +28,7 @@ from _classify import map_ind
 
 XLSX = os.path.join(BASE, "excel", "自选股清单.xlsx")   # 自选股清单（唯一事实来源）
 META_PATH = os.path.join(BASE, "cache", "_自选股清单.json")   # 仅行业等增强信息
+METRICS_PATH = os.path.join(BASE, "cache", "_自选股指标.json")  # 指标缓存（总市值/PE-TTM/PB + 数据日期）
 FAIL_PATH = os.path.join(BASE, "cache", "_watchlist_failed.json")
 SLEEP_KLINE = 0.8      # 腾讯 K 线节流（秒）
 MELT_LIMIT = 5         # 连续失败熔断阈值
@@ -118,6 +120,89 @@ def refresh_watch_meta(rows):
     print(f"  ✅ 行业缓存已更新 → {META_PATH}")
 
 
+def refresh_indicators_main():
+    """全量刷新清单**全部**股票的 总市值(亿)/PE(TTM)/PB（腾讯批量 50只/批，不封IP）
+    → 缓存 cache/_自选股指标.json → 写回 xlsx 第 5/6/7 列（表头第 1 行，数据按 C 列代码逐行匹配，其余列不碰）。
+    口径与成分股汇总一致：腾讯 v[45]=总市值(元)、v[39]=PE(TTM)、v[46]=PB。"""
+    rows = read_watchlist_xlsx()
+    if not rows:
+        return
+    print(f"═══ 自选股清单指标刷新（{len(rows)} 只 · 腾讯批量 · 全量）═══")
+
+    def prefix(c):
+        if c.startswith("92"):            return "bj" + c   # 北交所必须先于 9x
+        if c.startswith(("5", "6", "9")): return "sh" + c
+        if c.startswith(("4", "8")):      return "bj" + c
+        return "sz" + c
+
+    metrics, got, t0 = {}, 0, time.time()
+    for i in range(0, len(rows), 50):
+        batch = rows[i:i + 50]
+        url = "https://qt.gtimg.cn/q=" + ",".join(prefix(r["code"]) for r in batch)
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            data = urllib.request.urlopen(req, timeout=10).read().decode("gbk", errors="replace")
+            for line in data.strip().split(";"):
+                if '"' not in line:
+                    continue
+                key = line.split("=")[0].split("_")[-1]
+                v = line.split('"')[1].split("~")
+                if len(v) < 53:
+                    continue
+                code = key[2:]
+                price, pe, pb = float(v[3] or 0), float(v[39] or 0), float(v[46] or 0)
+                mcap = float(v[45] or 0)   # 腾讯总市值，单位已是亿元（招行 9785.30 = 9785 亿）
+                if not (mcap or pe or pb):
+                    continue   # 无行情（停牌/退市/代码错误）→ 不写缓存
+                metrics[code] = {"t_price": round(price, 2),
+                                 "t_pe": round(pe, 2) if pe else None,
+                                 "t_pb": round(pb, 2) if pb else None,
+                                 "t_mcap": round(mcap, 2) if mcap else None}
+                got += 1
+        except Exception as e:
+            print(f"  ❌ 批次 {i // 50 + 1} 失败: {repr(e)[:70]}")
+        time.sleep(0.3)
+        if (i // 50 + 1) % 20 == 0:
+            print(f"  进度 {min(i + 50, len(rows))}/{len(rows)}（命中 {got}） {time.time() - t0:.0f}s")
+    tmp = METRICS_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fp:
+        json.dump({"date": time.strftime("%Y-%m-%d"), "rows": metrics}, fp, ensure_ascii=False, indent=1)
+    os.replace(tmp, METRICS_PATH)
+    print(f"  ✅ 指标缓存已更新（{got} 只）→ {METRICS_PATH}")
+    # 写回 xlsx（先落盘缓存，写 xlsx 失败可重跑不重拉）
+    try:
+        write_indicators_xlsx(metrics)
+        print("  ✅ 已写回 excel/自选股清单.xlsx（E/F/G 列 = 总市值(亿)/PE(TTM)/PB）")
+    except PermissionError:
+        print("  ⚠️ xlsx 被占用（Excel 中打开？）请关闭后重跑 --indicators（缓存已存，重跑约30秒不重拉）")
+    except Exception as e:
+        print(f"  ⚠️ 写回 xlsx 失败: {repr(e)[:80]}（缓存已存，可重跑）")
+
+
+def write_indicators_xlsx(metrics):
+    """写回 xlsx：表头第 1 行 E/F/G = 总市值(亿)/PE(TTM)/PB；数据行按 C 列代码逐行匹配；其余单元格不碰"""
+    from openpyxl import load_workbook
+    wb = load_workbook(XLSX)
+    ws = wb.worksheets[0]
+    ws.cell(1, 5, "总市值(亿)"); ws.cell(1, 6, "PE(TTM)"); ws.cell(1, 7, "PB")
+    n = 0
+    for r in range(2, ws.max_row + 1):
+        raw = ws.cell(r, 3).value
+        if raw is None:
+            continue
+        code = str(raw).strip()
+        if code.endswith(".0"):
+            code = code[:-2]
+        m = metrics.get(code.zfill(6))
+        if not m:
+            continue
+        ws.cell(r, 5, m["t_mcap"]); ws.cell(r, 6, m["t_pe"]); ws.cell(r, 7, m["t_pb"])
+        n += 1
+    wb.save(XLSX)
+    wb.close()
+    print(f"  写回 {n} 行（命中率 {n / max(ws.max_row - 1, 1) * 100:.1f}%）")
+
+
 def load_failed():
     try:
         return json.load(open(FAIL_PATH, encoding="utf-8"))
@@ -202,7 +287,11 @@ def main(retry_failed=False, check_fin=False):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
+    ap.add_argument("--indicators", action="store_true", help="全量刷新清单指标（总市值/PE-TTM/PB，腾讯批量）并写回 xlsx")
     ap.add_argument("--retry-failed", action="store_true", help="只重试失败清单")
     ap.add_argument("--check-fin", action="store_true", help="季度分红/财报/股本检测")
     args = ap.parse_args()
-    main(retry_failed=args.retry_failed, check_fin=args.check_fin)
+    if args.indicators:
+        refresh_indicators_main()
+    else:
+        main(retry_failed=args.retry_failed, check_fin=args.check_fin)
