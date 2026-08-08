@@ -424,9 +424,11 @@ export function createKlineChart(el, opts) {
         },
       } : {}),
     })) : [];
-    const volSeries = option.series[1];
+    const volSeries = option.series[1];   // 初始 series[1]：candlestick=成交量；line 模式在下方按名字从 cur 找（初始顺序会随 MA 数量变化）
     if (mode === 'line') {
       const cur = chart.getOption();   // 取当前主系列（含 addAnchorLines 合并的 markLine）
+      const maSeries = maCount ? cur.series.filter(s => s.name === 'MA60' || s.name === 'MA250') : [];   // 重建时保留均线系列
+      const volLine = cur.series.find(s => s.name === '成交量') || volSeries;   // 按名字定位成交量（初始顺序会变）
       chart.setOption({
         grid: [
           { left: 62, right: 108, top: 30, height: defs ? '48%' : '58%', show: true },
@@ -457,8 +459,8 @@ export function createKlineChart(el, opts) {
           },
         ],
         dataZoom: option.dataZoom.map((z) => ({ ...z, xAxisIndex: [0, 1, 2] })),
-        legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['收盘', '成交量', ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
-        series: [cur.series[0], volSeries, ...series],
+        legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['收盘', ...(maCount ? ['MA60', 'MA250'] : []), '成交量', ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
+        series: [cur.series[0], ...maSeries, volLine, ...series],
       }, { replaceMerge: ['series', 'legend'] });
       return;
     }
