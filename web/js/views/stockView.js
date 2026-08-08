@@ -69,7 +69,7 @@ export default {
       chartUnit: '元',
       subControl: 'none',
       compView: false,            // 股票：去掉 图表/成分股 切换
-      showMA: false,              // 股票：去掉 MA5/MA20/MA60 均线
+      showMA: true,               // 股票：MA5/20/60/250 均线可用（工具栏 checkbox 控制显隐，默认关）
       showOHLC: false,            // 股票：浮动面板去掉 开盘/最高/最低 字段
       withIndicator: true,   // 加载指标数据供主图叠加曲线使用
       // 主图右轴叠加 6 条指标曲线（默认关闭，点击图例展开查看；与 K 线同图）

@@ -4,7 +4,7 @@ import { cssVar } from './theme.js';
 
 const C = {
   up: cssVar('--up'), down: cssVar('--down'),
-  ma5: cssVar('--brand'), ma20: cssVar('--accent'), ma60: '#A78BFA', ma250: '#F59E0B',
+  ma5: cssVar('--brand'), ma20: cssVar('--accent'), ma60: '#A78BFA', ma250: '#60A5FA',
   volUp: cssVar('--up-bg'), volDown: cssVar('--down-bg'),
   axis: cssVar('--text-3'), split: cssVar('--grid-line'), text2: cssVar('--text-2'), text3: cssVar('--text-3'),
   accent: cssVar('--accent'), brand: cssVar('--brand'), indigo: cssVar('--indigo'),
@@ -38,6 +38,9 @@ function chgArr(klines) {
 export function createKlineChart(el, opts) {
   const { dates, klines, volumes, amounts = [], chgN = [], indData = null, unit = '', subUnit = '', mode = 'candlestick', showMA = true, showOHLC = true } = opts;
   const maCount = showMA ? 4 : 0;   // MA5/MA20/MA60/MA250 数量（函数级作用域：setSubSeries 需要访问）
+  /* 均线预计算缓存（tooltip 高频调用查表 O(1)，避免每次全量重算） */
+  const maCache = { 5: ma(closes, 5), 20: ma(closes, 20), 60: ma(closes, 60), 250: ma(closes, 250) };
+  const MA_DEFS = [['MA5', 5, C.ma5], ['MA20', 20, C.ma20], ['MA60', 60, C.ma60], ['MA250', 250, C.ma250]];
   const overlay = opts.overlay || [];
   const chg = chgArr(klines);
   const closes = klines.map(k => k[1]);
@@ -151,6 +154,8 @@ export function createKlineChart(el, opts) {
             '<div style="border-top:1px solid #334155;margin-bottom:4px"></div>',
             tipRow('收盘', `${closes[i].toFixed(2)} ${unit}`),
             tipRow('涨跌', c == null ? '—' : (c >= 0 ? '+' : '') + c.toFixed(2) + '%', c == null ? C.text2 : (c >= 0 ? C.up : C.down)),
+            tipRow('MA60', maCache[60][i] == null ? '—' : maCache[60][i].toFixed(2), C.ma60),
+            tipRow('MA250', maCache[250][i] == null ? '—' : maCache[250][i].toFixed(2), C.ma250),
           ];
           if (volumes[i] != null) rows.push(tipRow('成交量', volumes[i].toFixed(0) + ' 万手'));
           rows.push(tipRow('成交额', amounts[i] == null ? '—' : amounts[i].toFixed(2) + ' 亿元'));
@@ -197,11 +202,11 @@ export function createKlineChart(el, opts) {
             },
           } : {}),
         },
-        { name: 'MA60', ...MA_STYLE, data: ma(closes, 60), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma60 } },
-        { name: 'MA250', ...MA_STYLE, data: ma(closes, 250), lineStyle: { ...MA_STYLE.lineStyle, color: C.ma250 } },
+        { name: 'MA60', ...MA_STYLE, data: maCache[60], lineStyle: { ...MA_STYLE.lineStyle, color: C.ma60 } },
+        { name: 'MA250', ...MA_STYLE, data: maCache[250], lineStyle: { ...MA_STYLE.lineStyle, color: C.ma250 } },
         { name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volumes, barMaxWidth: 5, sampling: 'lttb', itemStyle: { color: 'rgba(251,191,36,0.30)' } },
       ],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['收盘', 'MA60', 'MA250', '成交量'] },
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['收盘', 'MA60', 'MA250', '成交量'], selected: { MA60: false, MA250: false } },
     };
   } else {
     /* ── candlestick 模式：K线 + MA(可关) + 成交量 + 副图（默认）；支持主图右轴叠加 overlay 折线（净值） ── */
@@ -236,6 +241,13 @@ export function createKlineChart(el, opts) {
             rows.push(tipRow('最低', k[2].toFixed(2)));
           }
           rows.push(tipRow('涨跌', c == null ? '—' : (c >= 0 ? '+' : '') + c.toFixed(2) + '%', c == null ? C.text2 : (c >= 0 ? C.up : C.down)));
+          // 均线固定行（默认不画线也显示数值；null → —）
+          if (maCount) {
+            for (const [k, n, color] of MA_DEFS) {
+              const v = maCache[n][i];
+              rows.push(tipRow(k, v == null ? '—' : v.toFixed(2), color));
+            }
+          }
           if (volumes[i] != null) rows.push(tipRow('成交量', volumes[i].toFixed(0) + ' 万手'));
           rows.push(tipRow('成交额', amounts[i] == null ? '—' : amounts[i].toFixed(2) + ' 亿元'));
           // N 交易日涨跌幅（缓存行 chg30/chg60/chg90，存在才显示；交易日口径）
@@ -259,6 +271,7 @@ export function createKlineChart(el, opts) {
           }
           for (const p of params) {
             if (p.seriesType !== 'candlestick' && p.seriesType !== 'bar') {
+              if (p.seriesName.startsWith('MA')) continue;   // 均线已在固定字段行显示，避免重复
               if (indData && ['PE-TTM', 'PE(动)', 'PB', 'PEG', 'ROE', 'ROA'].includes(p.seriesName)) continue;   // 指标曲线已在固定字段行显示，避免重复
               rows.push(tipRow(`${p.marker} ${p.seriesName}`, p.value == null ? '—' : Number(p.value).toFixed(2)));
             }
@@ -312,7 +325,7 @@ export function createKlineChart(el, opts) {
         },
         ...overlaySeries,
       ],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), ...overlay.map(d => d.name)], selected: { ...Object.fromEntries(overlay.map(d => [d.name, d.visible !== false])) } },
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), ...overlay.map(d => d.name)], selected: { ...Object.fromEntries(overlay.map(d => [d.name, d.visible !== false])), ...(maCount ? { MA5: false, MA20: false, MA60: false, MA250: false } : {}) } },
     };
   }
 
@@ -500,7 +513,11 @@ export function createKlineChart(el, opts) {
     });
   }
 
-  return { chart, setRange, setDateRange, onZoom, getZoom, setSubSeries, addAnchorLines, dispose: () => { window.removeEventListener('keydown', kbdMove); chart.dispose(); } };
+  return { chart, setRange, setDateRange, onZoom, getZoom, setSubSeries, addAnchorLines,
+           /* 均线开关（与工具栏 checkbox 互通；图例点击为同一 ECharts 事件，状态自动同步） */
+           setMA: (name) => chart.dispatchAction({ type: 'legendToggleSelect', name }),
+           onLegendChange: (cb) => chart.on('legendselectchanged', cb),
+           dispose: () => { window.removeEventListener('keydown', kbdMove); chart.dispose(); } };
 }
 
 /* 环形图（行业分布） */

@@ -55,7 +55,7 @@ export default {
       chartUnit: '元',
       subControl: 'none',
       intros: INTROS,
-      showMA: false,              // ETF：去掉 MA5/MA20/MA60 均线
+      showMA: true,               // ETF：MA5/20/60/250 均线可用（工具栏 checkbox 控制显隐，默认关）
       showOHLC: false,            // ETF：浮动面板去掉 开盘/最高/最低 字段
       // 净值 overlay 已按用户要求移除（不叠加单位/累计净值线）
       quoteExtra: (obj, rows) => {
