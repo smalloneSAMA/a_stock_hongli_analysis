@@ -83,15 +83,26 @@ export default {
       let preset = '均衡';
       let typeF = '全部';
 
-      const btScore = (r) => 0.4 * r.win12 + 0.4 * Math.max(0, r.ex12) + 20 * Math.min(1, r.n_buy / 20);
+      /* 回测分（v2）：胜率12M 35% + 胜率6M 15%（时效） + 超额12M 25%（负计0） + 基准12M 10%（绝对收益校正，负计0） + 样本15（≥20次满额） + 时效修正±5 */
+      const btScore = (r) => {
+        const w6 = r.win6 == null ? r.win12 : r.win6;   // win6 缺失时按 win12（时效修正归零）
+        const trend = Math.max(-5, Math.min(5, (w6 - r.win12) * 0.05));   // 近期信号变强加分/变弱减分
+        return 0.35 * r.win12 + 0.15 * w6 + 0.25 * Math.max(0, r.ex12)
+          + 0.1 * Math.max(0, r.base12) + 15 * Math.min(1, r.n_buy / 20) + trend;
+      };
       const recOf = (r) => {
         const w = W[preset];
         const ana = anaScoreOf(r.code, r.type, preset);
         const sAna = ana == null ? 0 : 100 - ana;
         const bt = btScore(r);
-        let s = (w.dy * r.pct + w.ana * sAna + w.bt * bt) / 100;
-        if (r.pct >= 90) s += 5;   // 触发中加权（用户确认）
-        return { s, dyPart: r.pct, anaPart: sAna, btPart: bt };
+        /* 背离惩罚：dy≥90（触发中）但价格分位也≥80 → 周期股假便宜（中远海特类），扣 5 */
+        const pricePct = byCode[r.code] && byCode[r.code].factors && byCode[r.code].factors.price ? byCode[r.code].factors.price.pct : null;
+        const diverge = (r.pct >= 90 && pricePct != null && pricePct >= 80) ? 5 : 0;
+        /* 触发中 +5 / 卖出区 −5（对称） */
+        const trig = r.pct >= 90 ? 5 : (r.pct <= 10 ? -5 : 0);
+        let s = (w.dy * r.pct + w.ana * sAna + w.bt * bt) / 100 + trig - diverge;
+        s = Math.max(0, Math.min(100, s));
+        return { s, dyPart: r.pct, anaPart: sAna, btPart: bt, diverge, trig };
       };
 
       /* 跳转对应板块历史K线：__openTicker 兜底（视图未挂载时挂载后消费）+ open-ticker 事件（已挂载即响应） */
@@ -119,9 +130,10 @@ export default {
         el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 2px' }, presetSel, presetNote, typeSel),
         tableBox,
         el('div', { class: 'txt-3', style: 'font-size:11.5px;margin:8px 2px;line-height:1.7' },
-          '推荐分 = w_dy×dy分位 + w_ana×(100−贵贱度分) + w_bt×回测分；回测分 = 0.4×胜率12M + 0.4×max(0,超额12M) + 20×min(1,信号数/20)。',
-          'dy分位≥90 = 信号触发中（与回测 p90 同口径）加 5 分并标记；无回测覆盖或近5年从未触发买入信号的标的已过滤。',
-          '贵贱度分按类型用对应因子组（指数/ETF 四因子、股票六因子），类型内可比；悬停推荐分可见三项子分。',
+          '推荐分 = w_dy×dy分位 + w_ana×(100−贵贱度分) + w_bt×回测分，另加/减：触发中+5、卖出区−5、背离(dy≥90且价格分位≥80)−5；最终限幅 0~100。',
+          '回测分 = 0.35×胜率12M + 0.15×胜率6M + 0.25×max(0,超额12M) + 0.1×max(0,基准12M) + 15×min(1,信号数/20) + 时效修正(胜率6M−12M)×0.05(限±5)。',
+          'dy分位≥90 = 信号触发中（与回测 p90 同口径）；无回测覆盖或近5年从未触发买入信号的标的已过滤。',
+          '贵贱度分按类型用对应因子组（指数/ETF 四因子、股票六因子），类型内可比；悬停推荐分可见三项子分与惩罚明细。',
           '档位对照：稳健 dy50%/贵贱度25%/回测25% —— 股息为王，便宜优先；均衡 35%/30%/35% —— 三分均衡（默认档）；进取 25%/25%/50% —— 回测弹性，历史超额驱动。切档只改变权重与排序，候选池与评级阈值不变。',
           '评级：≥75 强烈推荐 / ≥60 推荐 / ≥45 关注 / <45 回避。回测为历史统计（p90 信号次一交易日买入，价格口径不含分红再投），非投资建议。'));
 
@@ -152,7 +164,7 @@ export default {
           { key: 'type', label: '类型', sortable: true, filter: false },
           { key: 'group', label: '分组', sortable: true, filter: false },
           { key: 's', label: '推荐分', sortable: true,
-            fmt: (v, row) => el('span', { title: `dy分位 ${fmt2(row.dyPart)} × ${W[preset].dy}% + 贵贱度反向 ${fmt2(row.anaPart)} × ${W[preset].ana}% + 回测 ${fmt2(row.btPart)} × ${W[preset].bt}%${row.pct >= 90 ? ' + 触发中 5' : ''}` }, fmt2(v)),
+            fmt: (v, row) => el('span', { title: `dy分位 ${fmt2(row.dyPart)} × ${W[preset].dy}% + 贵贱度反向 ${fmt2(row.anaPart)} × ${W[preset].ana}% + 回测 ${fmt2(row.btPart)} × ${W[preset].bt}%${row.trig > 0 ? ' + 触发中 5' : row.trig < 0 ? ' − 卖出区 5' : ''}${row.diverge ? ' − 背离 5' : ''}` }, fmt2(v)),
             color: (v) => (v >= 75 ? 'up' : v >= 60 ? 'flat' : '') },
           { key: 'band', label: '评级', sortable: true, filter: false, fmt: (_v, row) => el('span', { class: 'band-pill ' + bandCls(bandOf(row.s)) }, bandOf(row.s)) },
           { key: 'dy', label: '股息率(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
