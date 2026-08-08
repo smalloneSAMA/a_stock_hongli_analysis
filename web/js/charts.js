@@ -38,12 +38,12 @@ function chgArr(klines) {
 export function createKlineChart(el, opts) {
   const { dates, klines, volumes, amounts = [], chgN = [], indData = null, unit = '', subUnit = '', mode = 'candlestick', showMA = true, showOHLC = true } = opts;
   const maCount = showMA ? 4 : 0;   // MA5/MA20/MA60/MA250 数量（函数级作用域：setSubSeries 需要访问）
-  /* 均线预计算缓存（tooltip 高频调用查表 O(1)，避免每次全量重算） */
-  const maCache = { 5: ma(closes, 5), 20: ma(closes, 20), 60: ma(closes, 60), 250: ma(closes, 250) };
-  const MA_DEFS = [['MA5', 5, C.ma5], ['MA20', 20, C.ma20], ['MA60', 60, C.ma60], ['MA250', 250, C.ma250]];
   const overlay = opts.overlay || [];
   const chg = chgArr(klines);
   const closes = klines.map(k => k[1]);
+  /* 均线预计算缓存（tooltip 高频调用查表 O(1)，避免每次全量重算） */
+  const maCache = { 5: ma(closes, 5), 20: ma(closes, 20), 60: ma(closes, 60), 250: ma(closes, 250) };
+  const MA_DEFS = [['MA5', 5, C.ma5], ['MA20', 20, C.ma20], ['MA60', 60, C.ma60], ['MA250', 250, C.ma250]];
 
   const axisBase = {
     axisLine: { lineStyle: { color: 'rgba(51,65,85,0.6)' } },
