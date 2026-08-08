@@ -1,0 +1,176 @@
+/* 视图：智能推荐（信号扫描 × 回测报告 × 区间分析 三维融合推荐）
+   推荐分 = w_dy×dy分位(高=便宜) + w_ana×(100−贵贱度分) + w_bt×回测分（0~100，越高越推荐）
+   回测分 = 0.4×win12 + 0.4×max(0,ex12) + 20×min(1,n_buy/20)（胜率40% + 超额40%[负计0] + 样本可信20%[≥20次满额]）
+   dy 分位 ≥90（信号触发中，与回测 p90 同口径）→ 推荐分 +5 并标记
+   过滤：无回测覆盖（21只）或近5年从未触发买入信号（66只）的标的直接过滤 → 候选池 303
+   数据：cache/analysis_dy.json + web/data/analysis.json + web/data/backtest.json(by_p.90) */
+
+import { loadJSON, MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
+import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar } from './common.js';
+
+const DY_URL = '/cache/analysis_dy.json';
+
+/* 三档权重（用户确认：稳健 50/25/25、均衡 35/30/35、进取 25/25/50） */
+const W = {
+  稳健: { dy: 50, ana: 25, bt: 25 },
+  均衡: { dy: 35, ana: 30, bt: 35 },
+  进取: { dy: 25, ana: 25, bt: 50 },
+};
+const bandOf = (s) => (s >= 75 ? '强烈推荐' : s >= 60 ? '推荐' : s >= 45 ? '关注' : '回避');
+const bandCls = (b) => ({ 强烈推荐: 'band-buy', 推荐: 'band-build', 关注: 'band-hold', 回避: 'band-sell2' }[b] || 'band-hold');
+
+export default {
+  async mount(root) {
+    root.innerHTML = '';
+    root.append(skeleton());
+    try {
+      const [dy, an, bt, m] = await Promise.all([loadJSON(DY_URL), loadJSON(ANALYSIS_URL), loadJSON(BACKTEST_URL), loadJSON(MANIFEST_URL)]);
+      root.innerHTML = '';
+      const byCode = an.by_code || {};
+      const btMap = new Map((bt.by_p['90'] || []).map((x) => [x.code, x]));
+      const meta = {};
+      for (const s of (m.stocks || [])) meta[s.code] = s;
+
+      /* 分组判定（推荐优先于自选，与信号扫描/回测一致） */
+      const groupOf = (code, type) => {
+        if (type === '指数') return '指数';
+        if (type === 'ETF') return 'ETF';
+        const s = meta[code] || {};
+        if (s.rec) return '推荐20';
+        if (s.watch) return '自选股';
+        return '其他成份股';
+      };
+
+      /* 贵贱度综合分（同区间分析公式：presets[档][A/B] × 因子分位 ÷ 权重和，0=便宜→100=贵） */
+      const anaScoreOf = (code, type, preset) => {
+        const ent = byCode[code];
+        if (!ent) return null;
+        const w = an.presets[preset][type === '股票' ? 'B' : 'A'];
+        let s = 0, tot = 0;
+        for (const k in w) {
+          const f = ent.factors[k];
+          if (f && f.pct != null) { s += f.pct * w[k]; tot += w[k]; }
+        }
+        return tot ? s / tot : null;
+      };
+
+      /* 候选池：有回测记录且至少触发过一次买入信号（无回测/无信号直接过滤） */
+      const all = [];
+      let maxDate = '';
+      for (const code in dy) {
+        const d = dy[code];
+        if (d.dy0 == null || d.dy_pct == null) continue;
+        const b = btMap.get(code);
+        if (!b || b.win12 == null) continue;   // 无回测 或 近5年无买入信号 → 过滤
+        if (d.series && d.series.length) {
+          const last = d.series[d.series.length - 1][0];
+          if (last > maxDate) maxDate = last;
+        }
+        const type = d.type;
+        const ent = byCode[code] || {};
+        all.push({ code, name: d.name || code, type, group: groupOf(code, type),
+          dy: d.dy_now, pct: d.dy_pct, close: d.close_now,
+          anchor: (ent.anchors && ent.anchors.buy) ?? null,
+          ...b });
+      }
+
+      let preset = '均衡';
+      let typeF = '全部';
+
+      const btScore = (r) => 0.4 * r.win12 + 0.4 * Math.max(0, r.ex12) + 20 * Math.min(1, r.n_buy / 20);
+      const recOf = (r) => {
+        const w = W[preset];
+        const ana = anaScoreOf(r.code, r.type, preset);
+        const sAna = ana == null ? 0 : 100 - ana;
+        const bt = btScore(r);
+        let s = (w.dy * r.pct + w.ana * sAna + w.bt * bt) / 100;
+        if (r.pct >= 90) s += 5;   // 触发中加权（用户确认）
+        return { s, dyPart: r.pct, anaPart: sAna, btPart: bt };
+      };
+
+      /* 跳转对应板块历史K线：__openTicker 兜底（视图未挂载时挂载后消费）+ open-ticker 事件（已挂载即响应） */
+      const goTicker = (r) => {
+        const view = r.type === '指数' ? 'index' : r.type === 'ETF' ? 'etf' : 'stock';
+        window.__openTicker = { code: r.code, name: r.name };
+        if (location.hash === `#/${view}`) {
+          window.dispatchEvent(new CustomEvent('open-ticker', { detail: { code: r.code, name: r.name } }));
+        } else {
+          location.hash = `#/${view}`;
+        }
+      };
+
+      root.append(el('div', { class: 'view-head' },
+        el('h1', {}, '智能推荐'),
+        el('div', { class: 'desc' }, '信号扫描 × 回测报告 × 区间分析 三维融合：dy分位（高=便宜）+ 贵贱度反向 + 回测胜率/超额/样本')));
+
+      const presetSel = el('div', { class: 'seg-group', role: 'group', 'aria-label': '权重档位' });
+      const typeSel = el('select', { class: 'ind-filter', 'aria-label': '类型筛选', title: '按类型筛选（个股=池内全部股票）' },
+        ['全部', '指数', 'ETF', '个股'].map((t) => el('option', { value: t }, t)));
+      const sumEl = el('div', { class: 'bt-summary' });
+      const tableBox = el('div', { class: 'card table-card' }, el('div', { class: 'table-wrap' }, ''));
+      root.append(sumEl,
+        el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 2px' }, presetSel, typeSel),
+        tableBox,
+        el('div', { class: 'txt-3', style: 'font-size:11.5px;margin:8px 2px;line-height:1.7' },
+          '推荐分 = w_dy×dy分位 + w_ana×(100−贵贱度分) + w_bt×回测分；回测分 = 0.4×胜率12M + 0.4×max(0,超额12M) + 20×min(1,信号数/20)。',
+          'dy分位≥90 = 信号触发中（与回测 p90 同口径）加 5 分并标记；无回测覆盖或近5年从未触发买入信号的标的已过滤。',
+          '贵贱度分按类型用对应因子组（指数/ETF 四因子、股票六因子），类型内可比；悬停推荐分可见三项子分。',
+          '评级：≥75 强烈推荐 / ≥60 推荐 / ≥45 关注 / <45 回避。回测为历史统计（p90 信号次一交易日买入，价格口径不含分红再投），非投资建议。'));
+
+      const paint = () => {
+        presetSel.innerHTML = '';
+        for (const p of ['稳健', '均衡', '进取']) {
+          presetSel.append(el('button', { class: 'seg-btn' + (p === preset ? ' active' : ''), onclick: () => { preset = p; paint(); } }, p));
+        }
+        const rows = all
+          .filter((r) => (typeF === '全部' ? true : typeF === '个股' ? r.type === '股票' : r.type === typeF))
+          .map((r) => ({ ...r, ...recOf(r) }))
+          .sort((a, b) => (b.s - a.s) || ((b.pct >= 90 ? 1 : 0) - (a.pct >= 90 ? 1 : 0)) || (b.pct - a.pct));
+
+        sumEl.innerHTML = '';
+        sumEl.append(
+          el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '数据日期'), el('b', {}, maxDate || m.data_date || '—')),
+          el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '候选池'), el('b', {}, rows.length)),
+          el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '强烈推荐'), el('b', { class: 'txt-up' }, rows.filter((r) => bandOf(r.s) === '强烈推荐').length)),
+          el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '推荐'), el('b', { class: 'txt-up' }, rows.filter((r) => bandOf(r.s) === '推荐').length)),
+          el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '触发中'), el('b', { class: 'txt-up' }, rows.filter((r) => r.pct >= 90).length)));
+
+        const cols = [
+          { key: 'fav', label: '★', align: 'center', sortable: false, filter: false, fmt: (_v, row) => favStar(row.code) },
+          { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
+          { key: 'name', label: '名称', align: 'left', sortable: true,
+            fmt: (v, row) => el('a', { href: '#', onclick: (e) => { e.preventDefault(); goTicker(row); }, class: 'jump-link', title: '查看历史K线（' + row.type + '）' }, v) },
+          { key: 'type', label: '类型', sortable: true, filter: false },
+          { key: 'group', label: '分组', sortable: true, filter: false },
+          { key: 's', label: '推荐分', sortable: true,
+            fmt: (v, row) => el('span', { title: `dy分位 ${fmt2(row.dyPart)} × ${W[preset].dy}% + 贵贱度反向 ${fmt2(row.anaPart)} × ${W[preset].ana}% + 回测 ${fmt2(row.btPart)} × ${W[preset].bt}%${row.pct >= 90 ? ' + 触发中 5' : ''}` }, fmt2(v)),
+            color: (v) => (v >= 75 ? 'up' : v >= 60 ? 'flat' : '') },
+          { key: 'band', label: '评级', sortable: true, filter: false, fmt: (_v, row) => el('span', { class: 'band-pill ' + bandCls(bandOf(row.s)) }, bandOf(row.s)) },
+          { key: 'dy', label: '股息率(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
+          { key: 'pct', label: 'dy分位', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), color: (v) => (v >= 90 ? 'up' : v <= 10 ? 'down' : '') },
+          { key: 'trig', label: '状态', sortable: false, filter: false,
+            fmt: (_v, row) => (row.pct >= 90 ? el('span', { class: 'trig-badge' }, '触发中')
+              : row.pct <= 10 ? el('span', { class: 'trig-badge sell' }, '卖出区')
+              : el('span', { class: 'txt-3' }, '—')) },
+          { key: 'anaPart', label: '贵贱度分', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), filter: false,
+            color: (v) => (v != null && v <= 25 ? 'up' : v != null && v >= 80 ? 'down' : '') },
+          { key: 'win6', label: '胜率6M(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
+          { key: 'win12', label: '胜率12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
+          { key: 'ex6', label: '超额6M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },
+          { key: 'ex12', label: '超额12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },
+          { key: 'n_buy', label: '信号数', sortable: true, filter: false },
+          { key: 'close', label: '现价', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
+          { key: 'anchor', label: '买锚', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), filter: false },
+        ];
+        renderTable(tableBox.querySelector('.table-wrap'), { columns: cols, rows, pageSize: 50 });
+      };
+
+      typeSel.addEventListener('change', () => { typeF = typeSel.value; paint(); });
+      paint();
+    } catch (err) {
+      root.innerHTML = '';
+      root.append(errorBox(`智能推荐加载失败：${err.message}`, () => { root.innerHTML = ''; this.mount(root); }));
+    }
+  },
+  dispose() {},
+};

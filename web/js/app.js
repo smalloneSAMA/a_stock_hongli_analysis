@@ -3,7 +3,7 @@
 import { loadJSON, MANIFEST_URL } from './data.js';
 import { mountThemeToggle } from './theme.js';
 
-const VIEWS = ['index', 'etf', 'stock', 'summary', 'backtest', 'portfolio', 'compare', 'scan'];
+const VIEWS = ['index', 'etf', 'stock', 'summary', 'backtest', 'portfolio', 'compare', 'scan', 'recommend'];
 
 const viewEl = document.getElementById('view');
 const dateEl = document.getElementById('data-date');

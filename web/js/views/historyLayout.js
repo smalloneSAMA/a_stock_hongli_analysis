@@ -273,9 +273,21 @@ export function buildHistoryView(container, cfg) {
     title: panelTitle,
   });
 
-  // 默认选中第一只（立即渲染图表）
-  const first = itemsOf();
-  if (first.length) select(first[0]);
+  // 默认选中第一只（立即渲染图表）；有外部跳转目标（智能推荐）时优先选中该标的
+  const pending = window.__openTicker;   // 视图未挂载时由推荐页写入，挂载后消费
+  const pendingItem = pending ? (allItems || itemsOf()).find((x) => x.code === pending.code) : null;
+  if (pending) window.__openTicker = null;
+  if (pendingItem) select(pendingItem);
+  else {
+    const first = itemsOf();
+    if (first.length) select(first[0]);
+  }
+  /* 外部跳转（智能推荐）：已挂载实例直接响应事件；未挂载场景由上方 pending 兑底 */
+  window.addEventListener('open-ticker', (e) => {
+    const t = e.detail || {};
+    const it = (allItems || itemsOf()).find((x) => x.code === t.code);
+    if (it) select(it);
+  });
 
   /* ── 选中标的 → 按需加载 K线（+副图数据） → 图表 + 表格 ── */
   async function select(item) {
