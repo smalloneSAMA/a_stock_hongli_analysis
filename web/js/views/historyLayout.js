@@ -560,7 +560,7 @@ export function buildHistoryView(container, cfg) {
         /* 因子明细表 */
         const order = sysKey === 'B' ? ['pe', 'pb', 'dy', 'price', 'trend', 'peg'] : ['dy', 'price', 'trend', 'sent'];
         const F_TIPS = {
-          dy: '股息率：近12个月每股派息 ÷ 股价。分位低=股息率处历史低位（价格贵）',
+          dy: '股息率：近12个月每股派息 ÷ 股价。分位为贵贱度（已反向）：低=股息率处历史高位（便宜），高=股息率处历史低位（贵）',
           price: '现价在自身近5年价格分布中的位置。0=最便宜，100=最贵',
           trend: '现价相对60日均线乖离 + 均线排列修正。0=最弱，100=最强',
           sent: data.type === 'ETF'
