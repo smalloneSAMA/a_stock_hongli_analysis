@@ -52,8 +52,12 @@ export function buildHistoryView(container, cfg) {
    * } */
   const kinds = { index: '指数', etf: 'ETF', stock: '股票' };
 
-  /* 列表标题：普通（单组）或带分组切换按钮；行业筛选下拉位于标题右侧 */
-  const totalItems = cfg.groups ? cfg.groups.reduce((a, g) => a + g.items.length, 0) : cfg.items.length;
+  /* 列表标题：普通（单组）或带分组切换按钮；行业筛选下拉位于标题右侧
+     总数按股票代码去重（重叠股票在多个 tab 出现只计一次；tab 数量仍显示各自条目数） */
+  const allGroupItems = cfg.groups ? cfg.groups.flatMap(g => g.items) : cfg.items;
+  const seenCodes = new Set();
+  let totalItems = 0;
+  for (const it of allGroupItems) { if (!seenCodes.has(it.code)) { seenCodes.add(it.code); totalItems++; } }
   /* 行业筛选（全量池一级行业；选中后列表 = 全量股票池 ∩ 行业，跨分组） */
   let indFilter = '';   // '' = 全部行业
   const applyIndFilter = (list) => (indFilter ? list.filter(it => it.ind === indFilter) : list);
@@ -66,7 +70,7 @@ export function buildHistoryView(container, cfg) {
     : null;
   const panelTitle = el('div', { class: 'ticker-head' },
     el('div', { class: 'title-row' },
-      el('div', { class: 'card-title' }, cfg.title + '（' + totalItems + '）'),
+      el('div', { class: 'card-title' }, cfg.groups ? cfg.title + '（去重 ' + totalItems + '）' : cfg.title + '（' + totalItems + '）'),
       indSel),
     cfg.groups ? el('div', { class: 'seg-group', role: 'group', 'aria-label': '列表分组' }) : null);
   if (cfg.groups) {
