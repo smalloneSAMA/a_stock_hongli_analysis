@@ -121,10 +121,10 @@ export default {
         return { s, dyPart: base.dyPart, anaPart: sAna, btPart: bt, diverge: base.diverge, trig: base.trig };
       };
       const recOf = (r) => scoreWith(r, preset, baseOf(r));
-      /* 完美模式：三档全算（毫秒级，无需缓存） */
+      /* 完美模式：三档全算完整分项（毫秒级，无需缓存） */
       const scoresOf = (r) => {
         const base = baseOf(r);
-        return { 稳健: scoreWith(r, '稳健', base).s, 均衡: scoreWith(r, '均衡', base).s, 进取: scoreWith(r, '进取', base).s };
+        return { 稳健: scoreWith(r, '稳健', base), 均衡: scoreWith(r, '均衡', base), 进取: scoreWith(r, '进取', base) };
       };
 
       /* 跳转对应板块历史K线：__openTicker 兜底（视图未挂载时挂载后消费）+ open-ticker 事件（已挂载即响应） */
@@ -176,8 +176,14 @@ export default {
           ? all
             .filter((r) => (typeF === '全部' ? true : typeF === '个股' ? r.type === '股票' : r.type === typeF))
             .map((r) => ({ ...r, _sc: scoresOf(r) }))
-            .filter((r) => r._sc['稳健'] >= 75 && r._sc['均衡'] >= 75 && r._sc['进取'] >= 75)
-            .map((r) => ({ ...r, s: (r._sc['稳健'] + r._sc['均衡'] + r._sc['进取']) / 3 }))
+            .filter((r) => r._sc['稳健'].s >= 75 && r._sc['均衡'].s >= 75 && r._sc['进取'].s >= 75)
+            .map((r) => ({
+              ...r,
+              s: (r._sc['稳健'].s + r._sc['均衡'].s + r._sc['进取'].s) / 3,
+              anaPart: r._sc['均衡'].anaPart,   // 贵贱度分列：均衡档代表值（悬停见三档明细）
+              dyPart: r._sc['均衡'].dyPart, btPart: r._sc['均衡'].btPart,
+              cross: r.crossPct ?? 0, hist: r.pct,
+            }))
             .sort((a, b) => (b.s - a.s) || ((b.pct >= 90 ? 1 : 0) - (a.pct >= 90 ? 1 : 0)) || (b.pct - a.pct))
           : all
             .filter((r) => (typeF === '全部' ? true : typeF === '个股' ? r.type === '股票' : r.type === typeF))
@@ -201,7 +207,7 @@ export default {
           { key: 'group', label: '分组', sortable: true, filter: false },
           { key: 's', label: '推荐分', sortable: true,
             fmt: (v, row) => el('span', { title: perfect
-              ? `稳健 ${fmt2(row._sc['稳健'])} · 均衡 ${fmt2(row._sc['均衡'])} · 进取 ${fmt2(row._sc['进取'])}（三档均≥75 入选，按均值排序）`
+              ? `稳健 ${fmt2(row._sc['稳健'].s)} · 均衡 ${fmt2(row._sc['均衡'].s)} · 进取 ${fmt2(row._sc['进取'].s)}（三档均≥75 入选，按均值排序）`
               : `dy 横截面 ${fmt2(row.cross)} ×50% + 历史 ${fmt2(row.hist)} ×50% = ${fmt2(row.dyPart)} × ${W[preset].dy}% + 贵贱度反向 ${fmt2(row.anaPart)} × ${W[preset].ana}% + 回测 ${fmt2(row.btPart)} × ${W[preset].bt}%${row.trig > 0 ? ' + 触发中 5' : row.trig < 0 ? ' − 卖出区 5' : ''}${row.diverge ? ' − 背离 5' : ''}` }, fmt2(v)),
             color: (v) => (v >= 75 ? 'up' : v >= 60 ? 'flat' : '') },
           { key: 'band', label: '评级', sortable: true, filter: false,
@@ -217,7 +223,8 @@ export default {
             fmt: (_v, row) => (row.pct >= 90 ? el('span', { class: 'trig-badge' }, '触发中')
               : row.pct <= 10 ? el('span', { class: 'trig-badge sell' }, '卖出区')
               : el('span', { class: 'txt-3' }, '—')) },
-          { key: 'anaPart', label: '贵贱度分', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), filter: false,
+          { key: 'anaPart', label: '贵贱度分', sortable: true, filter: false,
+            fmt: (v, row) => (v == null ? '—' : el('span', { title: perfect ? `贵贱度反向分（按档位权重）：稳健 ${fmt2(row._sc['稳健'].anaPart)} · 均衡 ${fmt2(row._sc['均衡'].anaPart)} · 进取 ${fmt2(row._sc['进取'].anaPart)}` : null }, fmt2(v))),
             color: (v) => (v != null && v <= 25 ? 'up' : v != null && v >= 80 ? 'down' : '') },
           { key: 'pr', label: 'PR市赚率', sortable: true, filter: false,
             fmt: (v) => (v == null ? '—' : el('span', { title: 'PE-TTM ÷ 近5年TTM年化ROE；<1 低估、≈1 合理、>1 高估；仅股票（指数/ETF 无财报）' }, fmt2(v))),
