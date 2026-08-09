@@ -12,6 +12,7 @@ const INDICATORS = [
   { key: 'pe_dyn', label: 'PE(动)', color: '#60A5FA', unit: '倍' },
   { key: 'pb', label: 'PB', color: cssVar('--indigo'), unit: '倍' },
   { key: 'peg', label: 'PEG', color: '#F472B6', unit: '' },
+  { key: 'pr', label: '市赚率PR', color: '#F59E0B', unit: '' },
   { key: 'roe', label: 'ROE', color: cssVar('--mint'), unit: '%' },
   { key: 'roa', label: 'ROA', color: '#F87171', unit: '%' },
 ];
@@ -30,6 +31,7 @@ const columns = [
   { key: 'pe_dyn', label: 'PE动(倍)', sortable: true, fmt: fmt2 },
   { key: 'pb', label: 'PB(倍)', sortable: true, fmt: fmt2 },
   { key: 'peg', label: 'PEG', sortable: true, fmt: fmt2 },
+  { key: 'pr', label: 'PR市赚率', sortable: true, fmt: fmt2, color: (v) => (v != null && v < 0.7 ? 'up' : v != null && v > 1.5 ? 'down' : '') },
   { key: 'roe', label: 'ROE(%)', sortable: true, fmt: fmt2 },
   { key: 'roa', label: 'ROA(%)', sortable: true, fmt: fmt2 },
 ];
@@ -80,6 +82,7 @@ export default {
         el('span', {}, '不复权真实价格（前复权早期价格会因分红为负，故不用）'),
         el('span', {}, '股息率：除权日在(当日-365天,当日]内每股派息÷收盘×100（同东财口径）'),
         el('span', {}, 'PE = 总市值(收盘×当日总股本) ÷ 归母净利（TTM/年化）；PEG = PE-TTM ÷ TTM净利同比增速'),
+        el('span', {}, '市赚率PR = PE-TTM ÷ 近5年年化ROE（近5年各报告期 TTM 年化 ROE 均值，随财报披露滚动更新）；≈1 合理、<1 低估、>1 高估；周期股盈利波动大时参考价值下降'),
         el('span', {}, '成交额按 量×100×(高+低+收)/3 估算；单位：万手 / 亿元'),
       ],
       quoteExtra: (obj, rows, item) => {
@@ -97,6 +100,7 @@ export default {
         pe_dyn: ind ? ind[i].pe_dyn ?? null : null,
         pb: ind ? ind[i].pb ?? null : null,
         peg: ind ? ind[i].peg ?? null : null,
+        pr: ind ? ind[i].pr ?? null : null,
         roe: ind ? ind[i].roe ?? null : null,
         roa: ind ? ind[i].roa ?? null : null,
       })),

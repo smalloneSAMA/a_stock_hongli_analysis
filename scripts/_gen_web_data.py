@@ -174,6 +174,41 @@ def build_manifest():
     print(f"  ✅ manifest.json：指数{len(indices)} / ETF{len(etfs)} / 股票{len(stocks)}，数据日期 {manifest['data_date']}")
 
 
+def calc_roe5y(fin_rows, data_date):
+    """近5年报告期 TTM 年化 ROE 均值（%），供市赚率 PR = PE-TTM ÷ roe5y 使用
+    每个报告期时点：TTM 年化 ROE = (本期累计净利 + 去年年报净利 − 去年同期累计净利) ÷ 期末净资产 × 100
+    （累计 np 跨年不可直接差分；年报时该式退化为自身年报净利）
+    期末净资产 = bps(每股净资产) × share(股本)；亏损期（TTM 为负）照常计入平均
+    可用报告期 < 1 年 → None；数据不足5年时退化为最近可用报告期平均"""
+    from datetime import datetime, timedelta
+    fins = [f for f in fin_rows if f.get("np") is not None and f.get("bps") and f.get("share")
+            and f["bps"] > 0 and f["share"] > 0]
+    fins.sort(key=lambda x: x["report_date"])
+    np_by_date = {f["report_date"]: f["np"] for f in fins}
+    annual_np = {d[:4]: v for d, v in np_by_date.items() if d.endswith("12-31")}
+    vals = []   # (report_date, ttm_roe%)
+    for f in fins:
+        y = int(f["report_date"][:4])
+        prev = annual_np.get(str(y - 1))
+        same = np_by_date.get(f"{y - 1}-{f['report_date'][5:]}")   # 去年同期（月-日）
+        if prev is None or same is None:
+            continue
+        ttm = f["np"] + prev - same
+        equity = f["bps"] * f["share"]
+        if equity > 0:
+            vals.append((f["report_date"], ttm / equity * 100))
+    if not vals:
+        return None
+    try:
+        cutoff = (datetime.strptime(data_date, "%Y-%m-%d") - timedelta(days=365 * 5)).strftime("%Y-%m-%d")
+    except Exception:
+        cutoff = ""
+    recent = [v for d, v in vals if d >= cutoff] if cutoff else []
+    if not recent:
+        recent = [v for _, v in vals[-16:]]   # 数据不足5年：最近可用报告期（至多16期）
+    return sum(recent) / len(recent)
+
+
 def stock_pool():
     """股票池全量（推荐20 + 其他成份股 + 自选股清单）：返回 [(code, name)]，含无 K 线缓存的占位"""
     rec = [(c, n) for c, n, _ in fsd.STOCKS]
@@ -216,11 +251,13 @@ def build_stock_indicators():
         peg = fsd.calc_peg(rows, fin, share, pe_ttm)
         roe = fsd.calc_ratio(rows, fin, "roe")
         roa = fsd.calc_ratio(rows, fin, "roa")
+        roe5y = calc_roe5y(fin, rows[-1]["date"])   # 近5年 TTM 年化 ROE 均值（市赚率分母）
         out = []
         for i, r in enumerate(rows):
+            pr = round(pe_ttm[i] / roe5y, 2) if (roe5y and pe_ttm[i] is not None) else None
             out.append({"d": r["date"], "dy": dy[i], "pe_ttm": pe_ttm[i],
                         "pe_dyn": pe_dyn[i], "pb": pb[i], "peg": peg[i],
-                        "roe": roe[i], "roa": roa[i]})
+                        "roe": roe[i], "roa": roa[i], "pr": pr})
         atomic_dump(os.path.join(WEB_DATA, "stocks", f"{code}.json"), out)
         ok += 1
         if ok % 20 == 0:
