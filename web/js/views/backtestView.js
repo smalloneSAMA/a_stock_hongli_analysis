@@ -1,7 +1,7 @@
 /* 回测报告视图：股息率分位信号回测结果（web/data/backtest.json）
    三档（p85/90/95）切换 + 汇总卡 + 明细表；数据由 scripts/_backtest_analysis.py 生成 */
 
-import { el, renderTable, skeleton, errorBox, fmt2 } from './common.js';
+import { el, renderTable, skeleton, errorBox, fmt2, getFavs } from './common.js';
 import { loadJSON, BACKTEST_URL } from '../data.js';
 
 const COLS = [
@@ -69,11 +69,18 @@ export default {
       const groupTitle = el('div', { class: 'txt-3', style: 'font-size:11px;margin:12px 2px 0' }, '分组统计（有效数 · 基准12M · 12M 平均超额 · 12M 正超额占比）');
       const groupCard = el('div', { class: 'bt-summary' });
       const insightEl = el('div', { class: 'bt-insight' });
+      /* 明细表工具行：左侧条数（含收藏过滤后数量），右侧“只看收藏”标签 */
+      const tableToolbar = el('div', { class: 'table-toolbar' });
+      const favInput = el('input', { type: 'checkbox', 'aria-label': '只看收藏' });
+      const favLabel = el('label', { class: 'check-toggle fav-only-toggle', style: 'margin-top:0' },
+        favInput, el('span', {}, '只看收藏'));
       const tableBox = el('div', {});
-      root.append(head, guideBtn, guideBox, presetBar, sumCard, groupTitle, groupCard, insightEl, tableBox);
+      root.append(head, guideBtn, guideBox, presetBar, sumCard, groupTitle, groupCard, insightEl, tableToolbar, tableBox);
 
       let tableApi = null;
+      let currentP = 90;   // 当前档位（收藏联动刷新用）
       function render(p) {
+        currentP = p;
         for (const b of presetBar.querySelectorAll('.seg-btn')) b.classList.toggle('active', b.textContent === 'p' + p);
         const rows = bt.by_p[String(p)] || [];
         const s = bt.summary[String(p)] || {};
@@ -120,12 +127,22 @@ export default {
         insightEl.append(l1, l2, l3);
         if (l4) insightEl.append(l4);
         insightEl.append(l5);
-        /* 明细表（复用 renderTable；skip 行数字列显示 —） */
+        /* 明细表（复用 renderTable；skip 行数字列显示 —；只看收藏过滤收藏标的） */
         tableBox.innerHTML = '';
-        tableApi = renderTable(tableBox, { columns: COLS, rows, pageSize: 20 });
+        const favOnly = favInput.checked;
+        const favs = new Set(getFavs());
+        const rows2 = favOnly ? rows.filter(r => favs.has(r.code)) : rows;
+        tableApi = renderTable(tableBox, { columns: COLS, rows: rows2, pageSize: 20 });
         tableApi.sortBy('ex12', -1);
+        tableToolbar.innerHTML = '';
+        tableToolbar.append(
+          el('span', { class: 'txt-3', style: 'font-size:11.5px' }, `明细表 · 有效 ${rows2.length}${favOnly ? ' / ' + rows.length : ''} 条`),
+          el('span', { style: 'flex:1' }), favLabel);
       }
       render(90);
+      /* 收藏变化：勾选状态下列表联动刷新（星标自身状态由 favStar 组件同步） */
+      favInput.addEventListener('change', () => { favLabel.classList.toggle('on', favInput.checked); render(currentP); });
+      window.addEventListener('fav-change', () => { if (favInput.checked) render(currentP); });
     } catch (err) {
       root.innerHTML = '';
       root.append(errorBox(`回测报告加载失败：${err.message}（数据由 python scripts/_backtest_analysis.py 生成）`, () => this.mount(root)));
