@@ -421,11 +421,15 @@ def main(only=None):
     if os.path.exists(t_path):
         stk_names.update({r["code"]: r.get("name", r["code"]) for r in json.load(open(t_path, encoding="utf-8"))})
     import _fetch_watchlist as watchlist
-    stk_names.update({r["code"]: r["name"] for r in watchlist.read_watchlist_xlsx()})
+    # 池子对齐 manifest.stock_pool()：清单仅纳入展示=1（show）的股票；
+    # 手动新增但未勾选展示的自选股不进分析池（有指标文件也不分析，如分众传媒）
+    stk_names.update({r["code"]: r["name"] for r in watchlist.read_watchlist_xlsx() if r.get("show")})
     import glob
     stk_files = sorted(glob.glob(os.path.join(BASE, "web", "data", "stocks", "*.json")))
     for fp in stk_files:
         code = os.path.basename(fp)[:-5]
+        if code not in stk_names:
+            continue   # 无池归属（清单展示=0 或不在任何来源）→ 跳过，保持与 manifest 池一致
         if only and code != only:
             continue
         emit(build_stock(code, stk_names.get(code, code)))

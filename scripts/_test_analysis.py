@@ -40,7 +40,7 @@ comp = load("web/data/components.json")
 print("── T1 dy 序列正确性（S1）──")
 n_all = len(dy_data)
 n_ok = sum(1 for v in dy_data.values() if v.get("dy0") is not None)
-check("标的覆盖", n_all == 390 and n_ok == 390,
+check("标的覆盖", n_all == 378 and n_ok == 378,
       f"{n_all} 标的，{n_ok} 有数据（980092/159201 补股息率后均有数据）")
 # 1.2 反推末值 == dy0
 bad = [c for c, v in dy_data.items() if v.get("dy0") and abs(v["series"][-1][1] - v["dy0"]) > 1e-6]
@@ -124,7 +124,7 @@ else:
 # ── T3 因子与打分（S3/S4）────────────────────────────────────────
 print("\n── T3 因子与打分（S3/S4）──")
 by_code = analysis["by_code"]
-check("标的覆盖", len(by_code) == 390, f"{len(by_code)} 个")
+check("标的覆盖", len(by_code) == 378, f"{len(by_code)} 个")
 # 3.2 权重和
 for pname, pws in analysis["presets"].items():
     for sysname, w in pws.items():
@@ -298,7 +298,7 @@ check("summary 键齐全", all(k in bt["summary"]["90"] for k in ("n", "pos6", "
 bad = [r["code"] for r in bt["by_p"]["90"] if r.get("group") not in BT_GROUPS]
 check("group 值合法（五组）", not bad, f"异常: {bad[:3]}")
 n_other = sum(1 for r in bt["by_p"]["90"] if r.get("group") == "其他成份股")
-check("其他成份股 ≥300 只", n_other >= 300, f"{n_other} 只")
+check("其他成份股 294 只", n_other == 294, f"{n_other} 只（13只清单∩汇总表股票归自选股分组）")
 sg = bt["summary"]["90"]["groups"]
 check("groups 五组齐全", all(g in sg for g in BT_GROUPS))
 n_sum = sum(v["n"] for v in sg.values())
