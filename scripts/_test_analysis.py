@@ -40,7 +40,7 @@ comp = load("web/data/components.json")
 print("── T1 dy 序列正确性（S1）──")
 n_all = len(dy_data)
 n_ok = sum(1 for v in dy_data.values() if v.get("dy0") is not None)
-check("标的覆盖", n_all == 378 and n_ok == 378,
+check("标的覆盖", n_all == 380 and n_ok == 380,
       f"{n_all} 标的，{n_ok} 有数据（980092/159201 补股息率后均有数据）")
 # 1.2 反推末值 == dy0
 bad = [c for c, v in dy_data.items() if v.get("dy0") and abs(v["series"][-1][1] - v["dy0"]) > 1e-6]
@@ -124,7 +124,7 @@ else:
 # ── T3 因子与打分（S3/S4）────────────────────────────────────────
 print("\n── T3 因子与打分（S3/S4）──")
 by_code = analysis["by_code"]
-check("标的覆盖", len(by_code) == 378, f"{len(by_code)} 个")
+check("标的覆盖", len(by_code) == 380, f"{len(by_code)} 个")
 # 3.2 权重和
 for pname, pws in analysis["presets"].items():
     for sysname, w in pws.items():
