@@ -486,7 +486,7 @@ button { font-family: inherit; }
 .cmp-gtab { font-size: 11.5px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text-2); cursor: pointer; }
 .cmp-gtab.active { border-color: var(--brand); color: var(--brand); background: rgba(251, 191, 36, .1); }
 .cmp-gtab em { font-style: normal; opacity: .65; margin-left: 3px; font-size: 10.5px; }
-.cmp-grp { font-style: normal; font-size: 10.5px; color: var(--text-3); margin-left: 5px; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+.cmp-grp { font-style: normal; font-size: 10px; color: var(--text-3); margin-left: 3px; border: 1px solid var(--border); border-radius: 4px; padding: 0 3px; flex-shrink: 0; line-height: 1.5; }
 /* 净值图左上角累计涨跌浮层（对齐股票板块图表左上角浮层样式） */
 .cmp-float { position: absolute; top: 30px; left: 64px; z-index: 6; pointer-events: none; display: none;
   background: var(--tooltip-bg); border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 10px;
