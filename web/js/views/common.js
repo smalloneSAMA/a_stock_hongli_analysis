@@ -195,11 +195,20 @@ export function attachSearchHistory(searchBox, { key, onPick } = {}) {
  * 选中回调 onSelect(item)
  * title: 可选标题区（Node），渲染在搜索框之前（注意本函数会清空 container）
  */
-export function renderTickerList(container, items, { onSelect, activeCode, searchable = true, title = null, searchItems = null, searchKey = 'ticker' }) {
+export function renderTickerList(container, items, { onSelect, activeCode, searchable = true, title = null, searchItems = null, searchKey = 'ticker', favToggle = false }) {
   container.innerHTML = '';
   if (title) container.append(title);
   const searchBox = searchable ? el('input', { class: 'ticker-search', type: 'search', placeholder: '搜索代码 / 名称…', 'aria-label': '搜索标的' }) : null;
-  if (searchBox) container.append(searchBox);
+  /* 只看收藏（可选）：搜索框右侧小标签，勾选后列表/搜索仅显示收藏标的（跨分组全量），fav-change 联动刷新 */
+  let favOnly = false;
+  let favInput = null, favLabel = null;
+  if (searchBox && favToggle) {
+    favInput = el('input', { type: 'checkbox', 'aria-label': '只看收藏' });
+    favLabel = el('label', { class: 'check-toggle fav-only-toggle' }, favInput, el('span', {}, '只看收藏'));
+    container.append(el('div', { class: 'ticker-search-row' }, searchBox, favLabel));
+  } else if (searchBox) {
+    container.append(searchBox);
+  }
   const ul = el('ul', { class: 'ticker-list' });
   container.append(ul);
 
@@ -233,20 +242,27 @@ export function renderTickerList(container, items, { onSelect, activeCode, searc
   if (searchBox) {
     const applyQuery = () => {
       const q = searchBox.value.trim().toLowerCase();
-      /* 搜索范围：searchItems（如全量分组）优先，否则当前列表 */
-      current = q ? (searchItems || items).filter(i => i.name.toLowerCase().includes(q) || i.code.includes(q)) : items;
+      /* 只看收藏：池 = 全量 ∩ 收藏（跨分组）；搜索在此基础上再过滤 */
+      const pool = favOnly ? (searchItems || items).filter(i => isFav(i.code)) : (searchItems || items);
+      current = q ? pool.filter(i => i.name.toLowerCase().includes(q) || i.code.includes(q)) : (favOnly ? pool : items);
       paint(current);
     };
     searchBox.addEventListener('input', applyQuery);
     attachSearchHistory(searchBox, { key: searchKey, onPick: applyQuery });
+    if (favInput) {
+      favInput.addEventListener('change', () => { favLabel.classList.toggle('on', favInput.checked); favOnly = favInput.checked; applyQuery(); });
+      /* 收藏变化：勾选状态下列表结果联动刷新（星标自身状态由 favStar 组件同步） */
+      window.addEventListener('fav-change', () => { if (favOnly) applyQuery(); });
+    }
   }
   return {
     setActive(code) { activeCode = code; paint(current); },
-    /* 切换分组：替换列表数据并清空搜索（searchItems 同步） */
+    /* 切换分组：替换列表数据并清空搜索（只看收藏勾选时仍显示全量收藏） */
     refresh(newItems) {
       items = newItems; current = newItems;
       if (searchBox) searchBox.value = '';
-      paint(newItems);
+      if (favOnly) current = (searchItems || items).filter(i => isFav(i.code));
+      paint(current);
     },
     /* 动态收窄搜索范围（行业筛选联动：搜索只在筛选范围内进行） */
     setSearchItems(list) { searchItems = list; },

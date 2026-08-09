@@ -292,6 +292,7 @@ export function buildHistoryView(container, cfg) {
     },
     activeCode: state.code,
     searchable: true,
+    favToggle: cfg.kind === 'stock',   // 股票历史：搜索框右侧“只看收藏”小标签
     searchItems: allItems || undefined,
     searchKey: 'list_' + (cfg.kind || ''),
     title: panelTitle,
