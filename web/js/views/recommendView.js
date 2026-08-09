@@ -77,6 +77,7 @@ export default {
         all.push({ code, name: d.name || code, type, group: groupOf(code, type),
           dy: d.dy_now, pct: d.dy_pct, close: d.close_now,
           anchor: (ent.anchors && ent.anchors.buy) ?? null,
+          pr: (type === '股票' ? (meta[code]?.last_pr ?? null) : null),   // 市赚率PR（仅股票，指数/ETF 无财报）
           ...b });
       }
 
@@ -189,6 +190,9 @@ export default {
               : el('span', { class: 'txt-3' }, '—')) },
           { key: 'anaPart', label: '贵贱度分', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), filter: false,
             color: (v) => (v != null && v <= 25 ? 'up' : v != null && v >= 80 ? 'down' : '') },
+          { key: 'pr', label: 'PR市赚率', sortable: true, filter: false,
+            fmt: (v) => (v == null ? '—' : el('span', { title: 'PE-TTM ÷ 近5年TTM年化ROE；<1 低估、≈1 合理、>1 高估；仅股票（指数/ETF 无财报）' }, fmt2(v))),
+            color: (v) => (v != null && v < 0.7 ? 'up' : v != null && v > 1.5 ? 'down' : '') },
           { key: 'win6', label: '胜率6M(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
           { key: 'win12', label: '胜率12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
           { key: 'base12', label: '基准12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },

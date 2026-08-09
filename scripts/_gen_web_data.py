@@ -153,6 +153,7 @@ def build_manifest():
                 ind = json.load(open(p, encoding="utf-8"))
                 if ind:
                     s["last_dy"] = ind[-1].get("dy")
+                    s["last_pr"] = ind[-1].get("pr")   # 市赚率 PR（PE-TTM ÷ 近5年TTM年化ROE）
             except Exception:
                 pass
         s.setdefault("last_dy", None)
