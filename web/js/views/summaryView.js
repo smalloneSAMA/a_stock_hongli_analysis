@@ -179,26 +179,33 @@ export default {
       tableApi = tableApiLocal;
 
       /* ── 图表 ── */
+      let donutPoolSel = '';   // 环形图当前数据对应的指数/ETF（变化时重建）
       const renderCharts = (out) => {
         const donutEl = grid.querySelector('.mini-chart');
         const barEl = grid.querySelector('.mini-chart.bar');
         const donutTitleEl = grid.querySelector('.card-title');
 
-        /* 行业分布环形图：全量数据固定（base），仅首次创建——筛选不重建、动画只播一次（与指数/ETF板块一致） */
-        if (!donutChart) {
+        /* 行业分布环形图：数据源 = 当前指数/ETF 成分（切换指数/ETF 时重建；
+           搜索/行业下拉/推荐20 不改环形图——保持图表稳定，标题提示筛选） */
+        const poolBase = poolSel ? base.filter(r => belong.get(r.code)?.has(poolSel)) : base;
+        const rebuildDonut = !donutChart || poolSel !== donutPoolSel;
+        donutPoolSel = poolSel;
+        if (rebuildDonut) {
+          if (donutChart) { donutChart.dispose(); donutChart = null; }
           const cnt = new Map();
-          for (const r of base) cnt.set(r.ind, (cnt.get(r.ind) || 0) + 1);
+          for (const r of poolBase) cnt.set(r.ind, (cnt.get(r.ind) || 0) + 1);
           const donutData = [...cnt.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
           donutChart = createDonut(donutEl, donutData, { title: '成分股行业分布', selectable: true });
           /* 点击行业扇区 → 表格筛选该行业；再点同一扇区 → 取消 */
           donutChart.on('click', (p) => {
             if (!p || !p.name) return;
             donutFilterInd = (donutFilterInd === p.name) ? null : p.name;
-            donutTitleEl.textContent = '行业分布' + (donutFilterInd ? ' · 筛选：' + donutFilterInd + '（再点击取消）' : '');
             applyFilter();
           });
         }
-        donutTitleEl.textContent = '行业分布' + (donutFilterInd ? ' · 筛选：' + donutFilterInd + '（再点击取消）' : '');
+        donutTitleEl.textContent = '行业分布'
+          + (poolSel ? ' · ' + (POOL.find(x => x.code === poolSel)?.name || '') : '')
+          + (donutFilterInd ? ' · 筛选：' + donutFilterInd + '（再点击取消）' : '');
 
         /* 股息率 TOP15：每次筛选刷新（donut 保持稳定不动） */
         if (barChart) { barChart.dispose(); barChart = null; }
