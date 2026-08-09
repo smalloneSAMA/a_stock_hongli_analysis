@@ -136,8 +136,9 @@ export default {
         tableApi.sortBy('ex12', -1);
         tableToolbar.innerHTML = '';
         tableToolbar.append(
-          el('span', { class: 'txt-3', style: 'font-size:11.5px' }, `明细表 · 有效 ${rows2.length}${favOnly ? ' / ' + rows.length : ''} 条`),
-          el('span', { style: 'flex:1' }), favLabel);
+          favLabel,
+          el('span', { style: 'flex:1' }),
+          el('span', { class: 'txt-3', style: 'font-size:11.5px' }, `明细表 · 有效 ${rows2.length}${favOnly ? ' / ' + rows.length : ''} 条`));
       }
       render(90);
       /* 收藏变化：勾选状态下列表联动刷新（星标自身状态由 favStar 组件同步） */
