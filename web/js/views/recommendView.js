@@ -90,6 +90,7 @@ export default {
       }
 
       let preset = '均衡';
+      let perfect = false;   // 完美模式：三档（稳健/均衡/进取）推荐分均 ≥75 的共识标的
       let typeF = '全部';
 
       /* 回测分（v3·信号能力评估）：胜率12M 40% + 胜率6M 15%（时效） + 超额12M 25%（负计0）
@@ -102,21 +103,28 @@ export default {
         return 0.4 * r.win12 + 0.15 * w6 + 0.25 * Math.max(0, r.ex12 ?? 0)
           + 0.1 * Math.max(0, absRet) + 10 * Math.min(1, r.n_buy / 20) + trend;
       };
-      const recOf = (r) => {
-        const w = W[preset];
-        const ana = anaScoreOf(r.code, r.type, preset);
+      /* 与档位无关的公共部分（dy混合分/背离/触发） + 按档位算分 */
+      const baseOf = (r) => {
+        const pricePct = byCode[r.code] && byCode[r.code].factors && byCode[r.code].factors.price ? byCode[r.code].factors.price.pct : null;
+        const diverge = (r.pct >= 90 && pricePct != null && pricePct >= 80) ? 5 : 0;   // 周期股假便宜
+        const trig = r.pct >= 90 ? 5 : (r.pct <= 10 ? -5 : 0);   // 触发中 +5 / 卖出区 −5
+        const dyPart = 0.5 * (r.crossPct ?? 0) + 0.5 * r.pct;   // dy 混合分：横截面50% + 历史50%
+        return { dyPart, diverge, trig };
+      };
+      const scoreWith = (r, pname, base) => {
+        const w = W[pname];
+        const ana = anaScoreOf(r.code, r.type, pname);
         const sAna = ana == null ? 0 : 100 - ana;
         const bt = btScore(r);
-        /* dy 混合分：横截面绝对分位 50% + 历史分位 50%（择时仍用历史分位判定触发/背离） */
-        const dyPart = 0.5 * (r.crossPct ?? 0) + 0.5 * r.pct;
-        /* 背离惩罚：dy≥90（触发中）但价格分位也≥80 → 周期股假便宜（中远海特类），扣 5 */
-        const pricePct = byCode[r.code] && byCode[r.code].factors && byCode[r.code].factors.price ? byCode[r.code].factors.price.pct : null;
-        const diverge = (r.pct >= 90 && pricePct != null && pricePct >= 80) ? 5 : 0;
-        /* 触发中 +5 / 卖出区 −5（对称） */
-        const trig = r.pct >= 90 ? 5 : (r.pct <= 10 ? -5 : 0);
-        let s = (w.dy * dyPart + w.ana * sAna + w.bt * bt) / 100 + trig - diverge;
+        let s = (w.dy * base.dyPart + w.ana * sAna + w.bt * bt) / 100 + base.trig - base.diverge;
         s = Math.max(0, Math.min(100, s));
-        return { s, dyPart, cross: r.crossPct ?? 0, hist: r.pct, anaPart: sAna, btPart: bt, diverge, trig };
+        return { s, dyPart: base.dyPart, anaPart: sAna, btPart: bt, diverge: base.diverge, trig: base.trig };
+      };
+      const recOf = (r) => scoreWith(r, preset, baseOf(r));
+      /* 完美模式：三档全算（毫秒级，无需缓存） */
+      const scoresOf = (r) => {
+        const base = baseOf(r);
+        return { 稳健: scoreWith(r, '稳健', base).s, 均衡: scoreWith(r, '均衡', base).s, 进取: scoreWith(r, '进取', base).s };
       };
 
       /* 跳转对应板块历史K线：__openTicker 兜底（视图未挂载时挂载后消费）+ open-ticker 事件（已挂载即响应） */
@@ -150,24 +158,37 @@ export default {
           'dy分位≥90 = 信号触发中（与回测 p90 同口径）；无回测覆盖或近5年从未触发买入信号的标的已过滤。',
           '贵贱度分按类型用对应因子组（指数/ETF 四因子、股票六因子），类型内可比；悬停推荐分可见三项子分与惩罚明细。',
           '档位对照：稳健 dy50%/贵贱度25%/回测25% —— 股息为王，便宜优先；均衡 35%/30%/35% —— 三分均衡（默认档）；进取 25%/25%/50% —— 回测弹性，历史超额驱动。切档只改变权重与排序，候选池与评级阈值不变。',
-          '评级：≥75 强烈推荐 / ≥60 推荐 / ≥45 关注 / <45 回避。回测为历史统计（p90 信号次一交易日买入，价格口径不含分红再投），非投资建议。'));
+          '评级：≥75 强烈推荐 / ≥60 推荐 / ≥45 关注 / <45 回避。回测为历史统计（p90 信号次一交易日买入，价格口径不含分红再投），非投资建议。',
+          '完美 = 稳健/均衡/进取三档权重下均为强烈推荐（≥75 分），代表估值、股息、回测三个视角的共识；悬停推荐分可见三档明细。'));
 
       const paint = () => {
         presetSel.innerHTML = '';
-        for (const p of ['稳健', '均衡', '进取']) {
-          presetSel.append(el('button', { class: 'seg-btn' + (p === preset ? ' active' : ''), title: `${p}：${PRESET_DESC[p].w} —— ${PRESET_DESC[p].tip}`, onclick: () => { preset = p; paint(); } }, p));
+        for (const p of ['稳健', '均衡', '进取', '完美']) {
+          const active = p === '完美' ? perfect : preset === p;
+          presetSel.append(el('button', {
+            class: 'seg-btn' + (active ? ' active' : ''),
+            title: p === '完美' ? '三档（稳健/均衡/进取）推荐分均 ≥75 的共识标的——最强信号' : `${p}：${PRESET_DESC[p].w} —— ${PRESET_DESC[p].tip}`,
+            onclick: () => { if (p === '完美') perfect = true; else { perfect = false; preset = p; } paint(); },
+          }, p));
         }
-        presetNote.textContent = `当前：${preset} → ${PRESET_DESC[preset].w}`;
-        const rows = all
-          .filter((r) => (typeF === '全部' ? true : typeF === '个股' ? r.type === '股票' : r.type === typeF))
-          .map((r) => ({ ...r, ...recOf(r) }))
-          .sort((a, b) => (b.s - a.s) || ((b.pct >= 90 ? 1 : 0) - (a.pct >= 90 ? 1 : 0)) || (b.pct - a.pct));
+        presetNote.textContent = perfect ? '当前：完美 → 三档均≥75 共识（按三档均值排序）' : `当前：${preset} → ${PRESET_DESC[preset].w}`;
+        const rows = perfect
+          ? all
+            .filter((r) => (typeF === '全部' ? true : typeF === '个股' ? r.type === '股票' : r.type === typeF))
+            .map((r) => ({ ...r, _sc: scoresOf(r) }))
+            .filter((r) => r._sc['稳健'] >= 75 && r._sc['均衡'] >= 75 && r._sc['进取'] >= 75)
+            .map((r) => ({ ...r, s: (r._sc['稳健'] + r._sc['均衡'] + r._sc['进取']) / 3 }))
+            .sort((a, b) => (b.s - a.s) || ((b.pct >= 90 ? 1 : 0) - (a.pct >= 90 ? 1 : 0)) || (b.pct - a.pct))
+          : all
+            .filter((r) => (typeF === '全部' ? true : typeF === '个股' ? r.type === '股票' : r.type === typeF))
+            .map((r) => ({ ...r, ...recOf(r) }))
+            .sort((a, b) => (b.s - a.s) || ((b.pct >= 90 ? 1 : 0) - (a.pct >= 90 ? 1 : 0)) || (b.pct - a.pct));
 
         sumEl.innerHTML = '';
         sumEl.append(
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '数据日期'), el('b', {}, maxDate || m.data_date || '—')),
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '候选池'), el('b', {}, rows.length)),
-          el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '强烈推荐'), el('b', { class: 'txt-up' }, rows.filter((r) => bandOf(r.s) === '强烈推荐').length)),
+          el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, perfect ? '完美' : '强烈推荐'), el('b', { class: 'txt-up' }, rows.filter((r) => (perfect ? true : bandOf(r.s) === '强烈推荐')).length)),
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '推荐'), el('b', { class: 'txt-up' }, rows.filter((r) => bandOf(r.s) === '推荐').length)),
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '触发中'), el('b', { class: 'txt-up' }, rows.filter((r) => r.pct >= 90).length)));
 
@@ -179,9 +200,14 @@ export default {
           { key: 'type', label: '类型', sortable: true, filter: false },
           { key: 'group', label: '分组', sortable: true, filter: false },
           { key: 's', label: '推荐分', sortable: true,
-            fmt: (v, row) => el('span', { title: `dy 横截面 ${fmt2(row.cross)} ×50% + 历史 ${fmt2(row.hist)} ×50% = ${fmt2(row.dyPart)} × ${W[preset].dy}% + 贵贱度反向 ${fmt2(row.anaPart)} × ${W[preset].ana}% + 回测 ${fmt2(row.btPart)} × ${W[preset].bt}%${row.trig > 0 ? ' + 触发中 5' : row.trig < 0 ? ' − 卖出区 5' : ''}${row.diverge ? ' − 背离 5' : ''}` }, fmt2(v)),
+            fmt: (v, row) => el('span', { title: perfect
+              ? `稳健 ${fmt2(row._sc['稳健'])} · 均衡 ${fmt2(row._sc['均衡'])} · 进取 ${fmt2(row._sc['进取'])}（三档均≥75 入选，按均值排序）`
+              : `dy 横截面 ${fmt2(row.cross)} ×50% + 历史 ${fmt2(row.hist)} ×50% = ${fmt2(row.dyPart)} × ${W[preset].dy}% + 贵贱度反向 ${fmt2(row.anaPart)} × ${W[preset].ana}% + 回测 ${fmt2(row.btPart)} × ${W[preset].bt}%${row.trig > 0 ? ' + 触发中 5' : row.trig < 0 ? ' − 卖出区 5' : ''}${row.diverge ? ' − 背离 5' : ''}` }, fmt2(v)),
             color: (v) => (v >= 75 ? 'up' : v >= 60 ? 'flat' : '') },
-          { key: 'band', label: '评级', sortable: true, filter: false, fmt: (_v, row) => el('span', { class: 'band-pill ' + bandCls(bandOf(row.s)) }, bandOf(row.s)) },
+          { key: 'band', label: '评级', sortable: true, filter: false,
+            fmt: (_v, row) => perfect
+              ? el('span', { class: 'band-pill band-perfect', title: '稳健/均衡/进取三档均 ≥75 的共识标的' }, '完美')
+              : el('span', { class: 'band-pill ' + bandCls(bandOf(row.s)) }, bandOf(row.s)) },
           { key: 'dy', label: '股息率(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
           { key: 'pct', label: 'dy分位', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), color: (v) => (v >= 90 ? 'up' : v <= 10 ? 'down' : '') },
           { key: 'crossPct', label: '绝对分位', sortable: true, filter: false,

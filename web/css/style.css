@@ -743,3 +743,6 @@ table.data-table { border-collapse: separate; border-spacing: 0; width: 100%; fo
 .rec-table-card > .table-wrap { display: flex; flex-direction: column; }
 .rec-table-card > .table-wrap > .table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .rec-table-card > .pagination { flex-shrink: 0; }
+
+/* 智能推荐：完美徽标（三档共识） */
+.band-perfect { color: var(--brand); background: rgba(251, 191, 36, 0.14); border: 1px solid var(--brand); }
