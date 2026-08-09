@@ -854,27 +854,16 @@ export default {
 
 
     /* ── 当前类型列表（含搜索/分组/行业筛选）──
-       分组 tab：指数/ETF = [全部, 收藏]；股票 = 推荐20/自选/其他 + 收藏；
-       收藏 tab 显示该类型下已收藏标的（跨分组），支持搜索/行业叠加 */
-    function groupTabs() {
-      if (curType === 'stock') return [...stockGroups, { label: '收藏', fav: true }];
-      return [{ label: '全部' }, { label: '收藏', fav: true }];
-    }
+       行业筛选生效或搜索时：全量跨分组匹配（附分组标签）；无筛选无搜索时按当前分组显示；
+       fav（收藏）类型：全部已收藏标的（指数/ETF/股票，带类型/分组标签） */
     function currentItems() {
-      const tabs = groupTabs();
-      const favTab = tabs.length - 1;   // 最后一个 tab = 收藏
-      if (curGroup === favTab) {
-        const pool = curType === 'stock' ? stockGroups.flatMap(g => g.items) : allItems[curType];
-        let items = pool.filter(it => isFav(it.code));
-        if (indFilter) items = items.filter(it => it.ind === indFilter);
-        if (query) {
-          const q = query.toLowerCase();
-          items = items.filter(it => it.name.toLowerCase().includes(q) || it.code.includes(q));
-        }
-        return items;
-      }
       let items;
-      if (curType === 'stock' && (indFilter || query)) {
+      if (curType === 'fav') {
+        items = [...allItems.index.map(x => ({ ...x, grp: '指数' })),
+          ...allItems.etf.map(x => ({ ...x, grp: 'ETF' })),
+          ...stockGroups.flatMap(g => g.items.map(x => ({ ...x, grp: g.label })))]
+          .filter(it => isFav(it.code));
+      } else if (curType === 'stock' && (indFilter || query)) {
         items = stockGroups.flatMap(g => g.items.map(x => ({ ...x, grp: g.label })));
         if (indFilter) items = items.filter(it => it.ind === indFilter);
       } else if (curType === 'stock') {
@@ -893,9 +882,8 @@ export default {
       listEl.innerHTML = '';
       const items = currentItems();
       if (!items.length) {
-        const tabs = groupTabs();
-        const emptyFav = curGroup === tabs.length - 1 && !query && !indFilter;
-        listEl.append(el('li', { class: 'empty-state', style: 'padding:20px 8px' }, emptyFav ? '暂无收藏（点击列表项 ★ 收藏标的）' : '无匹配标的'));
+        listEl.append(el('li', { class: 'empty-state', style: 'padding:20px 8px' },
+          curType === 'fav' && !query ? '暂无收藏（点击列表项 ★ 收藏标的）' : '无匹配标的'));
         return;
       }
       for (const it of items) {
@@ -924,29 +912,19 @@ export default {
 
     function renderGroupTabs() {
       tabsWrap.innerHTML = '';
-      tabsWrap.style.display = '';   // 三类型均显示分组 tab（指数/ETF：全部+收藏；股票：推荐/自选/其他+收藏）
-      indSel.style.display = curType === 'stock' ? '' : 'none';
-      const tabs = groupTabs();
-      tabs.forEach((g, i) => {
-        let n = null;
-        if (g.fav) {
-          const pool = curType === 'stock' ? stockGroups.flatMap(x => x.items) : allItems[curType];
-          n = pool.filter(it => isFav(it.code)).length;
-        } else if (curType === 'stock') {
-          n = g.items.length;
-        }
-        tabsWrap.append(el('button', { class: 'cmp-gtab' + (i === curGroup ? ' active' : ''),
-            disabled: (curType === 'stock' && !g.fav && !!indFilter) || undefined,   // 行业筛选时分组 tab 禁用（列表为全量筛选结果）
+      const show = curType === 'stock';
+      tabsWrap.style.display = show ? '' : 'none';
+      indSel.style.display = show ? '' : 'none';
+      if (curType !== 'stock') return;
+      stockGroups.forEach((g, i) => {
+        tabsWrap.append(el('button', { class: 'cmp-gtab' + (i === curGroup && !indFilter ? ' active' : ''),
+            disabled: !!indFilter || undefined,   // 行业筛选生效时分组 tab 禁用（列表为全量筛选结果）
             onclick: () => { curGroup = i; query = ''; searchBox.value = ''; renderGroupTabs(); renderList(); } },
-          g.label, n != null ? el('em', {}, n) : null));
+          g.label, el('em', {}, g.items.length)));
       });
     }
-    /* 收藏变化：tab 数量实时刷新；收藏 tab 激活时列表联动（星标自身状态由 favStar 组件同步） */
-    window.addEventListener('fav-change', () => {
-      renderGroupTabs();
-      const tabs = groupTabs();
-      if (curGroup === tabs.length - 1) renderList();
-    });
+    /* 收藏变化：收藏 tab 激活时列表联动刷新（星标自身状态由 favStar 组件同步） */
+    window.addEventListener('fav-change', () => { if (curType === 'fav') renderList(); });
     /* 行业下拉联动：全量筛选（跨分组），分组 tab 禁用 */
     indSel.addEventListener('change', () => {
       indFilter = indSel.value;
@@ -1028,7 +1006,9 @@ export default {
       selected.clear();
       order.length = 0;
       for (const c of codes) {
-        const pool = curType === 'stock' ? stockGroups.flatMap(g => g.items) : allItems[curType];
+        const pool = curType === 'stock' ? stockGroups.flatMap(g => g.items)
+          : curType === 'fav' ? [...allItems.index, ...allItems.etf, ...stockGroups.flatMap(g => g.items)]
+          : allItems[curType];
         const it = pool.find(x => x.code === c);
         if (it && order.length < MAX) { selected.set(c, it); order.push(c); }
       }
@@ -1036,8 +1016,8 @@ export default {
       renderList();
     }
 
-    /* 类型 Tab */
-    for (const [key, label] of [['index', '指数'], ['etf', 'ETF'], ['stock', '股票']]) {
+    /* 类型 Tab（收藏与指数/ETF/股票并列） */
+    for (const [key, label] of [['index', '指数'], ['etf', 'ETF'], ['stock', '股票'], ['fav', '收藏']]) {
       typeTabs.append(el('button', { class: 'seg-btn' + (key === 'index' ? ' active' : ''), 'data-t': key, onclick: () => setType(key) }, label));
     }
 
@@ -1061,7 +1041,9 @@ export default {
         if (last.type !== curType) setType(last.type);
         else {
           for (const c of last.codes) {
-            const pool = curType === 'stock' ? stockGroups.flatMap(g => g.items) : allItems[curType];
+            const pool = curType === 'stock' ? stockGroups.flatMap(g => g.items)
+              : curType === 'fav' ? [...allItems.index, ...allItems.etf, ...stockGroups.flatMap(g => g.items)]
+              : allItems[curType];
             const it = pool.find(x => x.code === c);
             if (it && order.length < MAX) { selected.set(c, it); order.push(c); }
           }
