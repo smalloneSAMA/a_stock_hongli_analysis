@@ -897,14 +897,16 @@ export default {
           it.grp ? el('span', { class: 'cmp-grp' }, it.grp) : null);
         nameBox.append(favStar(it.code));   // 收藏星标（跨板块同步）
         const subTxt = it.type === 'stock'
-          ? (it.ind ? it.ind + ' · ' : '') + (it.dy != null ? '股息率 ' + it.dy.toFixed(2) + '%' : '—')
+          ? curType === 'fav'
+            ? (it.ind ? it.ind + '·' : '') + (it.dy != null ? it.dy.toFixed(2) + '%' : '—')   // 收藏 tab 精简：银行·4.70%
+            : (it.ind ? it.ind + ' · ' : '') + (it.dy != null ? '股息率 ' + it.dy.toFixed(2) + '%' : '—')
           : (it.type === 'etf' && it.scale != null ? '规模 ' + fmtScale(it.scale) : '');
         const li = el('li', { class: 'ticker-item' + (sel ? ' active' : '') + (isFav(it.code) ? ' fav' : ''), role: 'button', tabindex: '0',
             'aria-label': it.name + it.code },
           nameBox,
           el('div', { class: 'ticker-price txt-' + dirOf(it.chg) }, it.price == null ? '—' : fmt2(it.price)),
           el('div', { class: 'ticker-code' }, it.code),
-          el('div', { class: 'ticker-sub' }, subTxt ? el('span', { class: 'txt-3', style: 'font-size:' + (curType === 'fav' ? '9.5px' : '10.5px') }, subTxt) : null));
+          el('div', { class: 'ticker-sub' }, subTxt ? el('span', { class: 'txt-3', style: 'font-size:' + (curType === 'fav' ? '9px' : '10.5px') }, subTxt) : null));
         const pick = () => toggle(it);
         li.addEventListener('click', pick);
         li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
