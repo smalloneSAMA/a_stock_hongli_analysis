@@ -164,7 +164,7 @@ export default {
       const paint = () => {
         presetSel.innerHTML = '';
         for (const p of ['稳健', '均衡', '进取', '完美']) {
-          const active = p === '完美' ? perfect : preset === p;
+          const active = p === '完美' ? perfect : (!perfect && preset === p);
           presetSel.append(el('button', {
             class: 'seg-btn' + (active ? ' active' : ''),
             title: p === '完美' ? '三档（稳健/均衡/进取）推荐分均 ≥75 的共识标的——最强信号' : `${p}：${PRESET_DESC[p].w} —— ${PRESET_DESC[p].tip}`,
