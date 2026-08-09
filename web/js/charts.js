@@ -516,17 +516,17 @@ export function createKlineChart(el, opts) {
   }
 
   /* 主图窗口最高/最低点标记（markPoint）：merge 到 series[0]，随 dataZoom 窗口由调用方重算
-     与 addAnchorLines 同模式：data 长度恒定=2，逐索引替换无残留；setSubSeries 重建复用 series[0] 自动保留 */
+     样式：短线引出 + 右侧文字（不遮挡K线）；data 长度恒定=2，逐索引替换无残留；setSubSeries 重建复用 series[0] 自动保留 */
   function setExtremes(ext) {
     if (!ext || ext.maxVal == null || ext.minVal == null) return;
     chart.setOption({
       series: [{
         markPoint: {
-          silent: true, symbol: 'pin', symbolSize: 44, z: 8,
-          label: { fontSize: 10.5, fontWeight: 700, color: '#fff', formatter: (p) => p.value },
+          silent: true, symbol: 'line', symbolSize: [30, 3], z: 8,
+          label: { position: 'right', fontSize: 11, fontWeight: 700, formatter: (p) => p.value },
           data: [
-            { coord: [ext.maxIdx, ext.maxVal], value: Number(ext.maxVal.toFixed(2)), itemStyle: { color: cssVar('--up') } },
-            { coord: [ext.minIdx, ext.minVal], value: Number(ext.minVal.toFixed(2)), itemStyle: { color: cssVar('--down') } },
+            { coord: [ext.maxIdx, ext.maxVal], value: '最高 ' + ext.maxVal.toFixed(2), itemStyle: { color: cssVar('--up') }, label: { color: cssVar('--up') }, symbolOffset: [0, -6] },
+            { coord: [ext.minIdx, ext.minVal], value: '最低 ' + ext.minVal.toFixed(2), itemStyle: { color: cssVar('--down') }, label: { color: cssVar('--down') }, symbolOffset: [0, 6] },
           ],
         },
       }],
