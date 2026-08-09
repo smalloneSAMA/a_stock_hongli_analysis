@@ -173,6 +173,30 @@ export function buildHistoryView(container, cfg) {
         { value: dyS.p10, label: '10分位 ' + dyS.p10.toFixed(2), color: cssVar('--mint') },
       ],
     }]);
+    /* setSubSeries 的 replaceMerge 会清掉 series[0].markPoint，重新标记窗口极值 */
+    applyExtremeMark(chartApi, chartRows, sPct, ePct);
+  };
+
+  /* 主图窗口极值标记：最高/最低点随 dataZoom 可见窗口重算（K线用 high/low，折线用 close）
+     setSubSeries（replaceMerge）会整体替换 series，因此必须在每次 setSubSeries 之后重新调用 */
+  const applyExtremeMark = (chartApi, rows, sPct, ePct) => {
+    const n = rows.length;
+    if (!n) return;
+    const si = Math.max(0, Math.round(sPct / 100 * (n - 1)));
+    const ei = Math.min(n - 1, Math.round(ePct / 100 * (n - 1)));
+    /* 价格键：K线用 high/low；指数折线用 close；ETF 主图是净值折线用 nav（无 high/low） */
+    const useHL = cfg.chartType !== 'line';
+    const priceK = useHL ? null : (cfg.kind === 'etf' ? 'nav' : 'close');
+    const hiK = useHL ? 'high' : priceK, loK = useHL ? 'low' : priceK;
+    let maxI = -1, minI = -1;
+    for (let i = si; i <= ei; i++) {
+      const v = rows[i][hiK];
+      if (v == null) continue;   // ETF 早期行可能无净值，跳过
+      if (maxI < 0 || v > rows[maxI][hiK]) maxI = i;
+      if (minI < 0 || v < rows[minI][loK]) minI = i;
+    }
+    if (maxI < 0 || minI < 0) return;
+    chartApi.setExtremes({ maxIdx: maxI, maxVal: rows[maxI][hiK], minIdx: minI, minVal: rows[minI][loK] });
   };
 
   /* dataZoom 变化 → 按当前可见窗口刷新锚/分位线（rAF 节流防拖动卡顿；所见即所得） */
@@ -379,6 +403,18 @@ export function buildHistoryView(container, cfg) {
     });
     state.chart = chartApi;
     if (subDefs) chartApi.setSubSeries(subDefs);
+
+    /* 主图窗口极值标记：初始标记（无分析数据的标的也生效；有分析数据的由 applyAnalysisToChart 在 setSubSeries 后重标） */
+    const dz0 = chartApi.getZoom ? chartApi.getZoom() : null;
+    applyExtremeMark(chartApi, rows, dz0 ? dz0.start : 0, dz0 ? dz0.end : 100);
+    let extRaf = 0;
+    chartApi.onZoom((s, e) => {
+      cancelAnimationFrame(extRaf);
+      extRaf = requestAnimationFrame(() => {
+        if (state.chart !== chartApi) return;
+        applyExtremeMark(chartApi, rows, s, e);
+      });
+    });
 
     /* 预设时间范围按钮（点击 → setRange → datazoom 事件 → onZoom 联动 UI） */
     const rangeApi = rangeGroup();

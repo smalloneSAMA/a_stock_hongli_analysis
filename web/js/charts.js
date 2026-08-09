@@ -515,7 +515,25 @@ export function createKlineChart(el, opts) {
     });
   }
 
-  return { chart, setRange, setDateRange, onZoom, getZoom, setSubSeries, addAnchorLines,
+  /* 主图窗口最高/最低点标记（markPoint）：merge 到 series[0]，随 dataZoom 窗口由调用方重算
+     与 addAnchorLines 同模式：data 长度恒定=2，逐索引替换无残留；setSubSeries 重建复用 series[0] 自动保留 */
+  function setExtremes(ext) {
+    if (!ext || ext.maxVal == null || ext.minVal == null) return;
+    chart.setOption({
+      series: [{
+        markPoint: {
+          silent: true, symbol: 'pin', symbolSize: 44, z: 8,
+          label: { fontSize: 10.5, fontWeight: 700, color: '#fff', formatter: (p) => p.value },
+          data: [
+            { coord: [ext.maxIdx, ext.maxVal], value: Number(ext.maxVal.toFixed(2)), itemStyle: { color: cssVar('--up') } },
+            { coord: [ext.minIdx, ext.minVal], value: Number(ext.minVal.toFixed(2)), itemStyle: { color: cssVar('--down') } },
+          ],
+        },
+      }],
+    });
+  }
+
+  return { chart, setRange, setDateRange, onZoom, getZoom, setSubSeries, addAnchorLines, setExtremes,
            dispose: () => { window.removeEventListener('keydown', kbdMove); chart.dispose(); } };
 }
 
