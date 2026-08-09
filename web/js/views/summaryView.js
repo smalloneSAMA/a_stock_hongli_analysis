@@ -2,7 +2,7 @@
 
 /* 入选推荐20只：动态读 manifest 的 rec 标记（由 scripts/_recommend_stocks.py 评分产物驱动），
    替代原硬编码清单（旧人工20只） */
-import { loadJSON, SUMMARY_URL, MANIFEST_URL } from '../data.js';
+import { loadJSON, SUMMARY_URL, MANIFEST_URL, COMPONENTS_URL } from '../data.js';
 import { el, fmt2, fmt0, fmtPct, dirOf, renderTable, skeleton, errorBox, favStar } from './common.js';
 import { createDonut, createBar } from '../charts.js';
 
@@ -43,14 +43,14 @@ export default {
     let all = [];
 
     const load = async () => {
-      const [data, m] = await Promise.all([loadJSON(SUMMARY_URL), loadJSON(MANIFEST_URL)]);
+      const [data, m, comp] = await Promise.all([loadJSON(SUMMARY_URL), loadJSON(MANIFEST_URL), loadJSON(COMPONENTS_URL)]);
       if (!Array.isArray(data) || !data.length) throw new Error('summary.json 无数据');
       const recSet = new Set((m.stocks || []).filter(s => s.rec).map(s => s.code));
       all = data.map((r) => ({ ...r, _rec: recSet.has(r.code) }));
-      render(data, all);
+      render(data, all, m, comp);
     };
 
-    const render = (rows, base) => {
+    const render = (rows, base, m, comp) => {
       body.innerHTML = '';
       /* 重载保护：旧图表实例挂在已清空的 DOM 上，须先销毁（视图常驻+重试场景） */
       if (donutChart) { donutChart.dispose(); donutChart = null; }
@@ -82,10 +82,58 @@ export default {
       const searchInput = el('input', { class: 'filter-input', type: 'search', placeholder: '搜索代码 / 名称…', 'aria-label': '搜索成分股' });
       const indSelect = el('select', { class: 'filter-select', 'aria-label': '按一级行业筛选' },
         el('option', { value: '' }, '全部行业'), ...industries.map(i => el('option', { value: i }, i)));
+
+      /* ── 指数/ETF 筛选：倒排表 belong[股票code] = Map(指数/ETF code → 权重)
+         通道A：summary 行 idx 字段（[名称, 权重]，东财口径）；通道B：components 成分代码（兜底，无权重） */
+      const POOL = [
+        ...(m.indices || []).map(x => ({ code: x.code, name: x.name.split('(')[0].trim(), type: '指数' })),
+        ...(m.etfs || []).map(x => ({ code: x.code, name: x.name.split('(')[0].trim(), type: 'ETF' })),
+      ];
+      const nameToCode = new Map(POOL.map(p => [p.name, p.code]));
+      const belong = new Map();
+      for (const r of base) {
+        const bm = new Map();
+        for (const pair of (r.idx || [])) {
+          if (!Array.isArray(pair) || !pair.length) continue;
+          const c = nameToCode.get(pair[0]);
+          if (c) bm.set(c, pair[1] ?? null);
+        }
+        belong.set(r.code, bm);
+      }
+      if (comp) {
+        for (const [c, info] of Object.entries(comp.by_index || {})) {
+          for (const s of (info.stocks || [])) {
+            if (!belong.has(s.code)) belong.set(s.code, new Map());
+            if (!belong.get(s.code).has(c)) belong.get(s.code).set(c, null);
+          }
+        }
+        for (const [c, info] of Object.entries(comp.by_etf || {})) {
+          for (const s of (info.stocks || [])) {
+            if (!belong.has(s.code)) belong.set(s.code, new Map());
+            if (!belong.get(s.code).has(c)) belong.get(s.code).set(c, null);
+          }
+        }
+      }
+      /* 通道命中统计（510880 无成分数据 → 禁用） */
+      const poolN = new Map(POOL.map(p => [p.code, 0]));
+      for (const bm of belong.values()) for (const c of bm.keys()) poolN.set(c, (poolN.get(c) || 0) + 1);
+      let poolSel = '';   // 选中的指数/ETF code（'' = 全部）
+
+      /* 选项构建（拆中间变量防括号地狱） */
+      const optOf = (p) => {
+        const empty = (poolN.get(p.code) || 0) === 0;
+        return el('option', { value: p.code, disabled: empty ? true : undefined },
+          `${p.name}（${p.code}）${empty ? ' · 无成分数据' : ''}`);
+      };
+      const poolSelect = el('select', { class: 'filter-select', 'aria-label': '按指数/ETF筛选成分' });
+      poolSelect.append(
+        el('option', { value: '' }, '全部指数和ETF'),
+        el('optgroup', { label: '指数' }, POOL.filter(p => p.type === '指数').map(optOf)),
+        el('optgroup', { label: 'ETF' }, POOL.filter(p => p.type === 'ETF').map(optOf)));
       const recCheck = el('label', { class: 'check-toggle', style: 'cursor:pointer' },
         el('input', { type: 'checkbox', 'aria-label': '仅看推荐20只' }), '仅看推荐20只');
       const countSpan = el('span', { class: 'filter-count' });
-      const filterBar = el('div', { class: 'filter-bar card' }, searchInput, indSelect, recCheck, countSpan);
+      const filterBar = el('div', { class: 'filter-bar card' }, searchInput, indSelect, poolSelect, recCheck, countSpan);
       body.append(filterBar);
 
       /* ── 图表 + 表格 ── */
@@ -107,10 +155,20 @@ export default {
         let out = base;
         if (q) out = out.filter(r => r.name.toLowerCase().includes(q) || r.code.includes(q));
         if (ind) out = out.filter(r => r.ind === ind);
+        if (poolSel) out = out.filter(r => belong.get(r.code)?.has(poolSel));   // 指数/ETF 成分（包含语义）
         if (recOnly) out = out.filter(r => r._rec);
         if (donutFilterInd) out = out.filter(r => r.ind === donutFilterInd);   // 环形图行业筛选
         countSpan.textContent = `筛选结果 ${out.length} / ${base.length}`;
-        tableApi.refresh(out);
+        /* 选中指数/ETF 时：动态加“权重(%)”列（该股在所选指数/ETF 中的权重，东财口径；重建表格并按权重降序） */
+        const wtMap = new Map(out.map(r => [r.code, poolSel ? (belong.get(r.code)?.get(poolSel) ?? null) : null]));
+        const cols = poolSel
+          ? [...columns, { key: 'wt', label: `权重%·${POOL.find(p => p.code === poolSel)?.name || ''}`, align: 'center', sortable: true, filter: false,
+            fmt: (v) => (v == null ? '—' : fmt2(v) + '%'),
+            color: (v) => (v != null && v >= 5 ? 'up' : v != null && v < 1 ? 'down' : '') }]
+          : columns;
+        const rowsOut = out.map(r => ({ ...r, wt: wtMap.get(r.code) }));
+        tableApi = renderTable(tableBox, { columns: cols, rows: rowsOut, pageSize: 50 });
+        if (poolSel) tableApi.sortBy('wt', -1);
         renderCharts(out);
       };
       /* 收藏变化：星标自身已同步（表格 ★ 列组件内监听） */
@@ -154,6 +212,7 @@ export default {
 
       searchInput.addEventListener('input', applyFilter);
       indSelect.addEventListener('change', applyFilter);
+      poolSelect.addEventListener('change', () => { poolSel = poolSelect.value; applyFilter(); });
       const recInput = recCheck.querySelector('input');
       recInput.addEventListener('change', () => { recCheck.classList.toggle('on', recInput.checked); applyFilter(); });
       applyFilter();
