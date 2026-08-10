@@ -32,7 +32,7 @@ set /a tries+=1
 netstat -ano | findstr ":%PORT% " | findstr "LISTENING" >nul 2>&1
 if not errorlevel 1 goto :ok
 if %tries% geq 15 goto :timeout
-timeout /t 1 /nobreak >nul
+ping -n 2 127.0.0.1 >nul
 goto :wait
 
 :ok
