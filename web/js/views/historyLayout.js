@@ -315,7 +315,11 @@ export function buildHistoryView(container, cfg) {
   window.addEventListener('open-ticker', (e) => {
     const t = e.detail || {};
     const it = (allItems || itemsOf()).find((x) => x.code === t.code);
-    if (it) select(it);
+    if (it) {
+      /* 已挂载视图响应后清掉 pending，防止残留的 __openTicker 被未来重新挂载的视图误消费 */
+      if (window.__openTicker && window.__openTicker.code === t.code) window.__openTicker = null;
+      select(it);
+    }
   });
 
   /* ── 选中标的 → 按需加载 K线（+副图数据） → 图表 + 表格 ── */

@@ -135,6 +135,9 @@ export default {
           window.dispatchEvent(new CustomEvent('open-ticker', { detail: { code: r.code, name: r.name } }));
         } else {
           location.hash = `#/${view}`;
+          /* 视图容器常驻：已挂载视图不会重新 mount（__openTicker 仅在首次挂载时被消费），
+             必须再派发事件让已挂载视图响应选中；未挂载场景事件无监听者，由 __openTicker 兜底 */
+          window.dispatchEvent(new CustomEvent('open-ticker', { detail: { code: r.code, name: r.name } }));
         }
       };
 
