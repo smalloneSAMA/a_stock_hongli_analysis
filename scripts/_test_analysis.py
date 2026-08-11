@@ -260,7 +260,7 @@ print("\n── T7 数值快照与重算 ──")
 # 000922 三档分数快照（与后端控制台/前端实测一致；行情更新致因子漂移时需同步刷新，
 # 2026-08-11 刷新：000922 近期上涨致 dy/price 分位走高，分数整体抬升；CI 用 --no-snapshot 跳过）
 if not NO_SNAPSHOT:
-    snap = {"稳健": 74.7, "均衡": 69.8, "进取": 67.1}
+    snap = {"稳健": 70.0, "均衡": 64.8, "进取": 62.3}
     ok = True
     for pname, expect in snap.items():
         w = analysis["presets"][pname]["A"]
