@@ -1,0 +1,155 @@
+# 红利研究数据每日自动更新（GitHub Actions）
+#
+# 触发：
+#   · schedule 工作日 18:00（北京，cron 用 UTC 10:00）→ 数据源收盘后已齐
+#   · workflow_dispatch 手动（mode: auto/daily/weekly/full/status）
+#
+# 模式判定（auto）：
+#   · 3/6/9/12 月 1 日  → full  季度深度链路（成分重下载→汇总→check-fin→新池→重算→回测）
+#   · 周一             → weekly（daily + 失败重试 + 信号回测 + 组合回测）
+#   · 其余工作日       → daily（行情增量→Excel→前端包→推荐评分）
+#
+# 提交策略：
+#   · 仅当工作区有实际数据变化才提交（节假日/数据源无更新 → 零提交，正常退出）
+#   · 提交前跑 _test_analysis.py 62 项回归断言，失败则中止不提交（数据安全第一）
+#   · push 前 pull --rebase + 重试 3 次（防并行会话提交冲突）
+#
+# 已知注意事项：
+#   · runner 为海外 IP，访问腾讯/东财/中证/国证/新浪/天天基金可能限流/超时，
+#     脚本已内置失败清单 + 连续失败熔断，次日增量自愈；连续失败会收到 Actions 邮件
+#   · TZ=Asia/Shanghai 保证 fetched_at/变更摘要日期正确（runner 默认 UTC 会写错日期）
+#   · 测试 T7 数值快照（000922 三档分数）随行情漂移属已知现象（AGENTS.md），
+#     失败时邮件通知后人工同步刷新 _test_analysis.py 快照即可
+
+name: 数据每日更新
+
+on:
+  schedule:
+    - cron: '0 10 * * 1-5'        # 北京 18:00（UTC+8），工作日
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '更新模式（auto=按日期自动判定）'
+        type: choice
+        default: auto
+        options:
+          - auto
+          - daily
+          - weekly
+          - full
+          - status
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-daily-update
+  cancel-in-progress: false       # 排队执行，避免与手动触发/并行会话冲突
+
+env:
+  TZ: Asia/Shanghai
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      # ── 模式判定（auto：季度日 > 周一 > 日常）────────────────────────
+      - name: 判定更新模式
+        id: mode
+        run: |
+          MODE="${{ github.event.inputs.mode || 'auto' }}"
+          if [ "$MODE" = "auto" ]; then
+            M=$(date +%m); D=$(date +%d); W=$(date +%u)
+            if [ "$M" = "03" ] || [ "$M" = "06" ] || [ "$M" = "09" ] || [ "$M" = "12" ]; then
+              [ "$D" = "01" ] && MODE=full
+            fi
+            if [ "$MODE" = "auto" ] && [ "$W" = "1" ]; then MODE=weekly; fi
+            [ "$MODE" = "auto" ] && MODE=daily
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "本次模式: $MODE"
+
+      # ── 日常更新：行情增量 → Excel → 前端包 → 区间分析 → 推荐评分 ────
+      - name: 日常更新（行情→Excel→前端包→评分）
+        if: steps.mode.outputs.mode != 'status'
+        run: python update.py daily --yes
+        timeout-minutes: 60
+
+      # ── 每周：失败清单重试 + 信号回测 + 组合回测 ─────────────────────
+      - name: 失败清单重试（跳过北交所预期失败项）
+        if: steps.mode.outputs.mode == 'weekly'
+        run: python update.py retry
+
+      - name: 每周回测（信号回测 p85/90/95 + 组合回测）
+        if: steps.mode.outputs.mode == 'weekly'
+        run: |
+          python update.py bt
+          python scripts/_backtest_portfolio.py
+
+      # ── 季度深度链路（顺序对齐 update.py deep_update 语义）──────────
+      # comp→summary 先更新池子，pool 增量随后为新成分全量拉取，顺序不能反
+      - name: 季度深度链路（成分→汇总→check-fin→新池→重算→回测）
+        if: steps.mode.outputs.mode == 'full'
+        run: |
+          python update.py comp
+          python update.py summary
+          python update.py fin
+          python scripts/_fetch_pool_data.py --check-fin
+          python scripts/_fetch_watchlist.py --check-fin
+          python update.py pool
+          python update.py watch
+          python update.py wq
+          python update.py web
+          python update.py bt
+          python scripts/_backtest_portfolio.py
+        timeout-minutes: 90
+
+      # ── 状态扫描（新鲜度/回测过期/季度检测/失败清单，供提交摘要）──────
+      - name: 状态扫描
+        run: python update.py status | tee /tmp/status.txt
+
+      # ── 回归测试：失败则中止（不提交），邮件通知人工 ──────────────────
+      - name: 回归测试（62 项断言）
+        if: steps.mode.outputs.mode != 'status'
+        run: python scripts/_test_analysis.py
+
+      # ── 无变化检测：节假日/数据源无更新 → 零提交 ─────────────────────
+      - name: 检查数据变化
+        id: changes
+        run: |
+          if git diff --quiet; then
+            echo "无数据变化，跳过提交"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── 提交并推送（rebase 防冲突，重试 3 次）──────────────────────
+      - name: 提交并推送
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          DATE=$(date +%Y-%m-%d)
+          git add -A
+          git commit -m "数据更新 $DATE（GitHub Actions 自动）" -m "模式：${{ steps.mode.outputs.mode }}" -m "$(head -40 /tmp/status.txt)"
+          for i in 1 2 3; do
+            git pull --rebase origin master && git push origin master && exit 0
+            echo "推送冲突（第 $i 次），15s 后重试…"
+            sleep 15
+          done
+          echo "推送失败：远端有并行提交且 rebase 冲突，请人工处理（数据仍保留在本地产物，下次运行增量自愈）"
+          exit 1
