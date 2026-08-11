@@ -162,7 +162,64 @@ export default {
           '贵贱度分按类型用对应因子组（指数/ETF 四因子、股票六因子），类型内可比；悬停推荐分可见三项子分与惩罚明细。',
           '档位对照：稳健 dy50%/贵贱度25%/回测25% —— 股息为王，便宜优先；均衡 35%/30%/35% —— 三分均衡（默认档）；进取 25%/25%/50% —— 回测弹性，历史超额驱动。切档只改变权重与排序，候选池与评级阈值不变。',
           '评级：≥75 强烈推荐 / ≥60 推荐 / ≥45 关注 / <45 回避。回测为历史统计（p90 信号次一交易日买入，价格口径不含分红再投），非投资建议。',
+          '推荐分旁箭头 = 相比上一数据版本的变化（红升绿降，差值=分数差）；悬停推荐分可见变化原因（主要因哪个因子）。首次打开/同版本无对比。',
           '完美 = 稳健/均衡/进取三档权重下均为强烈推荐（≥75 分），代表估值、股息、回测三个视角的共识；悬停推荐分可见三档明细。'));
+
+      /* ── 分数对比快照：相比“上一数据版本”的推荐分变化（localStorage）
+         版本标记 = analysis_dy 序列最新日期（行情/分红更新即变）；
+         版本变化时对比旧快照并刷新；同版本/首次打开无对比 */
+      let oldSnap = null;
+      try { oldSnap = JSON.parse(localStorage.getItem('pi_rec_scores') || 'null'); } catch { oldSnap = null; }
+      const snapDate = maxDate || m.data_date || '';
+      const hasBase = !!(oldSnap && oldSnap.date && oldSnap.date !== snapDate && oldSnap.codes);
+      const hasAnySnap = !!(oldSnap && oldSnap.codes);
+      const curSnap = { date: snapDate, codes: {} };
+      if (snapDate) {
+        for (const r of all) {
+          const sc = scoresOf(r);
+          curSnap.codes[r.code] = {
+            稳健: { s: sc['稳健'].s, dyPart: sc['稳健'].dyPart, cross: r.crossPct ?? 0, hist: r.pct, anaPart: sc['稳健'].anaPart, btPart: sc['稳健'].btPart, trig: sc['稳健'].trig, diverge: sc['稳健'].diverge },
+            均衡: { s: sc['均衡'].s, dyPart: sc['均衡'].dyPart, cross: r.crossPct ?? 0, hist: r.pct, anaPart: sc['均衡'].anaPart, btPart: sc['均衡'].btPart, trig: sc['均衡'].trig, diverge: sc['均衡'].diverge },
+            进取: { s: sc['进取'].s, dyPart: sc['进取'].dyPart, cross: r.crossPct ?? 0, hist: r.pct, anaPart: sc['进取'].anaPart, btPart: sc['进取'].btPart, trig: sc['进取'].trig, diverge: sc['进取'].diverge },
+          };
+        }
+        try { localStorage.setItem('pi_rec_scores', JSON.stringify(curSnap)); } catch { /* 忽略 */ }
+      }
+      /* 归因一句话 + 差值（当前档）：Δ贡献 = w_dy%×Δdy + w_ana%×Δana + w_bt%×Δbt + Δ触发 − Δ背离 */
+      const LAB = { dy: 'dy', ana: '贵贱度', bt: '回测', trig: '触发', div: '背离' };
+      const whyDelta = (code, 档) => {
+        if (!hasBase) return null;
+        const old = oldSnap.codes[code]?.[档], cur = curSnap.codes[code]?.[档];
+        if (!old || !cur) return null;   // 新上榜/数据缺失 → 无对比
+        const w = W[档];
+        const dDy = cur.dyPart - old.dyPart, dAna = cur.anaPart - old.anaPart, dBt = cur.btPart - old.btPart;
+        const dTri = (cur.trig || 0) - (old.trig || 0), dDiv = (cur.diverge || 0) - (old.diverge || 0);
+        const contrib = { dy: w.dy / 100 * dDy, ana: w.ana / 100 * dAna, bt: w.bt / 100 * dBt, trig: dTri, div: -dDiv };
+        const total = contrib.dy + contrib.ana + contrib.bt + contrib.trig + contrib.div;
+        const arrow = total > 0.05 ? '↑' : total < -0.05 ? '↓' : '→';
+        const [mk, mv] = Object.entries(contrib).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
+        const desc = {
+          dy: `股息率分位${dDy >= 0 ? '上升' : '下降'}（横截面 ${Math.round(old.cross)}→${Math.round(cur.cross)}）`,
+          ana: dAna >= 0 ? '贵贱度改善（更便宜）' : '贵贱度转贵',
+          bt: `回测分${dBt >= 0 ? '改善' : '下滑'}`,
+          trig: dTri > 0 ? '进入触发区（dy分位≥90）+5' : dTri < 0 ? '退出触发区 −5' : '',
+          div: dDiv > 0 ? '背离惩罚 −5' : dDiv < 0 ? '背离解除 +5' : '',
+        }[mk];
+        const others = Object.entries(contrib).filter(([k]) => k !== mk)
+          .map(([k, v]) => `${LAB[k]} ${v >= 0 ? '+' : ''}${v.toFixed(1)}`).join(' · ');
+        return { total, text: `${arrow} 总分 ${total >= 0 ? '+' : ''}${total.toFixed(1)}：主要因${desc}（贡献 ${mv >= 0 ? '+' : ''}${mv.toFixed(1)}）${others ? '；另 ' + others : ''}` };
+      };
+      /* 完美模式：三档均值差 */
+      const deltaMean = (code) => {
+        if (!hasBase) return null;
+        const old = oldSnap.codes[code], cur = curSnap.codes[code];
+        if (!old || !cur) return null;
+        const om = (old['稳健'].s + old['均衡'].s + old['进取'].s) / 3;
+        const cm = (cur['稳健'].s + cur['均衡'].s + cur['进取'].s) / 3;
+        const total = cm - om;
+        const arrow = total > 0.05 ? '↑' : total < -0.05 ? '↓' : '→';
+        return { total, text: `${arrow} 三档均值 ${om.toFixed(1)} → ${cm.toFixed(1)}（${total >= 0 ? '+' : ''}${total.toFixed(1)}）` };
+      };
 
       const paint = () => {
         presetSel.innerHTML = '';
@@ -209,9 +266,18 @@ export default {
           { key: 'type', label: '类型', sortable: true, filter: false },
           { key: 'group', label: '分组', sortable: true, filter: false },
           { key: 's', label: '推荐分', sortable: true,
-            fmt: (v, row) => el('span', { title: perfect
-              ? `稳健 ${fmt2(row._sc['稳健'].s)} · 均衡 ${fmt2(row._sc['均衡'].s)} · 进取 ${fmt2(row._sc['进取'].s)}（三档均≥75 入选，按均值排序）`
-              : `dy 横截面 ${fmt2(row.cross)} ×50% + 历史 ${fmt2(row.hist)} ×50% = ${fmt2(row.dyPart)} × ${W[preset].dy}% + 贵贱度反向 ${fmt2(row.anaPart)} × ${W[preset].ana}% + 回测 ${fmt2(row.btPart)} × ${W[preset].bt}%${row.trig > 0 ? ' + 触发中 5' : row.trig < 0 ? ' − 卖出区 5' : ''}${row.diverge ? ' − 背离 5' : ''}` }, fmt2(v)),
+            fmt: (v, row) => {
+              const d = perfect ? deltaMean(row.code) : whyDelta(row.code, preset);
+              const baseTitle = perfect
+                ? `稳健 ${fmt2(row._sc['稳健'].s)} · 均衡 ${fmt2(row._sc['均衡'].s)} · 进取 ${fmt2(row._sc['进取'].s)}（三档均≥75 入选，按均值排序）`
+                : `dy 横截面 ${fmt2(row.cross)} ×50% + 历史 ${fmt2(row.hist)} ×50% = ${fmt2(row.dyPart)} × ${W[preset].dy}% + 贵贱度反向 ${fmt2(row.anaPart)} × ${W[preset].ana}% + 回测 ${fmt2(row.btPart)} × ${W[preset].bt}%${row.trig > 0 ? ' + 触发中 5' : row.trig < 0 ? ' − 卖出区 5' : ''}${row.diverge ? ' − 背离 5' : ''}`;
+              const title = baseTitle + (d ? '\n' + d.text : hasBase ? '' : '\n' + (hasAnySnap ? '本数据版本无变化' : '首次记录，暂无对比'));
+              return el('span', { title },
+                fmt2(v),
+                d && Math.abs(d.total) > 0.05
+                  ? el('span', { class: 'rec-delta ' + (d.total > 0 ? 'up' : 'down') }, ` ${d.total > 0 ? '↑' : '↓'}${Math.abs(d.total).toFixed(1)}`)
+                  : null);
+            },
             color: (v) => (v >= 75 ? 'up' : v >= 60 ? 'flat' : '') },
           { key: 'band', label: '评级', sortable: true, filter: false,
             fmt: (_v, row) => perfect
