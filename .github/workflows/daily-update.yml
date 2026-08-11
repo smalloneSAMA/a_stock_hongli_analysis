@@ -19,7 +19,8 @@
 #     脚本已内置失败清单 + 连续失败熔断，次日增量自愈；连续失败会收到 Actions 邮件
 #   · TZ=Asia/Shanghai 保证 fetched_at/变更摘要日期正确（runner 默认 UTC 会写错日期）
 #   · 测试 T7 数值快照（000922 三档分数）随行情漂移属已知现象（AGENTS.md），
-#     失败时邮件通知后人工同步刷新 _test_analysis.py 快照即可
+#     CI 用 --no-snapshot 跳过快照断言（结构性断言 60 项保留）；
+#     快照刷新由本地人工全量测试负责（漂移时同步 _test_analysis.py 并注释）
 
 name: 数据每日更新
 
@@ -122,9 +123,11 @@ jobs:
         run: python update.py status | tee /tmp/status.txt
 
       # ── 回归测试：失败则中止（不提交），邮件通知人工 ──────────────────
-      - name: 回归测试（62 项断言）
+      # --no-snapshot：跳过 T4.5/T7 数值快照断言（随行情漂移属已知现象，
+      # CI 每次数据更新后快照必过期；结构性断言 60 项全部保留，本地人工全量测试 62 项）
+      - name: 回归测试（62 项断言，CI 跳数值快照）
         if: steps.mode.outputs.mode != 'status'
-        run: python scripts/_test_analysis.py
+        run: python scripts/_test_analysis.py --no-snapshot
 
       # ── 无变化检测：节假日/数据源无更新 → 零提交 ─────────────────────
       - name: 检查数据变化
