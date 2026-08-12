@@ -26,6 +26,19 @@ const TAB_HELP = {
       '净值低≠差：分红会把单位净值分瘦，收益看涨幅（含分红）',
     ],
   },
+  px: {
+    tip: '各标的实际价格对比（单轴）：量级不同时低价标的变化幅度会被压缩',
+    what: '各标的原始价格（非归一化）同图对比。单 y 轴线性刻度，价格量级差异大时低价标的方向上的波动会显得平缓。',
+    how: [
+      '量级相差悬殊时（如 1500 元 vs 5 元），低价标的的波动幅度会被压缩——看形态切回"净值"tab',
+      '左上角浮层：无光标=各标的最新价；悬停/点击/方向键=光标日期各标的的价格',
+      'ETF 价格口径跟随"净值/场内价"切换；含分红按钮对本 tab 无效（纯价格）',
+    ],
+    note: [
+      '股价为不复权价（股票/指数收盘价，ETF 场内价或净值）',
+      'tooltip 显示当日价格与当日涨跌（红涨绿跌）',
+    ],
+  },
   dy: {
     tip: '各标的 TTM 股息率（%）曲线：横向比分红收益率，纵向看自身历史高低',
     what: '各标的 TTM 股息率（近12个月每股派息÷价格）曲线。横向比分红收益率，纵向看自身历史位置。',
@@ -173,7 +186,7 @@ export default {
     let floatCtx = null;
     const kbdMove = (e) => {
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-      if (chartTab !== 'nav' || !floatCtx) return;
+      if (chartTab !== 'nav' && chartTab !== 'px') return;
       const ctx = floatCtx;
       if (!ctx.chartEl.offsetWidth || !ctx.chartEl.offsetHeight) return;   // 视图隐藏/未布局时不响应
       const t = e.target;
@@ -297,6 +310,11 @@ export default {
         const dates = [...dateSet].sort();
         const rows2 = aligned.map(a => {
           const mPlain = new Map(a.pts.map(p => [p.date, p.plain / a.basePlain * 100]));
+          /* 原始价格序列（股价 tab 用；mPlain 归一化值反推回绝对价） */
+          const valsRaw = dates.map(d => {
+            const v = mPlain.get(d);
+            return v == null ? null : v / 100 * a.basePlain;
+          });
           const mDiv = a.baseDiv ? new Map(a.pts.filter(p => p.div != null).map(p => [p.date, p.div / a.baseDiv * 100])) : null;
           const mDy = a.dyPts ? new Map(a.dyPts.filter(p => p[0] >= start).map(p => [p[0], p[1]])) : null;
           /* ETF 净值序列（跟踪偏离固定用净值，不随场内价切换） */
@@ -310,7 +328,7 @@ export default {
             if (v > peak) peak = v;
             dd.push((v / peak - 1) * 100);
           }
-          return { it: a.it, vals, valsDiv: mDiv ? dates.map(d => mDiv.get(d) ?? null) : null,
+          return { it: a.it, vals: vals, valsDiv: mDiv ? dates.map(d => mDiv.get(d) ?? null) : null, valsRaw,
             dyVals: mDy ? dates.map(d => mDy.get(d) ?? null) : null, ddVals: dd,
             navVals: mNav ? dates.map(d => mNav.get(d) ?? null) : null, track: a.track };
         });
@@ -331,13 +349,14 @@ export default {
     }
 
     /* ═══ 主区构建：图 tab + 工具条 + 各图分发 ═══ */
-    const CHART_TABS = [['nav', '净值'], ['dy', '股息率'], ['dd', '回撤'], ['bars', '涨跌幅'], ['rs', '相对强弱'], ['corr', '相关性'], ['trk', '跟踪偏离']];
+    const CHART_TABS = [['nav', '净值'], ['px', '股价'], ['dy', '股息率'], ['dd', '回撤'], ['bars', '涨跌幅'], ['rs', '相对强弱'], ['corr', '相关性'], ['trk', '跟踪偏离']];
     const tabTitle = () => ({ nav: divMode && curType !== 'index' ? '归一化含分红净值（起点=100）' : '归一化净值（起点=100）',
+      px: '实际股价对比（原始价格 · 单轴线性）',
       dy: '股息率对比（%）', dd: '水下回撤对比（%）', bars: '区间涨跌幅对比',
       rs: `相对强弱（基准：${order[0] ? selected.get(order[0]).name : ''}，>100=跑赢基准）`,
       corr: '日收益相关性矩阵（全窗口）', trk: '同跟踪 ETF 偏离（vs 跟踪指数）' }[chartTab]);
 
-    /* 净值图 tooltip：显示当日涨跌（红涨绿跌，口径与当前显示序列一致：含分红/净值切换跟随） */
+    /* 净值图 tooltip：显示当日涨跌（红涨绿跌，口径与当前显示序列一致：含分红/净值切换跟随；股价 tab 用原始价） */
     const navTip = (params) => {
       const p0 = params && params[0];
       if (!p0 || p0.dataIndex == null) return '';
@@ -347,7 +366,8 @@ export default {
         const v = p.value;
         if (v == null) return null;
         const r = cmp.aligned[k];
-        const arr = r && (divMode && curType !== 'index' ? (r.valsDiv || r.vals) : r.vals);
+        const arr = chartTab === 'px' ? r.valsRaw
+          : (divMode && curType !== 'index' ? (r.valsDiv || r.vals) : r.vals);
         let chg = null;
         if (arr && i > 0) {
           const prev = arr[i - 1];
@@ -430,12 +450,14 @@ export default {
       chartApi.on('datazoom', onZoom);
       zoomOff = () => { chartApi.off('datazoom', onZoom); cancelAnimationFrame(raf); };
 
-      /* ── 净值图左上角：累计涨跌浮层（无光标时=自起点累计；跟随鼠标/点击/方向键）── */
-      if (chartTab === 'nav') {
+      /* ── 左上角浮层：净值=累计涨跌；股价=各标的价格（无光标=最新价，光标=该日价格）── */
+      if (chartTab === 'nav' || chartTab === 'px') {
+        const isPx = chartTab === 'px';
         const floatEl = el('div', { class: 'cmp-float' });
         chartEl.appendChild(floatEl);
         const n = cmp.dates.length;
-        const arrOf = (r) => (divMode && curType !== 'index' ? (r.valsDiv || r.vals) : r.vals);   // 与 series 同口径
+        const arrOf = (r) => isPx ? r.valsRaw
+          : (divMode && curType !== 'index' ? (r.valsDiv || r.vals) : r.vals);   // 与 series 同口径
         const upC = cssVar('--up'), downC = cssVar('--down');
         const ctx = { chartApi, chartEl, dates: cmp.dates, updateFloat: null, keyIdx: -1, mouseIdx: -1 };
         let lastFloatIdx = -2;
@@ -449,17 +471,28 @@ export default {
             const arr = arrs[k];
             const last = arr[lis[k]];
             if (last == null) return null;
+            if (isPx) {
+              /* 股价：显示光标日价格（若在数据范围内）或最新价 */
+              let px = null, chg = null;
+              if (i >= 0 && i < arr.length && arr[i] != null) px = arr[i];
+              const shown = px != null ? px : last;
+              if (px != null) chg = (last / px - 1) * 100;   // 光标价 → 最新价
+              return { name: r.it.name, main: shown.toFixed(2),
+                sub: px != null && Math.abs(chg) > 0.005 ? (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%' : null, c: chg != null ? (chg >= 0 ? upC : downC) : '' };
+            }
             let base = 100;   // 归一化起点=100（自起点口径）
             if (i >= 0 && i < arr.length) base = arr[i];   // 光标口径：该日期 → 最新
             if (base == null || base <= 0) return null;
             const chg = (last / base - 1) * 100;
-            return { name: r.it.name, chg, c: chg >= 0 ? upC : downC };
+            return { name: r.it.name, main: (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%', sub: null, c: chg >= 0 ? upC : downC };
           }).filter(Boolean);
           if (!rows.length) { floatEl.style.display = 'none'; return; }
-          const title = (i >= 0 ? cmp.dates[i] : '自起点') + ' → ' + lastDate;
-          floatEl.innerHTML = '<div class="cmp-float-head">' + title + ' · 累计</div>'
+          const title = isPx
+            ? (i >= 0 ? cmp.dates[i] + ' 价格' : '最新价') + ' · 截至 ' + lastDate
+            : (i >= 0 ? cmp.dates[i] : '自起点') + ' → ' + lastDate + ' · 累计';
+          floatEl.innerHTML = '<div class="cmp-float-head">' + title + '</div>'
             + rows.map(x => '<div class="cmp-float-row"><span class="cmp-float-name">' + x.name + '</span>'
-              + '<span class="cmp-float-chg" style="color:' + x.c + '">' + (x.chg >= 0 ? '+' : '') + x.chg.toFixed(2) + '%</span></div>').join('');
+              + '<span class="cmp-float-chg" style="color:' + (x.sub ? x.c : '') + '">' + x.main + (x.sub ? ' <span style="font-size:9.5px">(' + x.sub + ')</span>' : '') + '</span></div>').join('');
           floatEl.style.display = 'block';
         };
         ctx.updateFloat = updateFloat;
@@ -524,6 +557,8 @@ export default {
         buildCorrChart(chartApi, base);
       } else if (chartTab === 'trk') {
         buildTrkChart(chartApi, base);
+      } else if (chartTab === 'px') {
+        chartApi.setOption({ ...base, tooltip: { ...base.tooltip, formatter: navTip }, series: lineSeries(cmp.aligned.map(r => r.valsRaw)) });
       } else {
         chartApi.setOption({ ...base, tooltip: { ...base.tooltip, formatter: navTip }, series: lineSeries(cmp.aligned.map(r => divMode && curType !== 'index' ? r.valsDiv : r.vals)) });
       }
