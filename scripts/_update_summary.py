@@ -316,6 +316,19 @@ def run(force=False):
         for c, s in parsed.items():
             if c not in old:
                 old[c] = s
+        # w 由 md 派生：每次全量重解析后同步（md 板块修复/成分调整可自动跟上）。
+        # 保护：新解析 w 为空而旧缓存非空 → 保留旧 w 并告警（疑似 md 板块异常）
+        for c, s in parsed.items():
+            if c not in old:
+                continue
+            new_w = s.get("w") or {}
+            if not new_w and old[c].get("w"):
+                print(f"  ⚠️ {c} {s.get('name', '')} w 解析为空但旧缓存有 {len(old[c]['w'])} 键，保留旧 w（疑似 md 板块异常）")
+            else:
+                old[c]["w"] = new_w
+            old[c]["n"] = s.get("n", old[c].get("n"))
+            if s.get("name"):
+                old[c]["name"] = s["name"]
         # 同步：md 中已移除的股票从缓存剔除（带保护：md 解析异常/骤降时禁止清空）
         removed = [c for c in old if c not in parsed]
         if removed:

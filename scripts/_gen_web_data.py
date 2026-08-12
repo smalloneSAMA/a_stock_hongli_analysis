@@ -327,6 +327,14 @@ def build_components():
         src = out["by_index"].get(track)
         if track and src and src.get("n") and (src.get("note") or "").startswith("国证官网"):
             out["by_etf"][code] = dict(src)
+    # ETF 跟踪指数成分兜底（md w 链路解析为空时：ETF 成分=跟踪指数成分是合同约定，
+    # 直接复用指数成分保证 by_etf 不空；季报持仓覆盖（真实持仓）在其后仍会覆盖）
+    for code, name, _t in fh.ETFS:
+        track = ga.ETF_TRACK.get(code)
+        src = out["by_index"].get(track)
+        if track and src and src.get("n") and not out["by_etf"].get(code, {}).get("stocks"):
+            out["by_etf"][code] = dict(src)
+            print(f"  📥 {code} {name}: 跟踪指数成分兜底（{src['name']} {src['n']} 只）")
     # ETF 自身季报持仓覆盖（159229→932368 无行情/成分源）：真实持仓+占净值比+个股股息率
     for code, name, _t in fh.ETFS:
         p = os.path.join(BASE, "cache", f"ETF持仓_{code}.json")

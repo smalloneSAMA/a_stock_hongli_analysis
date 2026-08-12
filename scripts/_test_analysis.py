@@ -201,8 +201,8 @@ check("000922 买入锚在[2024低点,现价]", low24 * 0.95 <= an["buy"] <= cur
 # 4.5 逻辑一致：dy 分位低(贵)→卖出锚近/负（数值快照：随行情漂移，CI 用 --no-snapshot 跳过）
 if not NO_SNAPSHOT:
     v = by_code["000922"]
-    check("000922 dy贵→卖出锚仅+3%", abs(v["anchors"]["dist_sell"] - 1.1) < 1.0,
-          f"dist_sell={v['anchors']['dist_sell']}%（快照 1.1，2026-08-11 刷新）")
+    check("000922 dy贵→卖出锚仅+3%", abs(v["anchors"]["dist_sell"] - 2.3) < 1.0,
+          f"dist_sell={v['anchors']['dist_sell']}%（快照 2.3，2026-08-12 刷新）")
 
 # ── T5 交叉一致性 ──────────────────────────────────────────────
 print("\n── T5 交叉一致性 ──")
@@ -260,7 +260,7 @@ print("\n── T7 数值快照与重算 ──")
 # 000922 三档分数快照（与后端控制台/前端实测一致；行情更新致因子漂移时需同步刷新，
 # 2026-08-11 刷新：000922 近期上涨致 dy/price 分位走高，分数整体抬升；CI 用 --no-snapshot 跳过）
 if not NO_SNAPSHOT:
-    snap = {"稳健": 70.0, "均衡": 64.8, "进取": 62.3}
+    snap = {"稳健": 68.2, "均衡": 62.7, "进取": 60.3}
     ok = True
     for pname, expect in snap.items():
         w = analysis["presets"][pname]["A"]
