@@ -27,13 +27,7 @@ MELT_LIMIT = 5         # 连续失败熔断阈值
 MELT_PAUSE = 60        # 熔断暂停（秒）
 
 
-def market_prefix(code):
-    """6→sh（沪主板），4/8→bj（北交所），其余→sz（深主板/创业板）"""
-    if code.startswith("6"):
-        return "sh"
-    if code.startswith(("4", "8")):
-        return "bj"
-    return "sz"
+from _common import market_prefix   # 唯一正确版本（92→bj 先于 9x；全名语义）
 
 
 def pool_codes():
@@ -44,7 +38,7 @@ def pool_codes():
         return []
     table = json.load(open(t_path, encoding="utf-8"))
     rec = {c for c, _, _ in fsd.STOCKS}
-    out = [(r["code"], r.get("name", r["code"]), market_prefix(r["code"]) + r["code"])
+    out = [(r["code"], r.get("name", r["code"]), market_prefix(r["code"]))
            for r in table if r["code"] not in rec]
     return out
 

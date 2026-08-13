@@ -7,6 +7,7 @@
 用法: python _gen_components.py [--force]
 """
 import sys, io, os, json, re, time, glob, datetime, requests, pandas as pd, urllib.request
+from _common import market_prefix   # 唯一正确版本（92→bj 先于 9x）
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -122,15 +123,7 @@ def tencent_names(codes):
     out = {}
     for i in range(0, len(codes), 60):
         batch = codes[i:i+60]
-        prefixed = []
-        for c in batch:
-            if c.startswith(("5", "6", "9")):
-                prefixed.append(f"sh{c}")
-            elif c.startswith("92"):
-                prefixed.append(f"bj{c}")
-            else:
-                prefixed.append(f"sz{c}")
-        url = "https://qt.gtimg.cn/q=" + ",".join(prefixed)
+        url = "https://qt.gtimg.cn/q=" + ",".join(market_prefix(c) for c in batch)
         req = urllib.request.Request(url, headers={"User-Agent": UA})
         try:
             resp = urllib.request.urlopen(req, timeout=10).read().decode("gbk", "ignore")

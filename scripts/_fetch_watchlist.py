@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _fetch_pool_data import market_prefix
+from _common import market_prefix
 from _classify import map_ind
 
 XLSX = os.path.join(BASE, "excel", "自选股清单.xlsx")   # 自选股清单（唯一事实来源）
@@ -70,7 +70,7 @@ def read_watchlist_xlsx():
         show = show_v == 1 or (isinstance(show_v, str) and show_v.strip() == "1")
         seq_v = row[0]
         seq = int(seq_v) if isinstance(seq_v, (int, float)) and seq_v > 0 else 0
-        out.append({"code": code, "name": name, "tcode": market_prefix(code) + code,
+        out.append({"code": code, "name": name, "tcode": market_prefix(code),
                     "show": show, "seq": seq})
     wb.close()
     if not out:
@@ -129,16 +129,10 @@ def refresh_indicators_main():
         return
     print(f"═══ 自选股清单指标刷新（{len(rows)} 只 · 腾讯批量 · 全量）═══")
 
-    def prefix(c):
-        if c.startswith("92"):            return "bj" + c   # 北交所必须先于 9x
-        if c.startswith(("5", "6", "9")): return "sh" + c
-        if c.startswith(("4", "8")):      return "bj" + c
-        return "sz" + c
-
     metrics, got, t0 = {}, 0, time.time()
     for i in range(0, len(rows), 50):
         batch = rows[i:i + 50]
-        url = "https://qt.gtimg.cn/q=" + ",".join(prefix(r["code"]) for r in batch)
+        url = "https://qt.gtimg.cn/q=" + ",".join(market_prefix(r["code"]) for r in batch)
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             data = urllib.request.urlopen(req, timeout=10).read().decode("gbk", errors="replace")

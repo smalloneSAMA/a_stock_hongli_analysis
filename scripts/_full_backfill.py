@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """修复腾讯prefix路由bug(92开头北交所) + 全量289只拉分红历史算股息率 + 写回缓存"""
 import json, sys, time, random, urllib.request, datetime
+from _common import market_prefix   # 唯一正确版本（92→bj 先于 9x）
 
 sys.stdout.reconfigure(encoding="utf-8")
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0"}
@@ -18,16 +19,11 @@ def em_get(url, timeout=12):
 
 def tencent_batch(codes):
     """腾讯批量行情。⚠️ 92开头(北交所)必须先于 9x(沪) 判断，否则路由到 sh920xxx 返回空"""
-    def prefix(c):
-        if c.startswith("92"):            return "bj" + c   # 北交所 920 新号段，必须在 9x 之前
-        if c.startswith(("5", "6", "9")): return "sh" + c
-        if c.startswith(("4", "8")):      return "bj" + c
-        return "sz" + c
     stock = json.load(open("cache/_成分股汇总.json", encoding="utf-8"))
     got = 0
     for i in range(0, len(codes), 50):
         batch = codes[i:i + 50]
-        url = "https://qt.gtimg.cn/q=" + ",".join(prefix(c) for c in batch)
+        url = "https://qt.gtimg.cn/q=" + ",".join(market_prefix(c) for c in batch)
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             data = urllib.request.urlopen(req, timeout=10).read().decode("gbk", errors="replace")

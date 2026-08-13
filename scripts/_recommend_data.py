@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """为红利成分股补充 行业(东财push2delay) / PE/PB/市值(腾讯批量) / 股息率(datacenter分红历史)"""
 import json, time, random, urllib.request
+from _common import market_prefix   # 唯一正确版本（92→bj 先于 9x）
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0",
       "Referer": "https://quote.eastmoney.com/"}
@@ -43,14 +44,10 @@ def fetch_industry(codes):
 
 def tencent_batch(codes):
     """腾讯批量：PE/PB/市值/涨跌幅（不封IP）"""
-    def prefix(c):
-        if c.startswith(("5","6","9")): return "sh"+c
-        if c.startswith("92") or c.startswith(("4","8")): return "bj"+c
-        return "sz"+c
     stock = json.load(open("cache/_成分股汇总.json", encoding="utf-8"))
     for i in range(0, len(codes), 50):
         batch = codes[i:i+50]
-        url = "https://qt.gtimg.cn/q=" + ",".join(prefix(c) for c in batch)
+        url = "https://qt.gtimg.cn/q=" + ",".join(market_prefix(c) for c in batch)
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             data = urllib.request.urlopen(req, timeout=10).read().decode("gbk", errors="replace")

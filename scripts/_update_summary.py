@@ -12,6 +12,7 @@
   · 连续8次失败自动中止（防IP被封后空等）
 """
 import json, os, sys, re, time, random, datetime, urllib.request
+from _common import market_prefix   # 唯一正确版本（92→bj 先于 9x）
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(BASE, "cache")
@@ -95,16 +96,11 @@ def fetch_industry(codes):
 
 # ── 3. 行情（腾讯批量，全量刷新，不封IP）───────────────────────────────
 def fetch_quotes(codes):
-    def prefix(c):
-        if c.startswith("92"):            return "bj" + c   # 北交所必须先于 9x
-        if c.startswith(("5", "6", "9")): return "sh" + c
-        if c.startswith(("4", "8")):      return "bj" + c
-        return "sz" + c
     stock = json.load(open(SUMMARY_JSON, encoding="utf-8"))
     got = 0
     for i in range(0, len(codes), 50):
         batch = codes[i:i + 50]
-        url = "https://qt.gtimg.cn/q=" + ",".join(prefix(c) for c in batch)
+        url = "https://qt.gtimg.cn/q=" + ",".join(market_prefix(c) for c in batch)
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             data = urllib.request.urlopen(req, timeout=10).read().decode("gbk", errors="replace")
