@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import market_prefix
+from _common import market_prefix, tencent_quotes
 from _classify import map_ind
 
 XLSX = os.path.join(BASE, "excel", "自选股清单.xlsx")   # 自选股清单（唯一事实来源）
@@ -130,34 +130,17 @@ def refresh_indicators_main():
     print(f"═══ 自选股清单指标刷新（{len(rows)} 只 · 腾讯批量 · 全量）═══")
 
     metrics, got, t0 = {}, 0, time.time()
-    for i in range(0, len(rows), 50):
-        batch = rows[i:i + 50]
-        url = "https://qt.gtimg.cn/q=" + ",".join(market_prefix(r["code"]) for r in batch)
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            data = urllib.request.urlopen(req, timeout=10).read().decode("gbk", errors="replace")
-            for line in data.strip().split(";"):
-                if '"' not in line:
-                    continue
-                key = line.split("=")[0].split("_")[-1]
-                v = line.split('"')[1].split("~")
-                if len(v) < 53:
-                    continue
-                code = key[2:]
-                price, pe, pb = float(v[3] or 0), float(v[39] or 0), float(v[46] or 0)
-                mcap = float(v[45] or 0)   # 腾讯总市值，单位已是亿元（招行 9785.30 = 9785 亿）
-                if not (mcap or pe or pb):
-                    continue   # 无行情（停牌/退市/代码错误）→ 不写缓存
-                metrics[code] = {"t_price": round(price, 2),
-                                 "t_pe": round(pe, 2) if pe else None,
-                                 "t_pb": round(pb, 2) if pb else None,
-                                 "t_mcap": round(mcap, 2) if mcap else None}
-                got += 1
-        except Exception as e:
-            print(f"  ❌ 批次 {i // 50 + 1} 失败: {repr(e)[:70]}")
-        time.sleep(0.3)
-        if (i // 50 + 1) % 20 == 0:
-            print(f"  进度 {min(i + 50, len(rows))}/{len(rows)}（命中 {got}） {time.time() - t0:.0f}s")
+    for code, v in tencent_quotes([r["code"] for r in rows]).items():
+        price, pe, pb = float(v[3] or 0), float(v[39] or 0), float(v[46] or 0)
+        mcap = float(v[45] or 0)   # 腾讯总市值，单位已是亿元（招行 9785.30 = 9785 亿）
+        if not (mcap or pe or pb):
+            continue   # 无行情（停牌/退市/代码错误）→ 不写缓存
+        metrics[code] = {"t_price": round(price, 2),
+                         "t_pe": round(pe, 2) if pe else None,
+                         "t_pb": round(pb, 2) if pb else None,
+                         "t_mcap": round(mcap, 2) if mcap else None}
+        got += 1
+    print(f"  腾讯批量行情完成，命中 {got}/{len(rows)}（{time.time() - t0:.0f}s）")
     tmp = METRICS_PATH + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fp:
         json.dump({"date": time.strftime("%Y-%m-%d"), "rows": metrics}, fp, ensure_ascii=False, indent=1)

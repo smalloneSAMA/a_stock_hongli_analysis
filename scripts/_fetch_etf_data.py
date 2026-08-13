@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """抓取候选红利ETF的规模/成交额/收益率(腾讯源,不封IP)"""
 import json, urllib.request, time, re
+from _common import tencent_quotes   # 腾讯批量行情（prefix 内部统一）
 
 UA = {"User-Agent": "Mozilla/5.0"}
 
@@ -38,21 +39,9 @@ ETFS = {
 }
 
 def tencent_quote(codes):
-    pref = []
-    for c in codes:
-        pref.append(("sh" if c.startswith(("5","6","9")) else "sz") + c)
-    url = "https://qt.gtimg.cn/q=" + ",".join(pref)
-    req = urllib.request.Request(url, headers=UA)
-    data = urllib.request.urlopen(req, timeout=10).read().decode("gbk")
     out = {}
-    for line in data.strip().split(";"):
-        if "=" not in line or '"' not in line:
-            continue
-        key = line.split("=")[0].split("_")[-1]
-        vals = line.split('"')[1].split("~")
-        if len(vals) < 53:
-            continue
-        code = key[2:]
+    for code, vals in tencent_quotes(codes).items():
+        # TODO(L2): v[44]/v[37] 字段语义未对照验证（股票口径 v[45]=市值亿/v[3]=价），保持原行为
         out[code] = {
             "name": vals[1], "price": float(vals[3] or 0),
             "mcap_yi": float(vals[44] or 0),        # ETF: 总市值≈基金规模(亿)

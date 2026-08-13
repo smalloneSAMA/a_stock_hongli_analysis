@@ -7,7 +7,7 @@
 用法: python _gen_components.py [--force]
 """
 import sys, io, os, json, re, time, glob, datetime, requests, pandas as pd, urllib.request
-from _common import market_prefix   # 唯一正确版本（92→bj 先于 9x）
+from _common import tencent_quotes   # 腾讯批量行情（批 50，prefix 内部统一）
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -121,21 +121,9 @@ def fetch_top10(code):
 # ── 5. 腾讯名称 ───────────────────────────────────────────────────
 def tencent_names(codes):
     out = {}
-    for i in range(0, len(codes), 60):
-        batch = codes[i:i+60]
-        url = "https://qt.gtimg.cn/q=" + ",".join(market_prefix(c) for c in batch)
-        req = urllib.request.Request(url, headers={"User-Agent": UA})
-        try:
-            resp = urllib.request.urlopen(req, timeout=10).read().decode("gbk", "ignore")
-            for line in resp.strip().split(";"):
-                if "=" not in line or '"' not in line:
-                    continue
-                key = line.split("=")[0].split("_")[-1]
-                vals = line.split('"')[1].split("~")
-                if len(vals) >= 2:
-                    out[key[2:]] = vals[1]
-        except Exception:
-            pass
+    for code, v in tencent_quotes(codes).items():   # 批大小统一 50（_common.TENCENT_BATCH）
+        if len(v) >= 2:
+            out[code] = v[1]
     return out
 
 # ── 6. 从旧md解析成分（下载失败时回退）────────────────────────────

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """为红利成分股补充 行业(东财push2delay) / PE/PB/市值(腾讯批量) / 股息率(datacenter分红历史)"""
 import json, time, random, urllib.request
-from _common import market_prefix, em_get   # 前缀路由（92→bj 先于 9x）+ 东财限流请求
+from _common import market_prefix, em_get, tencent_quotes   # 前缀路由 + 东财限流 + 腾讯批量
 
 def fetch_industry(codes):
     """东财 push2delay：行业 f127 + 价格 f43（限流 1s）"""
@@ -31,27 +31,13 @@ def fetch_industry(codes):
 def tencent_batch(codes):
     """腾讯批量：PE/PB/市值/涨跌幅（不封IP）"""
     stock = json.load(open("cache/_成分股汇总.json", encoding="utf-8"))
-    for i in range(0, len(codes), 50):
-        batch = codes[i:i+50]
-        url = "https://qt.gtimg.cn/q=" + ",".join(market_prefix(c) for c in batch)
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            data = urllib.request.urlopen(req, timeout=10).read().decode("gbk", errors="replace")
-            for line in data.strip().split(";"):
-                if '"' not in line: continue
-                key = line.split("=")[0].split("_")[-1]
-                v = line.split('"')[1].split("~")
-                if len(v) < 53: continue
-                code = key[2:]
-                if code in stock:
-                    stock[code]["t_price"] = float(v[3] or 0)
-                    stock[code]["t_pe"] = float(v[39] or 0)
-                    stock[code]["t_pb"] = float(v[46] or 0)
-                    stock[code]["t_mcap"] = float(v[45] or 0)
-                    stock[code]["change_pct"] = float(v[32] or 0)
-        except Exception as e:
-            print("  腾讯批次失败:", e)
-        time.sleep(0.3)
+    for code, v in tencent_quotes(codes).items():
+        if code in stock:
+            stock[code]["t_price"] = float(v[3] or 0)
+            stock[code]["t_pe"] = float(v[39] or 0)
+            stock[code]["t_pb"] = float(v[46] or 0)
+            stock[code]["t_mcap"] = float(v[45] or 0)
+            stock[code]["change_pct"] = float(v[32] or 0)
     json.dump(stock, open("cache/_成分股汇总.json", "w", encoding="utf-8"), ensure_ascii=False)
     print("腾讯验证完成")
 
