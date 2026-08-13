@@ -262,9 +262,9 @@ export default {
           { key: 'fav', label: '★', align: 'center', sortable: false, filter: false, fmt: (_v, row) => favStar(row.code) },
           { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
           { key: 'name', label: '名称', align: 'left', sortable: true,
-            fmt: (v, row) => el('a', { href: '#', onclick: (e) => { e.preventDefault(); goTicker(row); }, class: 'jump-link', title: '查看历史K线（' + row.type + '）' }, v) },
-          { key: 'type', label: '类型', sortable: true, filter: false },
-          { key: 'group', label: '分组', sortable: true, filter: false },
+            fmt: (v, row) => el('div', {},
+              el('a', { href: '#', onclick: (e) => { e.preventDefault(); goTicker(row); }, class: 'jump-link', title: '查看历史K线（' + row.type + '）' }, v),
+              el('div', { class: 'rec-sub' }, row.type + (row.group ? ' · ' + row.group : ''))) },
           { key: 's', label: '推荐分', sortable: true,
             fmt: (v, row) => {
               const d = perfect ? deltaMean(row.code) : whyDelta(row.code, preset);
@@ -284,10 +284,11 @@ export default {
               ? el('span', { class: 'band-pill band-perfect', title: '稳健/均衡/进取三档均 ≥75 的共识标的' }, '完美')
               : el('span', { class: 'band-pill ' + bandCls(bandOf(row.s)) }, bandOf(row.s)) },
           { key: 'dy', label: '股息率(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
-          { key: 'pct', label: 'dy分位', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), color: (v) => (v >= 90 ? 'up' : v <= 10 ? 'down' : '') },
-          { key: 'crossPct', label: '绝对分位', sortable: true, filter: false,
-            fmt: (v) => (v == null ? '—' : el('span', { title: '候选池内当前股息率排名分位（高=股息率高），不受全市场估值水平影响' }, fmt2(v))),
-            color: (v) => (v >= 90 ? 'up' : '') },
+          { key: 'pct', label: 'dy分位', sortable: true,
+            fmt: (v, row) => el('div', {},
+              el('span', {}, v == null ? '—' : fmt2(v)),
+              el('span', { class: 'rec-sub' }, '横 ' + (row.crossPct == null ? '—' : fmt2(row.crossPct)))),
+            color: (v) => (v >= 90 ? 'up' : v <= 10 ? 'down' : '') },
           { key: 'trig', label: '状态', sortable: false, filter: false,
             fmt: (_v, row) => (row.pct >= 90 ? el('span', { class: 'trig-badge' }, '触发中')
               : row.pct <= 10 ? el('span', { class: 'trig-badge sell' }, '卖出区')
@@ -298,14 +299,21 @@ export default {
           { key: 'pr', label: 'PR市赚率', sortable: true, filter: false,
             fmt: (v) => (v == null ? '—' : el('span', { title: 'PE-TTM ÷ 近5年TTM年化ROE；<1 低估、≈1 合理、>1 高估；仅股票（指数/ETF 无财报）' }, fmt2(v))),
             color: (v) => (v != null && v < 0.7 ? 'up' : v != null && v > 1.5 ? 'down' : '') },
-          { key: 'win6', label: '胜率6M(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
-          { key: 'win12', label: '胜率12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
+          { key: 'win6', label: '胜率', sortable: true,
+            fmt: (v, row) => el('div', {},
+              el('span', {}, v == null ? '—' : fmt2(v)),
+              el('span', { class: 'rec-sub' }, '12M ' + (row.win12 == null ? '—' : fmt2(row.win12)))) },
           { key: 'base12', label: '基准12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },
-          { key: 'ex6', label: '超额6M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },
-          { key: 'ex12', label: '超额12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },
+          { key: 'ex6', label: '超额', sortable: true,
+            fmt: (v, row) => el('div', {},
+              el('span', {}, v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)),
+              el('span', { class: 'rec-sub' }, '12M ' + (row.ex12 == null ? '—' : (row.ex12 >= 0 ? '+' : '') + fmt2(row.ex12)))),
+            color: (v) => dirOf(v) },
           { key: 'n_buy', label: '信号数', sortable: true, filter: false },
-          { key: 'close', label: '现价', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
-          { key: 'anchor', label: '买锚', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), filter: false },
+          { key: 'close', label: '现价', sortable: true,
+            fmt: (v, row) => el('div', {},
+              el('span', {}, v == null ? '—' : fmt2(v)),
+              el('span', { class: 'rec-sub' }, '买 ' + (row.anchor == null ? '—' : fmt2(row.anchor)))) },
         ];
         renderTable(tableBox.querySelector('.table-wrap'), { columns: cols, rows, pageSize: 50 });
       };
