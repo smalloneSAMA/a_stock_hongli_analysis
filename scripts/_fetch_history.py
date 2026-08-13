@@ -56,11 +56,13 @@ def cache_path(typ, code):
     return os.path.join(CACHE_DIR, f"{typ}_{code}.json")
 
 def load_cache(typ, code):
+    """读缓存 JSON；不存在/损坏（JSONDecodeError）返回 None → 调用方触发全量重拉（损坏自愈，P2）"""
     p = cache_path(typ, code)
-    if os.path.exists(p):
+    try:
         with open(p, encoding="utf-8") as f:
             return json.load(f)
-    return None
+    except (OSError, ValueError):
+        return None
 
 def save_cache(typ, code, obj):
     p = cache_path(typ, code)

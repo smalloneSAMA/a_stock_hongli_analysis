@@ -13,6 +13,7 @@
 """
 import sys, io, os, json, re, time, datetime
 import requests
+from _common import atomic_load, atomic_dump   # 原子读写（损坏自愈，P2）
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -87,17 +88,18 @@ def ttm_dy(code, divs, price):
 
 
 def load_pool():
-    p = os.path.join(BASE, "cache", "_成分股汇总.json")
-    if os.path.exists(p):
-        return json.load(open(p, encoding="utf-8"))
-    return {}
+    """精选池汇总缓存（损坏/缺失返回 {}，不崩溃）"""
+    return atomic_load(os.path.join(BASE, "cache", "_成分股汇总.json")) or {}
 
 
 def main():
     pool = load_pool()
     off_path = os.path.join(BASE, "cache", "成分_980092.json")
-    off = json.load(open(off_path, encoding="utf-8"))
-    off_top = {(s["code"]): s for s in off.get("top10", [])}
+    off = atomic_load(off_path) or {}
+    if not off.get("top10"):
+        print("  ❌ 缺少/损坏 cache/成分_980092.json（先运行 _fetch_cnindex_components.py），无法验证跟踪关系，中止")
+        return
+    off_top = {(s["code"]): s for s in off["top10"]}
     off_codes = set(off_top)
 
     print("═══ 自由现金流ETF季报持仓（980092 股息率估算）═══")
@@ -126,8 +128,7 @@ def main():
             out_rows.append({"code": c, "name": n, "pct": pct, "dy": dy, "dy_src": src})
         holds[code] = {"report_date": date, "rows": out_rows}
         os.makedirs(os.path.join(BASE, "cache"), exist_ok=True)
-        json.dump(holds[code], open(os.path.join(BASE, "cache", f"ETF持仓_{code}.json"), "w", encoding="utf-8"),
-                  ensure_ascii=False)
+        atomic_dump(os.path.join(BASE, "cache", f"ETF持仓_{code}.json"), holds[code], indent=None)
         time.sleep(0.3)
 
     # 980092 加权股息率估算：取跟踪980092的ETF持仓（前十大占比加权）
@@ -146,8 +147,7 @@ def main():
     dys = [d for _, d in est["parts"] if d]
     if dys:
         est["dy0"] = round(sum(dys) / len(dys), 4)
-    json.dump(est, open(os.path.join(BASE, "cache", "成分_980092_股息率.json"), "w", encoding="utf-8"),
-              ensure_ascii=False)
+    atomic_dump(os.path.join(BASE, "cache", "成分_980092_股息率.json"), est, indent=None)
     print(f"\n980092 股息率估算 dy0 = {est['dy0']}%（{est['etfs']}）")
     if est["dy0"]:
         print("  → 供 _gen_analysis 使用：980092/159229 将接入买卖区间分析")

@@ -21,6 +21,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _recommend_stocks as rs   # 复用硬过滤/因子映射/约束（仅借用 QUADRANT/WEIGHTS 常量）
 import _fetch_stock_data as fsd
+from _common import atomic_dump   # 原子写（tmp+replace）
 
 WINDOW = 1250          # dy 滚动分位窗口（5年交易日）
 DY_MIN = 3.0           # 与推荐评分一致
@@ -452,8 +453,7 @@ def main(start=None):
            "periods": rows_out,
            "stats": {"top20": st_q, "idx": st_idx, "fallback": st_fb, "pool": st_pool},
            "wins": wins, "n_periods": n_periods}
-    with open(os.path.join(BASE, "web", "data", "portfolio_backtest.json"), "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, indent=1)
+    atomic_dump(os.path.join(BASE, "web", "data", "portfolio_backtest.json"), out)
     print("\n✅ docs/组合回测报告.md + web/data/portfolio_backtest.json 已生成")
 
 

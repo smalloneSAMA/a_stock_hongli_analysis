@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """修复腾讯prefix路由bug(92开头北交所) + 全量289只拉分红历史算股息率 + 写回缓存"""
 import json, sys, time, random, urllib.request, datetime
-from _common import market_prefix, em_get, tencent_quotes   # 前缀路由 + 东财限流 + 腾讯批量
+from _common import market_prefix, em_get, tencent_quotes, atomic_dump   # 前缀路由 + 东财限流 + 腾讯批量 + 原子写
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -17,7 +17,7 @@ def tencent_batch(codes):
             stock[code]["t_mcap"] = float(v[45] or 0)
             stock[code]["change_pct"] = float(v[32] or 0)
             got += 1
-    json.dump(stock, open("cache/_成分股汇总.json", "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump("cache/_成分股汇总.json", stock, indent=None)
     print(f"腾讯行情更新完成，命中 {got}/{len(codes)}")
 
 def backfill_bj(codes):
@@ -36,7 +36,7 @@ def backfill_bj(codes):
         except Exception as e:
             print(f"  北交所 {c} 补数失败: {e}")
         time.sleep(0.5)
-    json.dump(stock, open("cache/_成分股汇总.json", "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump("cache/_成分股汇总.json", stock, indent=None)
 
 def fetch_all_dividend(codes):
     """全量 289 只分红历史 → 近12个月股息率，写回缓存"""
@@ -74,7 +74,7 @@ def fetch_all_dividend(codes):
             stock[c]["div_rec"] = []
         if (i + 1) % 30 == 0:
             print(f"  分红进度 {i+1}/{len(codes)}")
-    json.dump(stock, open("cache/_成分股汇总.json", "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump("cache/_成分股汇总.json", stock, indent=None)
     print("全量股息率计算完成")
 
 if __name__ == "__main__":

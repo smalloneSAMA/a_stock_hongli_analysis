@@ -7,7 +7,7 @@
 用法: python _gen_components.py [--force]
 """
 import sys, io, os, json, re, time, glob, datetime, requests, pandas as pd, urllib.request
-from _common import tencent_quotes   # 腾讯批量行情（批 50，prefix 内部统一）
+from _common import tencent_quotes, atomic_load   # 腾讯批量行情（批 50）+ 原子读（损坏兜底）
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -175,15 +175,19 @@ def build():
     print("═══ 步骤2/3：980092（国证缓存）/ 000151（东财）═══")
     # 980092：国证官网样本详情接口缓存（_fetch_cnindex_components.py 生成）
     cc_path = os.path.join(BASE, "cache", "成分_980092.json")
-    if os.path.exists(cc_path):
-        cc = json.load(open(cc_path, encoding="utf-8"))
-        stocks = {x["code"]: {"name": x["name"], "weight": x.get("weight")} for x in cc.get("stocks", [])}
+    cc = atomic_load(cc_path) or {}
+    if cc.get("stocks"):
+        stocks = {x["code"]: {"name": x["name"], "weight": x.get("weight")} for x in cc["stocks"]}
         idx["980092"] = {"name": INDEX_META["980092"][0], "desc": INDEX_META["980092"][1],
                          "date_cons": cc.get("sample_date", ""), "date_weight": "前十大公开",
                          "stocks": stocks, "fallback": False}
         print(f"  980092 国证自由现金流: {len(stocks)}只 (国证官网，样本 {cc.get('sample_date', '')})")
     else:
-        print("  ⚠️ 980092: 缺少 cache/成分_980092.json，请先运行 _fetch_cnindex_components.py")
+        # 缺失/损坏兜底：写入空成分条目，避免后续 idx[code] 遍历 KeyError（P2 兜底）
+        idx["980092"] = {"name": INDEX_META["980092"][0], "desc": INDEX_META["980092"][1],
+                         "date_cons": "缺失", "date_weight": "", "stocks": {}, "fallback": True}
+        print("  ⚠️ 980092: 缺少/损坏 cache/成分_980092.json（请先运行 _fetch_cnindex_components.py）"
+              "——已写入空成分兜底，md 生成不中断")
     # 000151：东财成分表
     for code in ["000151"]:
         members = fetch_em_members(code)

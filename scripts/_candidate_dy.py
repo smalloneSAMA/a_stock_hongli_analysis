@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """候选池股息率计算：对候选股票拉取分红历史，计算近12个月每股派息/现价"""
 import json, sys, time, random, urllib.request, os
-from _common import em_get   # 东财限流请求（1s/请求防封，全局限流）
+from _common import em_get, atomic_dump   # 东财限流请求 + 原子写
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -94,7 +94,7 @@ def main():
         })
         if (i + 1) % 10 == 0:
             print(f"  进度 {i+1}/{len(CANDIDATES)}")
-    json.dump(out, open("cache/_候选股息率.json", "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump("cache/_候选股息率.json", out, indent=None)
     print("\n候选股息率:")
     for r in sorted(out, key=lambda x: -(x["div_yield"] or 0)):
         print(f"  {r['code']} {r['name']:<8} {r['ind']:<6} 股息率={r['div_yield']}% PE={r['pe']} PB={r['pb']} 市值={r['mcap']:.0f}亿 分红={r['div_rec'][:3]}")

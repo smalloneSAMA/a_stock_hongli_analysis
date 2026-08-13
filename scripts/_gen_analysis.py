@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
+from _common import atomic_dump   # 原子写（tmp+replace）
 
 WINDOW = 1250   # 近5年交易日
 
@@ -211,7 +212,7 @@ def build_factors():
         rows_out.append((code, info["name"], typ, scores))
     out["date"] = max((info["series"][-1][0] for info in dy_data.values() if info.get("series")), default="")
     path = os.path.join(BASE, "web", "data", "analysis.json")
-    json.dump(out, open(path, "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump(path, out, indent=None)
 
     # 控制台表：三档分数 + 均衡档区间 + 点位锚
     print(f"\n═══ S4/S5 因子打分 + 点位锚（数据日期 {out['date']}）═══")
@@ -458,8 +459,7 @@ def main(only=None):
     print(f"\n自检：反推末值=dy0 一致（{len(out)-len(bad)}/{len(out)} 标的）" + (f"，异常: {bad}" if bad else ""))
 
     os.makedirs(os.path.join(BASE, "cache"), exist_ok=True)
-    json.dump(out, open(os.path.join(BASE, "cache", "analysis_dy.json"), "w", encoding="utf-8"),
-              ensure_ascii=False)
+    atomic_dump(os.path.join(BASE, "cache", "analysis_dy.json"), out, indent=None)
     print(f"\n✅ cache/analysis_dy.json 已生成（{len(out)} 标的）")
 
     # S3：因子打分（全量）

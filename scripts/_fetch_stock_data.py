@@ -114,7 +114,7 @@ def update_dividends(refresh=False, codes=None):
     print(f"── 全量分红历史（东财，1s/只，{len(lst)} 只）──")
     for code in lst:
         name = names.get(code, code)
-        if not refresh and os.path.exists(fh.cache_path("分红", code)):
+        if not refresh and fh.load_cache("分红", code) is not None:
             print(f"  [{code} {name}] 分红缓存已存在，跳过")
             continue
         try:
@@ -214,7 +214,7 @@ def update_share_hist(refresh=False, codes=None):
     print(f"── 股本变动历史（东财 EH_EQUITY，1s/只，{len(lst)} 只）──")
     for code in lst:
         name = names.get(code, code)
-        if not refresh and os.path.exists(fh.cache_path("股本", code)):
+        if not refresh and fh.load_cache("股本", code) is not None:
             print(f"  [{code} {name}] 股本缓存已存在，跳过")
             continue
         try:

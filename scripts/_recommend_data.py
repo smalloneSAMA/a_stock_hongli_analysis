@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """为红利成分股补充 行业(东财push2delay) / PE/PB/市值(腾讯批量) / 股息率(datacenter分红历史)"""
 import json, time, random, urllib.request
-from _common import market_prefix, em_get, tencent_quotes   # 前缀路由 + 东财限流 + 腾讯批量
+from _common import market_prefix, em_get, tencent_quotes, atomic_dump   # 前缀路由 + 东财限流 + 腾讯批量 + 原子写
 
 def fetch_industry(codes):
     """东财 push2delay：行业 f127 + 价格 f43（限流 1s）"""
@@ -26,7 +26,7 @@ def fetch_industry(codes):
         if (i + 1) % 30 == 0:
             print(f"  进度 {i+1}/{len(todo)}，成功 {ok}")
     print("行业完成，成功", ok)
-    json.dump(stock, open("cache/_成分股汇总.json", "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump("cache/_成分股汇总.json", stock, indent=None)
 
 def tencent_batch(codes):
     """腾讯批量：PE/PB/市值/涨跌幅（不封IP）"""
@@ -38,7 +38,7 @@ def tencent_batch(codes):
             stock[code]["t_pb"] = float(v[46] or 0)
             stock[code]["t_mcap"] = float(v[45] or 0)
             stock[code]["change_pct"] = float(v[32] or 0)
-    json.dump(stock, open("cache/_成分股汇总.json", "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump("cache/_成分股汇总.json", stock, indent=None)
     print("腾讯验证完成")
 
 def dividend_yield(codes):
@@ -76,7 +76,7 @@ def dividend_yield(codes):
             print(f"  [{i}] {c} 失败: {type(e).__name__} {str(e)[:50]}")
         if (i + 1) % 10 == 0:
             print(f"  分红进度 {i+1}/{len(codes)}")
-    json.dump(stock, open("cache/_成分股汇总.json", "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump("cache/_成分股汇总.json", stock, indent=None)
     print("股息率计算完成")
 
 if __name__ == "__main__":

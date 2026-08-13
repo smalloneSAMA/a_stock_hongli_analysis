@@ -19,6 +19,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
 import _fetch_stock_data as fsd
+from _common import atomic_dump   # 原子写（tmp+replace）
 
 WINDOW = 1250                       # 5年交易日滚动窗口
 HORIZONS = (21, 63, 126, 252)       # 1/3/6/12 个月（交易日）
@@ -294,7 +295,7 @@ def main(only=None, p_buy=None):
     bt = {"date": str(datetime.date.today()), "order": list(order), "scope": scope,
           "by_p": by_p, "summary": summary}
     os.makedirs(os.path.join(BASE, "web", "data"), exist_ok=True)
-    json.dump(bt, open(os.path.join(BASE, "web", "data", "backtest.json"), "w", encoding="utf-8"), ensure_ascii=False)
+    atomic_dump(os.path.join(BASE, "web", "data", "backtest.json"), bt, indent=None)
     print("✅ web/data/backtest.json 已生成（前端回测报告页）")
 
     # 复盘：000922 最近 4 笔交易（p90）
