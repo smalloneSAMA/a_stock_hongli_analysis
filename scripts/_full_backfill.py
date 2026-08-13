@@ -1,21 +1,9 @@
 # -*- coding: utf-8 -*-
 """修复腾讯prefix路由bug(92开头北交所) + 全量289只拉分红历史算股息率 + 写回缓存"""
 import json, sys, time, random, urllib.request, datetime
-from _common import market_prefix   # 唯一正确版本（92→bj 先于 9x）
+from _common import market_prefix, em_get   # 前缀路由（92→bj 先于 9x）+ 东财限流请求
 
 sys.stdout.reconfigure(encoding="utf-8")
-UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0"}
-_last = [0.0]
-
-def em_get(url, timeout=12):
-    wait = 1.0 - (time.time() - _last[0])
-    if wait > 0:
-        time.sleep(wait + random.uniform(0.1, 0.4))
-    req = urllib.request.Request(url, headers=UA)
-    try:
-        return urllib.request.urlopen(req, timeout=timeout).read().decode()
-    finally:
-        _last[0] = time.time()
 
 def tencent_batch(codes):
     """腾讯批量行情。⚠️ 92开头(北交所)必须先于 9x(沪) 判断，否则路由到 sh920xxx 返回空"""

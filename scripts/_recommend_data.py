@@ -1,21 +1,7 @@
 # -*- coding: utf-8 -*-
 """为红利成分股补充 行业(东财push2delay) / PE/PB/市值(腾讯批量) / 股息率(datacenter分红历史)"""
 import json, time, random, urllib.request
-from _common import market_prefix   # 唯一正确版本（92→bj 先于 9x）
-
-UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0",
-      "Referer": "https://quote.eastmoney.com/"}
-
-_last = [0.0]
-def em_get(url, timeout=12):
-    wait = 1.0 - (time.time() - _last[0])
-    if wait > 0:
-        time.sleep(wait + random.uniform(0.1, 0.4))
-    req = urllib.request.Request(url, headers=UA)
-    try:
-        return urllib.request.urlopen(req, timeout=timeout).read().decode()
-    finally:
-        _last[0] = time.time()
+from _common import market_prefix, em_get   # 前缀路由（92→bj 先于 9x）+ 东财限流请求
 
 def fetch_industry(codes):
     """东财 push2delay：行业 f127 + 价格 f43（限流 1s）"""

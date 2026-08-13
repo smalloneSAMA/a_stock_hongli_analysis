@@ -12,7 +12,7 @@
   · 连续8次失败自动中止（防IP被封后空等）
 """
 import json, os, sys, re, time, random, datetime, urllib.request
-from _common import market_prefix   # 唯一正确版本（92→bj 先于 9x）
+from _common import market_prefix, em_get   # 前缀路由（92→bj 先于 9x）+ 东财限流请求
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(BASE, "cache")
@@ -33,20 +33,7 @@ FINAL20 = ["600036", "601838", "601088", "601225", "600938", "601857", "600350",
            "600900", "600795", "000858", "000895", "000651", "000333", "000423", "600566",
            "600019", "601668", "600582", "600757"]
 
-UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0",
-      "Referer": "https://quote.eastmoney.com/"}
-_last = [0.0]
 FAIL_LIMIT = 8          # 连续失败上限
-
-def em_get(url, timeout=8):
-    wait = 1.0 - (time.time() - _last[0])
-    if wait > 0:
-        time.sleep(wait + random.uniform(0.1, 0.4))
-    req = urllib.request.Request(url, headers=UA)
-    try:
-        return urllib.request.urlopen(req, timeout=timeout).read().decode()
-    finally:
-        _last[0] = time.time()
 
 # ── 1. 解析成分股md → 基础缓存（name/w/n）────────────────────────────
 def parse_components():

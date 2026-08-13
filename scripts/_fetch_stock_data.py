@@ -25,6 +25,7 @@ if __name__ == "__main__":
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
+from _common import em_get   # 东财限流请求（1s/请求防封，全局限流）
 
 # ── 推荐股清单（动态：读 cache/_推荐20.json 评分产物；缺失时回退硬编码清单）──
 # 推荐清单由 scripts/_recommend_stocks.py 生成（量化评分）；此清单同时驱动 manifest rec 标记、
@@ -86,18 +87,7 @@ def refresh_stocks():
 START = "2004-01-01"  # 最早时间上限
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
 
-# ── 东财限流请求（分红接口用，1s/请求防封）──────────────────────────
-_last = [0.0]
-def em_get(url, timeout=12):
-    wait = 1.0 - (time.time() - _last[0])
-    if wait > 0:
-        time.sleep(wait + random.uniform(0.1, 0.4))
-    req = urllib.request.Request(url, headers={
-        "User-Agent": UA, "Referer": "https://quote.eastmoney.com/"})
-    try:
-        return urllib.request.urlopen(req, timeout=timeout).read().decode()
-    finally:
-        _last[0] = time.time()
+# 东财限流请求统一走 _common.em_get（1s/请求防封，全局限流）
 
 # ── 全量分红历史（东财 RPT_SHAREBONUS_DET，每10股税前派息）──────────
 def fetch_dividend(code):
