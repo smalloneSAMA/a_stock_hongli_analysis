@@ -307,6 +307,8 @@ export default {
           { key: 'close', label: '现价', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
           { key: 'anchor', label: '买锚', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), filter: false },
         ];
+        /* 全部列居中（含代码/名称，视觉整齐；名称副行同步居中） */
+        for (const c of cols) c.align = c.align === 'left' ? 'center' : (c.align || 'center');
         renderTable(tableBox.querySelector('.table-wrap'), { columns: cols, rows, pageSize: 50 });
       };
 
