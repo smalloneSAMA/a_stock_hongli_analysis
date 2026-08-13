@@ -69,15 +69,28 @@ def build_manifest():
             chg = round((last["close"] - rows[-2]["close"]) / rows[-2]["close"] * 100, 2)
         return last.get("close"), chg
 
+    def calc_dd2y(rows, win=504, min_rows=200):
+        """距2年高点回撤：最新收盘 vs 窗口内最高收盘（供智能推荐 2Y回撤 列）。
+        返回 (dd2y%, hi2y, hi2y_date)；数据不足 → (None, None, None) 前端显示 —"""
+        closes = [(r["date"], r.get("close")) for r in rows if r.get("close") is not None]
+        if len(closes) < min_rows:
+            return None, None, None
+        hi_d, hi_p = max(closes[-win:], key=lambda x: x[1])
+        if not hi_p:
+            return None, None, None
+        return round((closes[-1][1] / hi_p - 1) * 100, 2), hi_p, hi_d
+
     for code, name, src, tcode in fh.INDICES:
         c = fh.load_cache("指数", code)
         rows = (c or {}).get("rows", [])
         vdiv, adiv = IDX_DIV[src]
         close, chg = quote_of(rows)
+        dd2y, hi2y, hi2y_date = calc_dd2y(rows)
         indices.append({"code": code, "name": name, "source": src,
                         "vdiv": vdiv, "adiv": adiv,
                         "last": last_date(rows), "n": len(rows),
-                        "last_close": close, "last_chg": chg})
+                        "last_close": close, "last_chg": chg,
+                        "dd2y": dd2y, "hi2y": hi2y, "hi2y_date": hi2y_date})
         if rows:
             dates.append(rows[-1]["date"])
         else:
@@ -112,9 +125,11 @@ def build_manifest():
                     nav_chg = round((nav - r["nav"]) / r["nav"] * 100, 2)
             if nav is not None and nav_chg is not None:
                 break
+        dd2y, hi2y, hi2y_date = calc_dd2y(rows)
         etfs.append({"code": code, "name": name, "last": last_date(rows), "n": len(rows),
                      "last_close": close, "last_chg": chg, "last_nav": nav, "last_acc": acc,
-                     "last_nav_chg": nav_chg, "scale": scale_map.get(code)})
+                     "last_nav_chg": nav_chg, "scale": scale_map.get(code),
+                     "dd2y": dd2y, "hi2y": hi2y, "hi2y_date": hi2y_date})
 
     # 股票池 = 推荐20 + 其他成份股（精选池 289 − 推荐，来自汇总表）+ 自选股清单（xlsx 现读）；含未拉取 K 线的占位
     rec_set = {c for c, _, _ in fsd.STOCKS}
@@ -141,8 +156,10 @@ def build_manifest():
                 print(f"  股票 {code} {name}: 补估算成交额 {n} 行并写回缓存")
             dates.append(rows[-1]["date"])
         close, chg = quote_of(rows)
+        dd2y, hi2y, hi2y_date = calc_dd2y(rows)
         s = {"code": code, "name": name, "last": last_date(rows), "n": len(rows),
              "last_close": close, "last_chg": chg,
+             "dd2y": dd2y, "hi2y": hi2y, "hi2y_date": hi2y_date,
              "rec": code in rec_set, "watch": code in watch_set, "ready": bool(rows)}
         if code in watch_seq:
             s["seq"] = watch_seq[code]

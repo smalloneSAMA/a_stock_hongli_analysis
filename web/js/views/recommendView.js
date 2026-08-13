@@ -35,7 +35,9 @@ export default {
       const byCode = an.by_code || {};
       const btMap = new Map((bt.by_p['90'] || []).map((x) => [x.code, x]));
       const meta = {};
-      for (const s of (m.stocks || [])) meta[s.code] = s;
+      for (const s of (m.indices || [])) meta[s.code] = s;   // 指数/ETF 也有 dd2y/hi2y（2Y回撤列）
+      for (const s of (m.etfs || [])) meta[s.code] = s;
+      for (const s of (m.stocks || [])) meta[s.code] = s;   // stocks 字段最全，最后写防覆盖
 
       /* 分组判定（推荐优先于自选，与信号扫描/回测一致） */
       const groupOf = (code, type) => {
@@ -76,6 +78,7 @@ export default {
         const ent = byCode[code] || {};
         all.push({ code, name: d.name || code, type, group: groupOf(code, type),
           dy: d.dy_now, pct: d.dy_pct, close: d.close_now,
+          dd2y: meta[code]?.dd2y ?? null, hi2y: meta[code]?.hi2y ?? null, hi2y_date: meta[code]?.hi2y_date ?? null,
           anchor: (ent.anchors && ent.anchors.buy) ?? null,
           pr: (type === '股票' ? (meta[code]?.last_pr ?? null) : null),   // 市赚率PR（仅股票，指数/ETF 无财报）
           ...b });
@@ -305,6 +308,12 @@ export default {
           { key: 'ex12', label: '超额12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },
           { key: 'n_buy', label: '信号数', sortable: true, filter: false },
           { key: 'close', label: '现价', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
+          { key: 'dd2y', label: '2Y回撤', sortable: true,
+            fmt: (v, row) => (v == null ? '—' : el('span', {
+              class: v <= -30 ? 'dd-deep' : '',
+              title: `距近2年最高收盘价回撤 ${fmt2(v)}%（现价 ${fmt2(row.close)} vs 高点 ${fmt2(row.hi2y)}，${row.hi2y_date || '—'}）；≤-30%为深回撤区（高亮），不进推荐分，仅作仓位/优先级参考` },
+              fmt2(v) + '%')),
+            color: (v) => (v != null && v <= -30 ? 'down' : '') },
           { key: 'anchor', label: '买锚', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), filter: false },
         ];
         /* 全部列居中（含代码/名称，视觉整齐；名称副行同步居中） */
