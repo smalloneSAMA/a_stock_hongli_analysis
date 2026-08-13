@@ -31,6 +31,7 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 
 - **红涨绿跌**（A股习惯）：CSS 变量 `--up/--down`；K线颜色、涨跌% 全部遵守，勿按国际习惯反转
 - **腾讯批量接口** `qt.gtimg.cn`：`v[45]` 总市值**已是亿元**（勿再除 1e8，曾致全为 0）；`v[39]`=PE(TTM)、`v[46]`=PB；北交所前缀 `bj`；50只/批防封
+- **公共模块单一来源**：`scripts/_common.py` 是 行情批量(tencent_quotes)/前缀路由(market_prefix)/东财限流(em_get)/原子读写(atomic_dump|atomic_load)/Excel导出(export_workbook) 的唯一实现；**新脚本必须 `from _common import`，禁止本地复制**（曾 6 份 prefix 拷贝 3 种顺序致北交所 92 号段失效、两套 Excel 单位口径，困难总结143）
 - **写用户维护的 Excel**（excel/ 自选股清单.xlsx 等）：先探测第1行表头→同名列原位覆盖（幂等）→否则**追加末尾新列**；**绝不用固定列号覆盖**（曾覆盖用户 E/F/G 列事故，困难总结133）
 - 回测口径：超额 = 信号组均值 − 同区间每日买入基准均值（百分点差）；基准可为负，超额正=少亏也赢；报告含 基准6M/基准12M 列与分组基准12M
 - 均线系统：**默认全关**，开关=主图图例点击（无按钮）；四色 金MA5/青MA20/紫MA60/蓝MA250；`maCache` 预计算，tooltip 固定行（null 显示 —）
@@ -53,6 +54,7 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 | 文件 | 职责 |
 |---|---|
 | update.py | 数据更新总入口（交互菜单+快捷命令） |
+| _common.py | ★ 公共工具单一来源：market_prefix(92→bj先于9x)/tencent_quotes(50只批)/em_get(东财限流)/atomic_dump|atomic_load/export_workbook——新脚本必须 import 禁止复制 |
 | serve.py | 本地静态服务（项目根启动，no-cache） |
 | _fetch_history.py | 指数/ETF 历史行情（增量拉取，INDICES/ETFS 常量在此） |
 | _fetch_stock_data.py | 推荐20股票日线（不复权 2004 起） |
@@ -72,6 +74,7 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 ## 7. 验证流程（改代码后必做）
 
 - **Python 脚本**：直接运行对应命令，检查 cache/ 与 web/data/ 产物字段/数值合理性
+- **测试断言关系化**：池规模/标的数类断言一律写关系式（全池有数据、产物池一致、分组对账），**禁止硬编码数字**（380/294 已废除，困难总结 #136/#146）；数值快照（T4.5/T7）随行情漂移属已知现象，CI 用 --no-snapshot
 - **前端语法**：所有改动 JS 转 `.mjs` 后 `node --check`
 - **前端行为**：真实浏览器验证用 **playwright-core + 系统 Edge headless**（`executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'`）打开 `http://localhost:8000/web/#/视图`，用 `echarts.getInstanceByDom(document.querySelector('.chart')).getOption()` 探测 legend/series/selected（模型无法直接查看截图，此路径为唯一可靠验证；CloakBrowser Chromium 下载被网络阻断不可用）
 - 回测 T7 快照随行情更新会漂移（因子微变），属正常非回归，同步刷新并注释即可
@@ -80,5 +83,5 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 
 - **"先不改代码"模式**：复杂需求（口径设计、方案取舍、UI 交互）先给方案/分析，用户明确确认后才编码
 - git 提交：**中文主题 + 要点分列**（每条含根因/修复/验证），如 `修复指数板块 MA60/MA250 图例丢失：...`
-- **困难总结.md 持续追加编号清单**（当前到 ~134），新坑必记：现象/根因/修复/教训
+- **困难总结.md 持续追加编号清单**（当前到 147），新坑必记：现象/根因/修复/教训
 - 前端文件用 ESM；Python 用 UTF-8 + `# -*- coding: utf-8 -*-` 头部

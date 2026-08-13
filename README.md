@@ -11,6 +11,7 @@ a_stock_hongli_analysis/
 ├── 困难总结.md              # 项目过程困难与经验记录
 ├── update.py                # ★ 数据更新入口（交互式菜单）
 ├── scripts/                 # 全部脚本
+│   ├── _common.py           # ★ 公共工具单一来源：行情批量/前缀路由/东财限流/原子读写/Excel导出
 │   ├── _fetch_history.py    # 历史行情拉取（指数K线/ETF K线+净值，支持增量）
 │   ├── _fetch_stock_data.py # 推荐20只股票历史日线（不复权，2004-01-01起；推荐清单动态读评分产物）
 │   ├── _fetch_pool_data.py  # 其他成份股（精选池−推荐20）K线增量 + 分红/财报/股本 + check-fin
@@ -21,7 +22,7 @@ a_stock_hongli_analysis/
 │   ├── _fetch_etf_holdings.py  # 自由现金流ETF季报持仓（前十大+占净值比）→ 980092 股息率估算
 │   ├── _gen_analysis.py     # ★ 买卖区间分析：股息率反推序列/三档因子打分/点位锚（S1-S5）
 │   ├── _backtest_analysis.py# ★ 股息率分位信号回测（p85/90/95 敏感性 → md报告+前端json）
-│   ├── _test_analysis.py    # ★ S1-S8 回归测试（58项）
+│   ├── _test_analysis.py    # ★ S1-S8 回归测试（62项）
 │   ├── _fetch_index_data.py # （原研究）候选指数行情/估值
 │   ├── _fetch_etf_data.py   # （原研究）候选ETF规模/业绩
 │   └── _find_index_code.py  # （原研究）指数代码查询
@@ -48,7 +49,9 @@ python update.py status        # 只读数据状态扫描（新鲜度/回测过�
 | 3 单项操作 | 指数/ETF/推荐20/其他成份/自选/前端包/成分重下载/汇总表/分红财报检测                                  |
 | 4 维护工具 | 重跑回测 / 失败重试 / 缓存清理 / 重导Excel / 季度检测 check-fin                                      |
 
-命令行直跑：`daily | full | idx | etf | rec | pool | watch | web | comp | summary | fin | bt | retry | excel | status [--yes]`
+命令行直跑：`daily | full | idx | etf | rec | pool | watch | wq | web | comp | summary | fin | bt | retry | excel | status [--yes]`
+
+> Excel 展示口径统一为 **万手/亿元**：`python scripts/_fetch_history.py --refresh` 与 `python update.py excel` 产物一致（2026-08 P1.5 统一）
 
 ## 前端展示页（web/）
 
