@@ -755,10 +755,10 @@ table.data-table { border-collapse: separate; border-spacing: 0; width: 100%; fo
 .rec-table-card > .table-wrap > .table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .rec-table-card > .pagination { flex-shrink: 0; }
 /* 智能推荐表格紧凑化（21→15列合并后直接全见，不再横拉） */
-.rec-table-card .data-table thead th { padding: 6px 5px; font-size: 10.5px; }
+.rec-table-card .data-table thead th { padding: 5px 4px; font-size: 10.5px; }
 .rec-table-card .data-table .filter-row th { padding: 2px 3px; }
 .rec-table-card .col-filter { padding: 2px 3px; font-size: 10.5px; min-width: 40px; }
-.rec-table-card .data-table tbody td { padding: 4px 5px; font-size: 11px; }
+.rec-table-card .data-table tbody td { padding: 4px 4px; font-size: 11px; }
 .rec-table-card .data-table td.left { padding-left: 8px; }
 /* 合并列副行（名称的类型·分组 / dy分位横截面 / 胜率·超额12M / 现价买锚） */
 .rec-table-card .rec-sub { display: block; font-size: 9.5px; line-height: 1.3; color: var(--text-3); margin-top: 1px; font-variant-numeric: tabular-nums; }
