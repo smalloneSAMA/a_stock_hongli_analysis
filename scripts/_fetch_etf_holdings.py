@@ -19,7 +19,14 @@ sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 FCF_ETFS = ["159201", "159229", "159221", "159222", "159166", "159223", "159225", "159276", "159232"]
-QUARTERS = [(2026, 6), (2026, 3), (2025, 12), (2025, 9), (2025, 6)]
+
+def _recent_quarters(n=5):
+    """最近 n 个已结束季度 [(年, 季末月)]（由今日推导，勿硬编码）"""
+    y, m = datetime.date.today().year, datetime.date.today().month
+    off0 = (m - 1) // 3 - 1   # 当前季度的前一季度（0基偏移，上季=-1...）
+    return [(y + (off0 - i) // 4, ((off0 - i) % 4 + 1) * 3) for i in range(n)]
+
+QUARTERS = _recent_quarters()
 
 S = requests.Session()
 S.headers.update({

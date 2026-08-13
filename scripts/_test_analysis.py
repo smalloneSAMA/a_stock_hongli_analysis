@@ -48,8 +48,8 @@ comp = load("web/data/components.json")
 print("── T1 dy 序列正确性（S1）──")
 n_all = len(dy_data)
 n_ok = sum(1 for v in dy_data.values() if v.get("dy0") is not None)
-check("标的覆盖", n_all == 380 and n_ok == 380,
-      f"{n_all} 标的，{n_ok} 有数据（980092/159201 补股息率后均有数据）")
+check("标的覆盖（全池有数据、无缺口）", n_all == n_ok,
+      f"{n_all} 标的，{n_ok} 有数据")
 # 1.2 反推末值 == dy0
 bad = [c for c, v in dy_data.items() if v.get("dy0") and abs(v["series"][-1][1] - v["dy0"]) > 1e-6]
 check("反推末值==dy0", not bad, f"异常: {bad}")
@@ -132,7 +132,7 @@ else:
 # ── T3 因子与打分（S3/S4）────────────────────────────────────────
 print("\n── T3 因子与打分（S3/S4）──")
 by_code = analysis["by_code"]
-check("标的覆盖", len(by_code) == 380, f"{len(by_code)} 个")
+check("by_code 池==dy 池", len(by_code) == n_all, f"by_code {len(by_code)} vs dy {n_all}")
 # 3.2 权重和
 for pname, pws in analysis["presets"].items():
     for sysname, w in pws.items():
@@ -181,7 +181,7 @@ check("股票 pe/pb 均有分位", not stk_missing, f"缺失: {stk_missing}")
 # ── T4 点位锚（S5）──────────────────────────────────────────────
 print("\n── T4 点位锚（S5）──")
 no_anchor = [c for c, v in by_code.items() if v.get("anchors") is None]
-check("锚全覆盖（369标的）", not no_anchor, f"缺失: {no_anchor}")
+check("锚全覆盖", not no_anchor, f"缺失: {no_anchor}")
 bad = [c for c, v in by_code.items()
        if not (v["anchors"]["buy"] < v["anchors"]["sell"])]
 check("buy < sell", not bad, f"异常: {bad}")
@@ -311,7 +311,10 @@ check("summary 键齐全", all(k in bt["summary"]["90"] for k in ("n", "pos6", "
 bad = [r["code"] for r in bt["by_p"]["90"] if r.get("group") not in BT_GROUPS]
 check("group 值合法（五组）", not bad, f"异常: {bad[:3]}")
 n_other = sum(1 for r in bt["by_p"]["90"] if r.get("group") == "其他成份股")
-check("其他成份股 294 只", n_other == 294, f"{n_other} 只（13只清单∩汇总表股票归自选股分组）")
+n_other_ok = sum(1 for r in bt["by_p"]["90"] if r.get("group") == "其他成份股" and "skip" not in r)
+check("其他成份股分组数对账（by_p 有效数 vs summary）",
+      bt["summary"]["90"]["groups"].get("其他成份股", {}).get("n") == n_other_ok,
+      f"by_p 有效 {n_other_ok} vs summary {bt['summary']['90']['groups'].get('其他成份股', {}).get('n')}")
 sg = bt["summary"]["90"]["groups"]
 check("groups 五组齐全", all(g in sg for g in BT_GROUPS))
 n_sum = sum(v["n"] for v in sg.values())

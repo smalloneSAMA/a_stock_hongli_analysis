@@ -119,13 +119,15 @@ def roe_stability(fc):
 
 
 def div_years_count(dc):
-    """近 3 个完整年度（ex_date 年份）派息年数"""
+    """近 3 个年度（ex_date 年份，由今日推导——勿硬编码年份，曾致 2027 起静默失真）派息年数"""
     if not dc:
         return None
     by = {}
     for r in dc["rows"]:
         by[r["ex_date"][:4]] = by.get(r["ex_date"][:4], 0) + 1
-    return sum(1 for y in ("2024", "2025", "2026") if by.get(y))
+    cur = int(datetime.date.today().strftime("%Y"))
+    years = [str(cur - i) for i in range(3)]
+    return sum(1 for y in years if by.get(y))
 
 
 def build_factors(codes, meta):

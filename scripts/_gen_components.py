@@ -196,7 +196,7 @@ def build():
         for c in members:
             stocks[c] = {"name": names.get(c, ""), "weight": None}
         idx[code] = {"name": INDEX_META[code][0], "desc": INDEX_META[code][1],
-                     "date_cons": "2026-07-31", "date_weight": "未公开",
+                     "date_cons": str(datetime.date.today()), "date_weight": "未公开",
                      "stocks": stocks, "fallback": False}
         print(f"  {code} {idx[code]['name']}: {len(stocks)}只 (东财成分表)")
         time.sleep(1.5)
@@ -208,7 +208,15 @@ def build():
     out.append(f"> **数据日期：{datetime.date.today().strftime('%Y-%m-%d')}** · 对应《红利介绍.md》精选池（指数10只 + ETF 11只）")
     out.append(">")
     out.append("> **数据来源**：")
-    out.append("> - 指数成分股：中证指数官网（csindex.com.cn）官方样本/权重文件（成分截止 2026-07-31，权重按 2026-06-30 收盘计算）；国证自由现金流 980092 为国证指数官网样本详情接口（仅前十大权重公开）；上证国有企业红利 000151 为东方财富指数成分表")
+    # 头部"成分截止"日期动态聚合（勿硬编码，曾致 md 快照过期）
+    cons_max = ""
+    for _c in CSINDICES:
+        _di = idx.get(_c) or {}
+        _d = _di.get("date_cons", "")
+        if _d and _d != "旧数据" and _d > cons_max:
+            cons_max = _d
+    cons_txt = f"成分截止 {cons_max}，权重按对应样本文件日期收盘计算" if cons_max else "成分/权重样本日期见各指数小节"
+    out.append(f"> - 指数成分股：中证指数官网（csindex.com.cn）官方样本/权重文件（{cons_txt}）；国证自由现金流 980092 为国证指数官网样本详情接口（仅前十大权重公开）；上证国有企业红利 000151 为东方财富指数成分表")
     out.append("> - ETF持仓：ETF实际持仓与跟踪指数成分股一致（合同约定），直接采用跟踪指数成分股列示")
     out.append("> - 注：上证国有企业红利(000151) 官网样本文件未公开，采用东方财富指数成分表（30只，可能不完整，官方为50只）")
     out.append(">")

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """生成 红利成分股汇总.xlsx：综合 md解析权重 + 东财行业 + 腾讯估值 + 分红股息率 全字段，中文表头"""
-import json, sys, os
+import json, sys, os, datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -25,10 +25,21 @@ def main():
         if not t.get("div_rec") and s.get("div_rec"):
             t["div_rec"] = s["div_rec"]
 
-    # 20只最终推荐
-    FINAL20 = {"600036","601838","601088","601225","600938","601857","600350","601006",
-               "600900","600795","000858","000895","000651","000333","000423","600566",
-               "600019","601668","600582","600757"}
+    # 20只最终推荐（动态：读评分产物 cache/_推荐20.json 的 list 段=TOP20；缺失回退硬编码）
+    _FALLBACK_FINAL20 = {"600036","601838","601088","601225","600938","601857","600350","601006",
+                         "600900","600795","000858","000895","000651","000333","000423","600566",
+                         "600019","601668","600582","600757"}
+    def _final20():
+        try:
+            r = json.load(open("cache/_推荐20.json", encoding="utf-8"))
+            lst = r.get("list")
+            if lst:
+                return {x["code"] for x in lst}
+        except Exception:
+            pass
+        print("  ⚠️ cache/_推荐20.json 缺失/损坏，最终推荐列回退硬编码清单")
+        return set(_FALLBACK_FINAL20)
+    FINAL20 = _final20()
 
     rows = []
     for t in table:
@@ -127,7 +138,7 @@ def main():
     # 封面说明 sheet
     ws2 = wb.create_sheet("说明")
     notes = [
-        "红利成分股汇总表（数据日期：2026-08-02）",
+        f"红利成分股汇总表（数据日期：{datetime.date.today()}）",
         "",
         "数据来源：",
         "1. 成分与权重：《红利指数与ETF成分股.md》解析（精选指数10只+ETF 11只，权重为2026-06-30/07-31静态快照）",

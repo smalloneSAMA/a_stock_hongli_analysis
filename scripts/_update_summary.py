@@ -12,7 +12,7 @@
   · 连续8次失败自动中止（防IP被封后空等）
 """
 import json, os, sys, re, time, random, datetime, urllib.request
-from _common import market_prefix, em_get, tencent_quotes   # 前缀路由 + 东财限流 + 腾讯批量
+from _common import market_prefix, em_get, tencent_quotes, atomic_load   # 前缀路由 + 东财限流 + 腾讯批量 + 原子读
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(BASE, "cache")
@@ -28,10 +28,21 @@ def atomic_dump(path, obj):
         json.dump(obj, f, ensure_ascii=False)
     os.replace(tmp, path)
 
-# 20只推荐名单（《红利股票推荐20只.md》）
-FINAL20 = ["600036", "601838", "601088", "601225", "600938", "601857", "600350", "601006",
-           "600900", "600795", "000858", "000895", "000651", "000333", "000423", "600566",
-           "600019", "601668", "600582", "600757"]
+# 20只推荐名单（动态：读 cache/_推荐20.json 的 list 段=TOP20；缺失/损坏回退硬编码并告警）
+_FALLBACK_FINAL20 = ["600036", "601838", "601088", "601225", "600938", "601857", "600350", "601006",
+                     "600900", "600795", "000858", "000895", "000651", "000333", "000423", "600566",
+                     "600019", "601668", "600582", "600757"]
+
+def load_final20():
+    """评分产物 TOP20（list 段=rank 1-20）→ code 列表；缺失/损坏回退硬编码"""
+    r = atomic_load(os.path.join(CACHE, "_推荐20.json"))
+    lst = (r or {}).get("list")
+    if lst:
+        return [x["code"] for x in lst]
+    print("  ⚠️ cache/_推荐20.json 缺失/损坏，FINAL20 回退硬编码清单（请先运行推荐评分）")
+    return list(_FALLBACK_FINAL20)
+
+FINAL20 = load_final20()
 
 FAIL_LIMIT = 8          # 连续失败上限
 
