@@ -468,9 +468,8 @@ def make_fetcher(tcode, code):
 
 # ── Excel ───────────────────────────────────────────────────────
 def export_excel():
-    from datetime import datetime
-    from openpyxl import load_workbook
     from _fetch_history import load_cache
+    from _common import export_workbook, safe_export
     # 展示口径：价格(元)、成交量(万手)、成交额(亿元)；腾讯原始 volume=手、amount=元(估算)
     COL_CN = {"open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
               "volume": "成交量(万手)", "amount": "成交额(亿元)",
@@ -492,41 +491,31 @@ def export_excel():
                               "div": div["rows"] if div else [],
                               "fin": fin["rows"] if fin else [],
                               "share": share["rows"] if share else []}
-    try:
-        with pd.ExcelWriter(os.path.join(BASE, "excel", "股票历史.xlsx"), engine="openpyxl") as w:
-            for code, info in rows_map.items():
-                rows = info["rows"]
-                if not rows:
-                    continue
-                df = pd.DataFrame(rows)
-                df["股息率(%)"] = calc_dividend_yield(rows, info["div"])
-                pe_ttm, pe_dyn = calc_pe(rows, info["fin"], info["share"])
-                df["PE(TTM)(倍)"] = pe_ttm
-                df["PE动(倍)"] = pe_dyn
-                df["PB(倍)"] = calc_pb(rows, info["fin"])
-                df["PEG"] = calc_peg(rows, info["fin"], info["share"], pe_ttm)
-                df["ROE(%)"] = calc_ratio(rows, info["fin"], "roe")
-                df["ROA(%)"] = calc_ratio(rows, info["fin"], "roa")
-                df["date"] = pd.to_datetime(df["date"])
-                df = df.sort_values("date").set_index("date")
-                df = df.rename(columns=COL_CN)
-                df = df[COLS]
-                df["成交量(万手)"] = (df["成交量(万手)"] / 1e4).round(2)
-                df["成交额(亿元)"] = (df["成交额(亿元)"] / 1e8).round(2)
-                df.index.name = "日期"
-                df.to_excel(w, sheet_name=f"{code} {info['name'][:10]}"[:31])
-        # 日期列显示为年月日 + 美化（列宽/冻结首行/筛选/居中）——导出后独立后处理，避免 pandas 保存覆盖格式
-        wb = load_workbook(os.path.join(BASE, "excel", "股票历史.xlsx"))
-        for ws in wb.worksheets:
-            for row in ws.iter_rows(min_row=2, min_col=1, max_col=1):
-                for cell in row:
-                    if isinstance(cell.value, datetime):
-                        cell.number_format = "yyyy-mm-dd"
-            fh.beautify_sheet(ws)
-        wb.save(os.path.join(BASE, "excel", "股票历史.xlsx"))
-        print(f"✅ excel/股票历史.xlsx 已生成（{len(rows_map)} 只，2004-01-01 起，不复权，含股息率）")
-    except PermissionError:
-        print("⚠️  excel/股票历史.xlsx 被占用（可能已在Excel中打开），请关闭后重新执行导出")
+    sheets = {}
+    for code, info in rows_map.items():
+        rows = info["rows"]
+        if not rows:
+            continue
+        df = pd.DataFrame(rows)
+        df["股息率(%)"] = calc_dividend_yield(rows, info["div"])
+        pe_ttm, pe_dyn = calc_pe(rows, info["fin"], info["share"])
+        df["PE(TTM)(倍)"] = pe_ttm
+        df["PE动(倍)"] = pe_dyn
+        df["PB(倍)"] = calc_pb(rows, info["fin"])
+        df["PEG"] = calc_peg(rows, info["fin"], info["share"], pe_ttm)
+        df["ROE(%)"] = calc_ratio(rows, info["fin"], "roe")
+        df["ROA(%)"] = calc_ratio(rows, info["fin"], "roa")
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date").set_index("date")
+        df = df.rename(columns=COL_CN)
+        df = df[COLS]
+        df["成交量(万手)"] = (df["成交量(万手)"] / 1e4).round(2)
+        df["成交额(亿元)"] = (df["成交额(亿元)"] / 1e8).round(2)
+        df.index.name = "日期"
+        sheets[f"{code} {info['name'][:10]}"] = df
+    if sheets:
+        safe_export("推荐股指标Excel", lambda: export_workbook(os.path.join(BASE, "excel", "股票历史.xlsx"), sheets))
+        print(f"✅ excel/股票历史.xlsx 已生成（{len(sheets)} 只，2004-01-01 起，不复权，含股息率）")
 
 def check_financials(codes=None):
     """检测分红/财报是否有更新（如新财报公告/新除权日）：

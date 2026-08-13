@@ -8,6 +8,7 @@
 """
 import sys, io, os, json, time, argparse, urllib.request, requests, datetime
 import pandas as pd
+from _common import export_workbook   # 统一 Excel 导出（万手/亿元口径）
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -315,45 +316,65 @@ def main():
             obj = get_or_fetch("ETF", code, name, fetcher, args.refresh)
             etf_data[code] = {"name": name, "rows": obj["rows"]}
 
-    # ── 写Excel ──────────────────────────────────────────────────
-    COL_CN = {
-        "open": "开盘", "close": "收盘", "high": "最高", "low": "最低",
-        "volume": "成交量", "amount": "成交额", "change": "涨跌额", "changePct": "涨跌幅",
-        "nav": "单位净值", "acc_nav": "累计净值",
+    # ── 写Excel（统一口径：万手/亿元，与 update.py excel 完全一致；P1.5 三合一）──
+    # 展示口径：价格(点/元)、成交量(万手)、成交额(亿元)；原始单位：腾讯 volume=手/amount=元(估算)、
+    # 中证官网 tradingVol=股/tradingValue=亿元、国证 volume=万手/amount=亿元（源：update.py IDX_DIV）
+    IDX_COL_CN = {
+        "open": "开盘(点)", "close": "收盘(点)", "high": "最高(点)", "low": "最低(点)",
+        "volume": "成交量(万手)", "amount": "成交额(亿元)",
+        "chg30": "30日涨跌(%)", "chg60": "60日涨跌(%)", "chg90": "90日涨跌(%)",
     }
-    if idx_data:
-        with pd.ExcelWriter(os.path.join(EXCEL_DIR, "指数历史.xlsx"), engine="openpyxl") as w:
-            for code, info in idx_data.items():
-                rows = info["rows"]
-                if not rows:
-                    continue
-                df = pd.DataFrame(rows)
-                df["date"] = pd.to_datetime(df["date"])
-                df = df.sort_values("date").set_index("date")
-                df = df.rename(columns=COL_CN)
-                df = df[["开盘", "收盘", "最高", "最低", "成交量", "成交额"]]
-                df.index.name = "日期"
-                src_cn = {"tencent": "腾讯K线", "csindex": "中证官网", "cnindex": "国证官网"}[info["source"]]
-                sheet = f"{code} {info['name'][:10]}"
-                df.to_excel(w, sheet_name=sheet[:31])
-            print(f"✅ excel/指数历史.xlsx（数据源：腾讯K线/中证官网/国证官网）")
+    IDX_DIV = {"tencent": (1e4, 1e8), "csindex": (1e6, 1), "cnindex": (1, 1)}  # (成交量除数, 成交额除数)
+    ETF_COL_CN = {
+        "open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
+        "volume": "成交量(万手)", "amount": "成交额(亿元)",
+        "nav": "单位净值", "acc_nav": "累计净值",
+        "chg30": "30日涨跌(%)", "chg60": "60日涨跌(%)", "chg90": "90日涨跌(%)",
+    }
+    idx_sheets = {}
+    for code, info in idx_data.items():
+        rows = info["rows"]
+        if not rows:
+            continue
+        fill_chg_n(rows)   # 30/60/90 交易日涨跌幅（交易日口径）
+        vdiv, adiv = IDX_DIV[info["source"]]
+        df = pd.DataFrame(rows)
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date").set_index("date")
+        df = df.rename(columns=IDX_COL_CN)
+        df = df[list(IDX_COL_CN.values())]
+        df["成交量(万手)"] = pd.to_numeric(df["成交量(万手)"], errors="coerce")
+        df["成交额(亿元)"] = pd.to_numeric(df["成交额(亿元)"], errors="coerce")
+        df["成交量(万手)"] = (df["成交量(万手)"] / vdiv).round(2)
+        df["成交额(亿元)"] = (df["成交额(亿元)"] / adiv).round(2)
+        df.index.name = "日期"
+        idx_sheets[f"{code} {info['name'][:10]}"] = df
+    if idx_sheets:
+        export_workbook(os.path.join(EXCEL_DIR, "指数历史.xlsx"), idx_sheets)
+        print("✅ excel/指数历史.xlsx（万手/亿元口径，与 update.py excel 一致）")
 
-    if etf_data:
-        with pd.ExcelWriter(os.path.join(EXCEL_DIR, "ETF历史.xlsx"), engine="openpyxl") as w:
-            for code, info in etf_data.items():
-                rows = fill_etf_amount(info["rows"])
-                if not rows:
-                    continue
-                df = pd.DataFrame(rows)
-                df["date"] = pd.to_datetime(df["date"])
-                df = df.sort_values("date").set_index("date")
-                df = df.rename(columns=COL_CN)
-                if "单位净值" in df.columns:
-                    df = df[["开盘", "收盘", "最高", "最低", "成交量", "成交额", "单位净值", "累计净值"]]
-                df.index.name = "日期"
-                sheet = f"{code} {info['name'][:10]}"
-                df.to_excel(w, sheet_name=sheet[:31])
-            print("✅ excel/ETF历史.xlsx（场内价格=腾讯K线，净值=新浪）")
+    etf_sheets = {}
+    for code, info in etf_data.items():
+        rows = fill_etf_amount(info["rows"])
+        if not rows:
+            continue
+        fill_chg_n(rows)
+        df = pd.DataFrame(rows)
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date").set_index("date")
+        df = df.rename(columns=ETF_COL_CN)
+        df["成交量(万手)"] = pd.to_numeric(df["成交量(万手)"], errors="coerce")
+        df["成交额(亿元)"] = pd.to_numeric(df["成交额(亿元)"], errors="coerce")
+        df["成交量(万手)"] = (df["成交量(万手)"] / 1e4).round(2)
+        df["成交额(亿元)"] = (df["成交额(亿元)"] / 1e8).round(2)
+        if "单位净值" in df.columns:
+            df = df[["开盘(元)", "收盘(元)", "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)",
+                     "单位净值", "累计净值", "30日涨跌(%)", "60日涨跌(%)", "90日涨跌(%)"]]
+        df.index.name = "日期"
+        etf_sheets[f"{code} {info['name'][:10]}"] = df
+    if etf_sheets:
+        export_workbook(os.path.join(EXCEL_DIR, "ETF历史.xlsx"), etf_sheets)
+        print("✅ excel/ETF历史.xlsx（万手/亿元口径，与 update.py excel 一致）")
 
     print("全部完成。缓存目录: cache/ · Excel目录: excel/")
 

@@ -117,6 +117,77 @@ def safe_export(desc, fn):
         return False
 
 
+# ── Excel 导出统一（万手/亿元 展示口径；P1.5 三合一，源：_fetch_history.beautify_sheet / update.py post_process）──
+def beautify_sheet(ws):
+    """单个sheet：列宽按内容显示宽度自适应、冻结首行、开启筛选、全表水平垂直居中，表头加粗浅蓝底。
+    幂等，可重复执行"""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    import datetime as _dt
+    if ws.max_row < 1 or ws.max_column < 1:
+        return
+    nrow, ncol = ws.max_row, ws.max_column
+
+    def dispw(v):
+        if isinstance(v, _dt.datetime):
+            return 10   # 日期按 yyyy-mm-dd 显示宽度计
+        s = str(v)
+        return sum(2 if ord(ch) > 127 else 1 for ch in s)   # 中文/全角按2字符宽
+
+    widths = [0] * ncol
+    for row in ws.iter_rows(min_row=1, max_row=nrow, max_col=ncol):
+        for cell in row:
+            if cell.value is None:
+                continue
+            w = dispw(cell.value)
+            i = cell.column - 1
+            if w > widths[i]:
+                widths[i] = w
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = min(max(w + 2, 8), 22)
+
+    ws.freeze_panes = "A2"            # 冻结首行
+    ws.auto_filter.ref = f"A1:{get_column_letter(ncol)}{nrow}"   # 开启筛选
+
+    center = Alignment(horizontal="center", vertical="center")
+    hfont = Font(bold=True)
+    hfill = PatternFill("solid", fgColor="D9E1F2")
+    for row in ws.iter_rows(min_row=1, max_row=nrow, max_col=ncol):
+        for cell in row:
+            if cell.value is None:
+                continue
+            cell.alignment = center
+            if cell.row == 1:
+                cell.font = hfont
+                cell.fill = hfill
+
+
+def beautify_workbook(path):
+    """导出后处理：日期列显示为年月日 + 逐sheet美化（列宽/冻结/筛选/居中）。
+    幂等；导出后独立执行，避免 pandas 保存覆盖格式（源：update.py post_process_file）"""
+    from datetime import datetime as _dt
+    from openpyxl import load_workbook
+    wb = load_workbook(path)
+    for ws in wb.worksheets:
+        for row in ws.iter_rows(min_row=2, min_col=1, max_col=1):
+            for cell in row:
+                if isinstance(cell.value, _dt):
+                    cell.number_format = "yyyy-mm-dd"
+        beautify_sheet(ws)
+    wb.save(path)
+
+
+def export_workbook(path, sheets, post=True):
+    """统一 Excel 导出：sheets = {sheet名: DataFrame}（已含日期索引+中文列名+单位换算）。
+    post=True 时导出后统一日期格式与美化。文件被占用抛 PermissionError，由 safe_export 包裹。"""
+    import pandas as pd
+    with pd.ExcelWriter(path, engine="openpyxl") as w:
+        for name, df in sheets.items():
+            df.to_excel(w, sheet_name=name[:31])
+    if post:
+        beautify_workbook(path)
+
+
 if __name__ == "__main__":
     import sys
     sys.stdout.reconfigure(encoding="utf-8")   # Windows GBK 控制台兼容（不换对象，避免二次包装坑）

@@ -266,20 +266,9 @@ def update_stocks():
 
 def export_excel():
     import pandas as pd
-    from datetime import datetime as _dt
-    from openpyxl import load_workbook
     from _fetch_history import load_cache
+    from _common import export_workbook   # 统一 Excel 导出（万手/亿元口径，含美化后处理）
 
-    def post_process_file(path):
-        """导出后处理：日期列显示为年月日（保留日期类型）+ 美化（列宽/冻结首行/筛选/居中）"""
-        wb = load_workbook(path)
-        for ws in wb.worksheets:
-            for row in ws.iter_rows(min_row=2, min_col=1, max_col=1):
-                for cell in row:
-                    if isinstance(cell.value, _dt):
-                        cell.number_format = "yyyy-mm-dd"
-            fh.beautify_sheet(ws)
-        wb.save(path)
     # 展示口径：价格(点/元)、成交量(万手)、成交额(亿元)；单位净值/累计净值不加单位
     # 原始单位：腾讯 volume=手/amount=元(估算)；中证官网 tradingVol=股/tradingValue=亿元；国证 volume=万手/amount=亿元
     IDX_COL_CN = {
@@ -296,67 +285,56 @@ def export_excel():
     }
     print("\n═══ 重新生成 Excel ═══")
     # 指数
-    idx_rows = {}
+    idx_sheets = {}
     for code, name, src, tcode in INDICES:
         c = load_cache("指数", code)
         if c:
             fh.fill_chg_n(c["rows"])   # 30/60/90 交易日涨跌幅（交易日口径）
             fh.save_cache("指数", code, c)
-            idx_rows[code] = {"name": c.get("name", name), "source": src, "rows": c["rows"]}
-    try:
-        with pd.ExcelWriter(os.path.join(BASE, "excel", "指数历史.xlsx"), engine="openpyxl") as w:
-            for code, info in idx_rows.items():
-                rows = info["rows"]
-                if not rows:
-                    continue
-                vdiv, adiv = IDX_DIV[info["source"]]
-                df = pd.DataFrame(rows)
-                df["date"] = pd.to_datetime(df["date"])
-                df = df.sort_values("date").set_index("date")
-                df = df.rename(columns=IDX_COL_CN)
-                df = df[list(IDX_COL_CN.values())]
-                # 全 None 列会被推断为 object，强制数值化（腾讯源指数无成交额→NaN）
-                df["成交量(万手)"] = pd.to_numeric(df["成交量(万手)"], errors="coerce")
-                df["成交额(亿元)"] = pd.to_numeric(df["成交额(亿元)"], errors="coerce")
-                df["成交量(万手)"] = (df["成交量(万手)"] / vdiv).round(2)
-                df["成交额(亿元)"] = (df["成交额(亿元)"] / adiv).round(2)
-                df.index.name = "日期"
-                df.to_excel(w, sheet_name=f"{code} {info['name'][:10]}"[:31])
-        post_process_file(os.path.join(BASE, "excel", "指数历史.xlsx"))
-    except PermissionError:
-        print("⚠️  excel/指数历史.xlsx 被占用（可能已在Excel中打开），请关闭后重新执行导出")
+            rows = c["rows"]
+            if not rows:
+                continue
+            vdiv, adiv = IDX_DIV[src]
+            df = pd.DataFrame(rows)
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").set_index("date")
+            df = df.rename(columns=IDX_COL_CN)
+            df = df[list(IDX_COL_CN.values())]
+            # 全 None 列会被推断为 object，强制数值化（腾讯源指数无成交额→NaN）
+            df["成交量(万手)"] = pd.to_numeric(df["成交量(万手)"], errors="coerce")
+            df["成交额(亿元)"] = pd.to_numeric(df["成交额(亿元)"], errors="coerce")
+            df["成交量(万手)"] = (df["成交量(万手)"] / vdiv).round(2)
+            df["成交额(亿元)"] = (df["成交额(亿元)"] / adiv).round(2)
+            df.index.name = "日期"
+            idx_sheets[f"{code} {c.get('name', name)[:10]}"] = df
+    if idx_sheets:
+        safe_export("指数历史Excel", lambda: export_workbook(os.path.join(BASE, "excel", "指数历史.xlsx"), idx_sheets))
     # ETF（先估算成交额并写回缓存）
-    etf_rows = {}
+    etf_sheets = {}
     for code, name, tcode in ETFS:
         c = load_cache("ETF", code)
         if c:
             fh.fill_etf_amount(c["rows"])
             fh.fill_chg_n(c["rows"])   # 30/60/90 交易日涨跌幅（交易日口径）
             fh.save_cache("ETF", code, c)
-            etf_rows[code] = {"name": c.get("name", name), "rows": c["rows"]}
-    try:
-        with pd.ExcelWriter(os.path.join(BASE, "excel", "ETF历史.xlsx"), engine="openpyxl") as w:
-            for code, info in etf_rows.items():
-                rows = info["rows"]
-                if not rows:
-                    continue
-                df = pd.DataFrame(rows)
-                df["date"] = pd.to_datetime(df["date"])
-                df = df.sort_values("date").set_index("date")
-                df = df.rename(columns=ETF_COL_CN)
-                df["成交量(万手)"] = pd.to_numeric(df["成交量(万手)"], errors="coerce")
-                df["成交额(亿元)"] = pd.to_numeric(df["成交额(亿元)"], errors="coerce")
-                df["成交量(万手)"] = (df["成交量(万手)"] / 1e4).round(2)
-                df["成交额(亿元)"] = (df["成交额(亿元)"] / 1e8).round(2)
-                if "单位净值" in df.columns:
-                    df = df[["开盘(元)", "收盘(元)", "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)",
-                             "单位净值", "累计净值", "30日涨跌(%)", "60日涨跌(%)", "90日涨跌(%)"]]
-                df.index.name = "日期"
-                df.to_excel(w, sheet_name=f"{code} {info['name'][:10]}"[:31])
-        post_process_file(os.path.join(BASE, "excel", "ETF历史.xlsx"))
-    except PermissionError:
-        print("⚠️  excel/ETF历史.xlsx 被占用（可能已在Excel中打开），请关闭后重新执行导出")
-    else:
+            rows = c["rows"]
+            if not rows:
+                continue
+            df = pd.DataFrame(rows)
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").set_index("date")
+            df = df.rename(columns=ETF_COL_CN)
+            df["成交量(万手)"] = pd.to_numeric(df["成交量(万手)"], errors="coerce")
+            df["成交额(亿元)"] = pd.to_numeric(df["成交额(亿元)"], errors="coerce")
+            df["成交量(万手)"] = (df["成交量(万手)"] / 1e4).round(2)
+            df["成交额(亿元)"] = (df["成交额(亿元)"] / 1e8).round(2)
+            if "单位净值" in df.columns:
+                df = df[["开盘(元)", "收盘(元)", "最高(元)", "最低(元)", "成交量(万手)", "成交额(亿元)",
+                         "单位净值", "累计净值", "30日涨跌(%)", "60日涨跌(%)", "90日涨跌(%)"]]
+            df.index.name = "日期"
+            etf_sheets[f"{code} {c.get('name', name)[:10]}"] = df
+    if etf_sheets:
+        safe_export("ETF历史Excel", lambda: export_workbook(os.path.join(BASE, "excel", "ETF历史.xlsx"), etf_sheets))
         print("✅ excel/ETF历史.xlsx 已更新")
 
 def update_components():
