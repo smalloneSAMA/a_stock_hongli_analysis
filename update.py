@@ -177,6 +177,11 @@ def scan_status():
     an = load_json(os.path.join(WEB_DATA, "analysis.json"))
     if bt and an and bt.get("date") and an.get("date") and bt["date"] < an["date"]:
         print(f"  回测: {bt['date']} ⚠️ 已过期（维护→1 重跑，约1分钟）")
+    # 产物日期一致性（P2.4 轻量检测）：analysis.date 应与 manifest.data_date 一致
+    if an and an.get("date"):
+        mm = load_json(os.path.join(WEB_DATA, "manifest.json")) or {}
+        if mm.get("data_date") and an["date"] != mm["data_date"]:
+            print(f"  analysis {an['date']} vs manifest {mm['data_date']} ⚠️ 不一致（web 包部分陈旧，运行 update.py web）")
     # 季度检测
     lf = load_json(LAST_FIN)
     if lf and lf.get("time"):
@@ -358,28 +363,45 @@ def update_summary(force=False):
     collect_pool()   # 变更摘要采集
 
 def update_web():
-    """前端数据包：web/data/ 四件套 + 买卖区间分析（S1反推+S3/S4打分） + 国证指数成分"""
+    """前端数据包：web/data/ 四件套 + 买卖区间分析（S1反推+S3/S4打分） + 国证指数成分
+    轻量事务（P2.4）：每步 try/except 隔离，失败计数并继续，末尾汇总告警；
+    单个文件均为原子写不会损坏，失败产物不覆盖旧文件。"""
     print("\n═══ 前端数据包更新（web/data/ + 区间分析 + 国证成分）═══")
+    fails = []
+
+    def step(desc, fn):
+        try:
+            fn()
+            return True
+        except Exception as e:
+            fails.append(desc)
+            print(f"  ❌ [{desc}] 失败: {repr(e)[:120]}（已跳过，其余步骤继续）")
+            return False
+
     import _gen_web_data as gwd
-    gwd.build_stock_indicators()   # 先指标（manifest 的 last_dy 读指标文件末行）
-    gwd.build_manifest()           # v1：元数据最新，rec=上次评分产物
-    gwd.build_components()
-    gwd.build_summary()
+    step("股票逐日指标", gwd.build_stock_indicators)   # 先指标（manifest 的 last_dy 读指标文件末行）
+    step("manifest v1", gwd.build_manifest)           # v1：元数据最新，rec=上次评分产物
+    step("components", gwd.build_components)
+    step("summary", gwd.build_summary)
     import _fetch_etf_holdings as feh
-    feh.main()   # ETF季报持仓（980092 股息率估算、159201 持仓成分）
+    step("ETF季报持仓", feh.main)   # 980092 股息率估算、159201 持仓成分
     import _gen_analysis as ga
-    ga.main()   # S1 股息率反推（重建 analysis_dy.json）→ S3/S4 因子打分与点位锚（analysis.json）
+    step("S1反推+S3/S4打分", ga.main)   # analysis_dy.json → analysis.json
     import _recommend_stocks as rs
-    rs.main()   # 推荐20量化评分（读 manifest v1 + 最新指标 → 更新 cache/_推荐20.json）
+    step("推荐20评分", rs.main)   # cache/_推荐20.json
     fsd.refresh_stocks()   # 评分产物刷新进程内 STOCKS（模块 import 时仅求值一次）
-    gwd.build_manifest()   # v2：rec 标记用本次评分产物（覆盖，约1秒）
+    step("manifest v2", gwd.build_manifest)   # rec 标记用本次评分产物（覆盖，约1秒）
     import _fetch_cnindex_components as fcc
-    fcc.main()
+    step("国证成分", fcc.main)
     collect_etfs()   # 变更摘要采集
+    if fails:
+        print(f"\n⚠️ 本次 web 包存在 {len(fails)} 个失败产物: {', '.join(fails)}")
+        print("   （单个文件原子写不会损坏；修复后重跑 python update.py web，或人工核对产物日期）")
     print("\n⚠️ 提示：回测报告（web/data/backtest.json + docs/回测报告.md）为研究产物，")
     print("   需手动运行 python scripts/_backtest_analysis.py 更新（全量约1分钟，数据更新后建议重跑）。")
     print("⚠️ 请人工核对《红利介绍.md》中相关描述/快照数字是否需要同步（脚本不自动改该文件）。")
-    print("✅ 前端数据包更新完成（刷新浏览器即可看到新数据）")
+    if not fails:
+        print("✅ 前端数据包更新完成（刷新浏览器即可看到新数据）")
 
 def update_pool(rerun_web=True):
     """其他成份股（汇总表 − 推荐 20）：K线增量 + 缺失补齐 → 重算指标与区间分析"""
