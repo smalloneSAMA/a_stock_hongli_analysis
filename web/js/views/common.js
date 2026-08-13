@@ -92,21 +92,36 @@ export function toggleFav(code) {
   window.dispatchEvent(new CustomEvent('fav-change', { detail: { code } }));
   return next.includes(code);
 }
-/* 星标按钮（点击收藏/取消；监听 fav-change 跨视图同步；点击不冒泡，不影响行选中） */
+/* 星标按钮（P4.1 纯渲染：无监听，点击/同步由 bindFavDelegation 容器级委托处理；
+   列表/表格重绘重建星标不再累积监听；data-code 供委托查询） */
 export function favStar(code) {
-  const star = el('button', { type: 'button', class: 'fav-star' + (isFav(code) ? ' on' : ''), 'aria-label': '收藏/取消收藏', title: '收藏' }, isFav(code) ? '★' : '☆');
-  star.addEventListener('click', (e) => {
+  const on = isFav(code);
+  return el('button', { type: 'button', class: 'fav-star' + (on ? ' on' : ''), 'data-code': code, 'aria-label': '收藏/取消收藏', title: '收藏' }, on ? '★' : '☆');
+}
+
+/* 收藏事件委托：绑定到稳定容器（列表/表格容器），一次注册管全部星标。
+   click 委托（stopPropagation 保留，防触发行选中）+ fav-change 委托（只处理 detail.code，每次事件一次 JSON.parse） */
+const _favDelegated = new WeakSet();
+export function bindFavDelegation(container) {
+  if (!container || _favDelegated.has(container)) return;
+  _favDelegated.add(container);
+  container.addEventListener('click', (e) => {
+    const star = e.target.closest('.fav-star');
+    if (!star || !star.dataset.code) return;
     e.stopPropagation();
-    const on = toggleFav(code);
+    const on = toggleFav(star.dataset.code);
     star.classList.toggle('on', on);
     star.textContent = on ? '★' : '☆';
   });
-  window.addEventListener('fav-change', () => {
+  window.addEventListener('fav-change', (e) => {
+    const code = e.detail && e.detail.code;
+    if (!code) return;
     const on = isFav(code);
-    star.classList.toggle('on', on);
-    star.textContent = on ? '★' : '☆';
+    container.querySelectorAll('.fav-star[data-code="' + code + '"]').forEach((star) => {
+      star.classList.toggle('on', on);
+      star.textContent = on ? '★' : '☆';
+    });
   });
-  return star;
 }
 
 /* ── 搜索历史：点击搜索框弹出最近 5 条（键盘 ↑/↓ 选择、Enter 确认、Esc 关闭、失焦记录）── */
@@ -149,9 +164,9 @@ export function attachSearchHistory(searchBox, { key, onPick } = {}) {
     box.style.width = Math.max(r.width, 180) + 'px';
     document.body.appendChild(box);
   };
-  searchBox.addEventListener('focus', show);
-  searchBox.addEventListener('input', () => close());   // 输入时隐藏历史
-  searchBox.addEventListener('keydown', (e) => {
+  const onFocus = () => show();
+  const onInput = () => close();   // 输入时隐藏历史
+  const onKey = (e) => {
     const list = listOf();
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       if (!list.length) return;
@@ -174,19 +189,33 @@ export function attachSearchHistory(searchBox, { key, onPick } = {}) {
     } else if (e.key === 'Escape') {
       close();
     }
-  });
+  };
   /* 失焦：关闭下拉并记录当前输入（延迟 150ms 等历史项 click 先执行，避免覆盖选中词） */
-  searchBox.addEventListener('blur', () => {
+  const onBlur = () => {
     const kw = searchBox.value.trim();
     setTimeout(() => {
       close();
       if (kw && listOf()[0] !== kw) rememberSearch(key, kw);
     }, 150);
-  });
+  };
+  searchBox.addEventListener('focus', onFocus);
+  searchBox.addEventListener('input', onInput);
+  searchBox.addEventListener('keydown', onKey);
+  searchBox.addEventListener('blur', onBlur);
   /* 点击外部关闭 */
-  document.addEventListener('click', (e) => {
+  const onDoc = (e) => {
     if (box && !box.contains(e.target) && e.target !== searchBox) close();
-  });
+  };
+  document.addEventListener('click', onDoc);
+  /* P4.1：返回 dispose，供容器重建前清理全部监听（document 级监听无法随 DOM 自动回收） */
+  return () => {
+    searchBox.removeEventListener('focus', onFocus);
+    searchBox.removeEventListener('input', onInput);
+    searchBox.removeEventListener('keydown', onKey);
+    searchBox.removeEventListener('blur', onBlur);
+    document.removeEventListener('click', onDoc);
+    close();
+  };
 }
 
 /* ── 左侧标的列表 ── */
@@ -196,6 +225,8 @@ export function attachSearchHistory(searchBox, { key, onPick } = {}) {
  * title: 可选标题区（Node），渲染在搜索框之前（注意本函数会清空 container）
  */
 export function renderTickerList(container, items, { onSelect, activeCode, searchable = true, title = null, searchItems = null, searchKey = 'ticker', favToggle = false }) {
+  if (container._histDisp) { try { container._histDisp(); } catch {} container._histDisp = null; }   // 先清理旧搜索历史监听（P4.1）
+  bindFavDelegation(container);   // 星标事件委托：容器常驻，重绘重建星标不累积监听
   container.innerHTML = '';
   if (title) container.append(title);
   const searchBox = searchable ? el('input', { class: 'ticker-search', type: 'search', placeholder: '搜索代码 / 名称…', 'aria-label': '搜索标的' }) : null;
@@ -248,7 +279,7 @@ export function renderTickerList(container, items, { onSelect, activeCode, searc
       paint(current);
     };
     searchBox.addEventListener('input', applyQuery);
-    attachSearchHistory(searchBox, { key: searchKey, onPick: applyQuery });
+    container._histDisp = attachSearchHistory(searchBox, { key: searchKey, onPick: applyQuery }) || null;
     if (favInput) {
       favInput.addEventListener('change', () => { favLabel.classList.toggle('on', favInput.checked); favOnly = favInput.checked; applyQuery(); });
       /* 收藏变化：勾选状态下列表结果联动刷新（星标自身状态由 favStar 组件同步） */
@@ -456,12 +487,23 @@ function openPicker(input, opts) {
   activePicker = { popup, input, outside, esc, onScroll };
 }
 
+/* 默认排序比较器（P4.2）：数值用减法、字符串用中文 localeCompare；空值恒排最前（与旧 -Infinity 语义一致）；
+   修复文本列（名称/行业/类型/分组）排序静默失效——旧实现字符串相减得 NaN 被当 0 */
+function defaultCmp(a, b) {
+  if (a == null && b == null) return 0;
+  if (a == null) return -1;
+  if (b == null) return 1;
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), 'zh');
+}
+
 /* ── 通用表格（列筛选 + 排序 + 分页 + 页码跳转） ── */
 /**
  * columns: [{key, label, align: 'num'|'left'|'center', sortable, fmt, cls, color, filter}]
  *   filter: false 可关闭该列筛选框；默认开启
  */
 export function renderTable(container, { columns, rows, pageSize = 50 }) {
+  bindFavDelegation(container);   // 星标事件委托（表格容器常驻，重绘不累积监听）
   container.innerHTML = '';
   const wrap = el('div', { class: 'table-wrap' });
   const table = el('table', { class: 'data-table' });
@@ -540,7 +582,7 @@ export function renderTable(container, { columns, rows, pageSize = 50 }) {
     sortedRows = [...filteredRows];
     if (sortKey) {
       const c = columns.find(x => x.key === sortKey);
-      const cv = c && c.cmp ? c.cmp : (a, b) => (a === null || a === undefined ? -Infinity : a) - (b === null || b === undefined ? -Infinity : b);
+      const cv = c && c.cmp ? c.cmp : defaultCmp;
       sortedRows.sort((x, y) => sortDir * (c && c.cmp ? c.cmp(get(x, sortKey), get(y, sortKey)) : cv(get(x, sortKey), get(y, sortKey))));
     }
   };

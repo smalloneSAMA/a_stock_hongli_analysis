@@ -2,7 +2,8 @@
    数据全部来自现有缓存（klineUrl 直读 /cache/），零后端改动 */
 
 import { loadJSON, klineUrl, indiUrl, MANIFEST_URL, ANALYSIS_URL } from '../data.js';
-import { el, fmt2, fmtSigned, dirOf, fmtScale, skeleton, errorBox, emptyState, attachSearchHistory, favStar, isFav } from './common.js';
+import { el, fmt2, fmtSigned, dirOf, fmtScale, skeleton, errorBox, emptyState, attachSearchHistory, favStar, isFav, bindFavDelegation } from './common.js';
+import { scoreOf, bandOf, bandCls } from './analysis.js';   // 区间分析公共计算（P4.3 三合一）
 import { cssVar } from '../theme.js';
 
 const MAX = 8;   // 最多同时对比的标的数
@@ -773,8 +774,6 @@ export default {
     }
 
     /* ═══ 步骤3/4：区间信号表 + 统计表（共同窗口）═══ */
-    const bandOf = (s) => (s <= 25 ? '买入区间' : s <= 45 ? '逐步建仓' : s <= 65 ? '持有' : s <= 80 ? '逐步卖出' : '卖出区间');
-    const bandCls = (b) => ({ '买入区间': 'band-buy', '逐步建仓': 'band-build', '持有': 'band-hold', '逐步卖出': 'band-sell', '卖出区间': 'band-sell2' }[b] || 'band-hold');
     let anCache = null;
     const loadAnalysis = async () => (anCache || (anCache = await loadJSON(ANALYSIS_URL)));
 
@@ -836,14 +835,7 @@ export default {
         const ent = an.by_code[it.code];
         let sig = null;
         if (ent) {
-          const sysKey = ent.type === '股票' ? 'B' : 'A';
-          const w = an.presets['均衡'][sysKey];
-          let s = 0, tot = 0;
-          for (const k in w) {
-            const f = ent.factors[k];
-            if (f && f.pct != null) { s += f.pct * w[k]; tot += w[k]; }
-          }
-          const score = tot ? s / tot : null;
+          const score = scoreOf(ent, '均衡', ent.type, an.presets);
           const band = bandOf(score);
           const dyF = ent.factors.dy;
           const an2 = ent.anchors;
@@ -916,6 +908,7 @@ export default {
     }
 
     function renderList() {
+      bindFavDelegation(listEl);   // 星标事件委托（P4.1）：列表重绘重建星标不累积监听
       listEl.innerHTML = '';
       const items = currentItems();
       if (!items.length) {

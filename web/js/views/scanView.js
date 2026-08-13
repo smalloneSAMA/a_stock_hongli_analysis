@@ -6,6 +6,7 @@
 
 import { loadJSON, MANIFEST_URL, ANALYSIS_URL } from '../data.js';
 import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar } from './common.js';
+import { scoreOf } from './analysis.js';   // 贵贱度加权分（P4.3 三合一）
 
 const DY_URL = '/cache/analysis_dy.json';
 
@@ -30,16 +31,6 @@ export default {
         return '其他成份股';
       };
 
-      /* 均衡分（与对比分析同口径：presets['均衡'][A/B] × 因子分位 ÷ 权重和） */
-      const scoreOf = (code, type) => {
-        const ent = byCode[code];
-        if (!ent) return null;
-        const w = an.presets['均衡'][type === '股票' ? 'B' : 'A'];
-        let s = 0, tot = 0;
-        for (const k in w) { const f = ent.factors[k]; if (f && f.pct != null) { s += f.pct * w[k]; tot += w[k]; } }
-        return tot ? s / tot : null;
-      };
-
       /* 构建全池行（跳过无股息率标的） */
       const all = [];
       let maxDate = '';
@@ -52,7 +43,7 @@ export default {
         }
         const type = d.type;
         all.push({ code, name: d.name || code, type, group: groupOf(code, type),
-          dy: d.dy_now, pct: d.dy_pct, score: scoreOf(code, type) });
+          dy: d.dy_now, pct: d.dy_pct, score: scoreOf(byCode[code], '均衡', type, an.presets) });
       }
 
       /* ── 状态 ── */

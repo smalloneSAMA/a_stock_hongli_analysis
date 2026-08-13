@@ -12,6 +12,20 @@ const C = {
 
 const MA_STYLE = { type: 'line', smooth: true, symbol: 'none', sampling: 'lttb', lineStyle: { width: 1.2 }, z: 6 };
 
+/* ── resize 监听注册表（P4.1 泄漏治理）：dispose 时统一移除，避免匿名监听随图表重建无限累积 ──
+   每次图表创建注册命名 handler；disposeChart 按实例查找并移除；已 dispose 的实例空转跳过 */
+const _resizeHandlers = new WeakMap();
+function _trackResize(chart) {
+  const onWinResize = () => { if (chart.getDom()) chart.resize(); };   // getDom() 为 null = 已 dispose
+  window.addEventListener('resize', onWinResize);
+  _resizeHandlers.set(chart, onWinResize);
+}
+export function disposeChart(chart) {
+  const h = _resizeHandlers.get(chart);
+  if (h) { window.removeEventListener('resize', h); _resizeHandlers.delete(chart); }
+  if (chart && typeof chart.dispose === 'function') chart.dispose();
+}
+
 /* 移动平均（前 n-1 位为 null） */
 function ma(arr, n) {
   const out = new Array(arr.length).fill(null);
@@ -494,7 +508,7 @@ export function createKlineChart(el, opts) {
     }, { replaceMerge: ['series', 'legend'] });
   }
 
-  window.addEventListener('resize', () => { chart.resize(); });
+  _trackResize(chart);
 
   /* S7 锚线（数据可用后异步叠加；重复调用为替换语义）：list = [{value, label, color}]，line/candlestick 通用
      merge 模式按索引更新 series[0].markLine（data 长度恒定=2，逐索引替换无残留，不重建其他系列） */
@@ -534,7 +548,7 @@ export function createKlineChart(el, opts) {
   }
 
   return { chart, setRange, setDateRange, onZoom, getZoom, setSubSeries, addAnchorLines, setExtremes,
-           dispose: () => { window.removeEventListener('keydown', kbdMove); chart.dispose(); } };
+           dispose: () => { window.removeEventListener('keydown', kbdMove); disposeChart(chart); } };
 }
 
 /* 环形图（行业分布） */
@@ -563,7 +577,7 @@ export function createDonut(el, data, { title = '', selectable = false } = {}) {
       data,
     }],
   });
-  window.addEventListener('resize', () => { chart.resize(); });
+  _trackResize(chart);
   return chart;
 }
 
@@ -594,6 +608,6 @@ export function createBar(el, data, { title = '', unit = '%' } = {}) {
       label: { show: true, position: 'right', color: C.text2, fontSize: 10.5, formatter: '{c}%' },
     }],
   });
-  window.addEventListener('resize', () => { chart.resize(); });
+  _trackResize(chart);
   return chart;
 }

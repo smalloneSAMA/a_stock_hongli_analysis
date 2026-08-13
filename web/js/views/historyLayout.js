@@ -5,7 +5,8 @@
 
 import { el, renderTickerList, renderTable, skeleton, errorBox, emptyState, fmt2, fmtPct, dirOf, dailyChg, attachDatePicker } from './common.js';
 import { loadJSON, klineUrl, indiUrl, COMPONENTS_URL, ANALYSIS_URL } from '../data.js';
-import { createKlineChart, createDonut } from '../charts.js';
+import { createKlineChart, createDonut, disposeChart } from '../charts.js';
+import { scoreOf as anaScoreOf, bandOf, bandCls } from './analysis.js';   // 区间分析公共计算（P4.3 三合一）
 import { cssVar } from '../theme.js';
 
 const D = { volume: 1e4, amount: 1e8 };  // 默认除数：ETF/股票（腾讯源）手→万手、元→亿元
@@ -342,6 +343,7 @@ export function buildHistoryView(container, cfg) {
 
     try {
       const obj = await loadTickerObj(kinds[cfg.kind], item.code);
+      if (state.code !== item.code) return;   // 竞态守卫（P4.4）：await 期间用户已切到其他标的 → 丢弃本次结果
       const rows = obj.rows;
 
       /* 指标数据（股票主图叠加曲线用；副图模式已弃用，保留 subControl 分支兼容） */
@@ -351,6 +353,7 @@ export function buildHistoryView(container, cfg) {
         try {
           ind = await loadJSON(indiUrl(item.code));
         } catch { ind = null; }
+        if (state.code !== item.code) return;
         if (!ind || ind.length !== rows.length) ind = null;
         if (ind && cfg.subControl === 'indicator') {
           const opt = cfg.indicatorOptions[0];
@@ -360,6 +363,7 @@ export function buildHistoryView(container, cfg) {
 
       renderMain(mainCard, item, obj, rows, ind, subDefs);
     } catch (err) {
+      if (state.code !== item.code) return;   // 旧请求的错误框不覆盖新选中标的
       skeletonEl?.remove();
       mainCard.append(errorBox(`「${item.name}（${item.code}）」数据加载失败：${err.message}`, () => select(item)));
     }
@@ -514,7 +518,7 @@ export function buildHistoryView(container, cfg) {
         const cnt = new Map();
         for (const s of data.stocks) cnt.set(s.ind || '未知', (cnt.get(s.ind || '未知') || 0) + 1);
         const donutData = [...cnt.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-        if (compDonut) { compDonut.dispose(); compDonut = null; }
+        if (compDonut) { disposeChart(compDonut); compDonut = null; }
         compDonut = createDonut(grid.querySelector('.mini-chart'), donutData, { title: '成分股行业分布', selectable: true });
         const compTableApi = renderTable(grid.querySelector('.table-card'), { columns: COMP_COLUMNS, rows: data.stocks, pageSize: 50 });
         /* 点击行业扇区 → 右侧表格筛选该行业；再点同一扇区 → 取消筛选 */
@@ -540,8 +544,6 @@ export function buildHistoryView(container, cfg) {
 
     /* ── 区间分析视图（S6）：仪表盘 + 因子明细表 + 三档切换（本地算分）── */
     const F_UNIT = { dy: '%', price: '', trend: '%', sent: '%', pe: '', pb: '', peg: '' };
-    const bandOf = (s) => (s <= 25 ? '买入区间' : s <= 45 ? '逐步建仓' : s <= 65 ? '持有' : s <= 80 ? '逐步卖出' : '卖出区间');
-    const bandCls = (b) => ({ '买入区间': 'band-buy', '逐步建仓': 'band-build', '持有': 'band-hold', '逐步卖出': 'band-sell', '卖出区间': 'band-sell2' }[b] || 'band-hold');
     async function renderAnalysis() {
       if (analysisBox.dataset.loaded === item.code) return;   // 同一标的不重复加载
       analysisBox.dataset.loaded = item.code;
@@ -556,15 +558,6 @@ export function buildHistoryView(container, cfg) {
           return;
         }
         const sysKey = data.type === '股票' ? 'B' : 'A';
-        const scoreOf = (pname) => {
-          const w = an.presets[pname][sysKey];
-          let s = 0, tot = 0;
-          for (const k in w) {
-            const f = data.factors[k];
-            if (f && f.pct != null) { s += f.pct * w[k]; tot += w[k]; }
-          }
-          return tot ? s / tot : null;
-        };
         const dash = el('div', { class: 'ana-dash' },
           el('div', { class: 'ana-card' },
             el('div', { class: 'ana-score-row' },
@@ -587,7 +580,7 @@ export function buildHistoryView(container, cfg) {
         const setPreset = (pname) => {
           const w = an.presets[pname][sysKey];
           for (const b of dash.querySelectorAll('.ana-preset .seg-btn')) b.classList.toggle('active', b.textContent === pname);
-          const s = scoreOf(pname);
+          const s = anaScoreOf(data, pname, sysKey, an.presets);
           const band = bandOf(s);
           scoreEl.textContent = fmt2(s);
           bandEl.textContent = band;

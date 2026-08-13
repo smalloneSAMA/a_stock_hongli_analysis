@@ -7,6 +7,7 @@
 
 import { loadJSON, MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
 import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar } from './common.js';
+import { scoreOf as anaScoreOf } from './analysis.js';   // 贵贱度加权分（P4.3 三合一）
 
 const DY_URL = '/cache/analysis_dy.json';
 
@@ -18,6 +19,7 @@ const W = {
 };
 const bandOf = (s) => (s >= 75 ? '强烈推荐' : s >= 60 ? '推荐' : s >= 45 ? '关注' : '回避');
 const bandCls = (b) => ({ 强烈推荐: 'band-buy', 推荐: 'band-build', 关注: 'band-hold', 回避: 'band-sell2' }[b] || 'band-hold');
+/* 注：以上为推荐分档（高=好，方向与贵贱度分档相反），与 analysis.js 的 bandOf（贵贱度）语义不同，不共用 */
 /* 三档打分说明（悬停提示 + 动态标签 + 底部对照表） */
 const PRESET_DESC = {
   稳健: { w: 'dy 50% · 贵贱度 25% · 回测 25%', tip: '股息为王：股息率分位占一半，最看重“便宜”与分红确定性' },
@@ -47,19 +49,6 @@ export default {
         if (s.rec) return '推荐20';
         if (s.watch) return '自选股';
         return '其他成份股';
-      };
-
-      /* 贵贱度综合分（同区间分析公式：presets[档][A/B] × 因子分位 ÷ 权重和，0=便宜→100=贵） */
-      const anaScoreOf = (code, type, preset) => {
-        const ent = byCode[code];
-        if (!ent) return null;
-        const w = an.presets[preset][type === '股票' ? 'B' : 'A'];
-        let s = 0, tot = 0;
-        for (const k in w) {
-          const f = ent.factors[k];
-          if (f && f.pct != null) { s += f.pct * w[k]; tot += w[k]; }
-        }
-        return tot ? s / tot : null;
       };
 
       /* 候选池：有回测记录且至少触发过一次买入信号（无回测/无信号直接过滤） */
@@ -116,7 +105,7 @@ export default {
       };
       const scoreWith = (r, pname, base) => {
         const w = W[pname];
-        const ana = anaScoreOf(r.code, r.type, pname);
+        const ana = anaScoreOf(byCode[r.code], pname, r.type, an.presets);
         const sAna = ana == null ? 0 : 100 - ana;
         const bt = btScore(r);
         let s = (w.dy * base.dyPart + w.ana * sAna + w.bt * bt) / 100 + base.trig - base.diverge;

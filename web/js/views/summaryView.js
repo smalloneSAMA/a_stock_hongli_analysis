@@ -4,7 +4,7 @@
    替代原硬编码清单（旧人工20只） */
 import { loadJSON, SUMMARY_URL, MANIFEST_URL, COMPONENTS_URL } from '../data.js';
 import { el, fmt2, fmt0, fmtPct, dirOf, renderTable, skeleton, errorBox, favStar } from './common.js';
-import { createDonut, createBar } from '../charts.js';
+import { createDonut, createBar, disposeChart } from '../charts.js';
 
 /* 入选推荐20只标记：动态读 manifest（rec 由评分产物驱动），删除原硬编码清单 */
 
@@ -53,8 +53,8 @@ export default {
     const render = (rows, base, m, comp) => {
       body.innerHTML = '';
       /* 重载保护：旧图表实例挂在已清空的 DOM 上，须先销毁（视图常驻+重试场景） */
-      if (donutChart) { donutChart.dispose(); donutChart = null; }
-      if (barChart) { barChart.dispose(); barChart = null; }
+      if (donutChart) { disposeChart(donutChart); donutChart = null; }
+      if (barChart) { disposeChart(barChart); barChart = null; }
       donutFilterInd = null;
 
       const statCard = (label, value, sub, amber) => el('div', { class: 'stat-card card' + (amber ? ' amber' : '') },
@@ -191,7 +191,7 @@ export default {
         const rebuildDonut = !donutChart || poolSel !== donutPoolSel;
         donutPoolSel = poolSel;
         if (rebuildDonut) {
-          if (donutChart) { donutChart.dispose(); donutChart = null; }
+          if (donutChart) { disposeChart(donutChart); donutChart = null; }
           const cnt = new Map();
           for (const r of poolBase) cnt.set(r.ind, (cnt.get(r.ind) || 0) + 1);
           const donutData = [...cnt.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
@@ -208,7 +208,7 @@ export default {
           + (donutFilterInd ? ' · 筛选：' + donutFilterInd + '（再点击取消）' : '');
 
         /* 股息率 TOP15：每次筛选刷新（donut 保持稳定不动） */
-        if (barChart) { barChart.dispose(); barChart = null; }
+        if (barChart) { disposeChart(barChart); barChart = null; }
         const dyTop = out
           .filter(r => r.div_yield != null && r.div_yield > 0)
           .sort((a, b) => b.div_yield - a.div_yield)
