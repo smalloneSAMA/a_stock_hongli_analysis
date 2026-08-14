@@ -124,6 +124,16 @@ export function bindFavDelegation(container) {
   });
 }
 
+/* ── 跳转对应板块历史K线（智能推荐/回测报告共用）── */
+/* 视图容器常驻：已挂载视图不会重新 mount（__openTicker 仅在首次挂载时被消费），
+   必须再派发事件让已挂载视图响应选中；未挂载场景事件无监听者，由 __openTicker 兜底 */
+export function openTicker(code, name, type) {
+  const view = type === '指数' ? 'index' : type === 'ETF' ? 'etf' : 'stock';
+  window.__openTicker = { code, name };
+  window.dispatchEvent(new CustomEvent('open-ticker', { detail: { code, name } }));
+  if (location.hash !== `#/${view}`) location.hash = `#/${view}`;
+}
+
 /* ── 搜索历史：点击搜索框弹出最近 5 条（键盘 ↑/↓ 选择、Enter 确认、Esc 关闭、失焦记录）── */
 const HIST_PREFIX = 'pi_search_hist_';
 export function getSearchHistory(key) {

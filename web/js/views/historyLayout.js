@@ -3,7 +3,7 @@
    性能：列表信息来自 manifest（含最新价/涨跌），K线与指标在选中标的后按需加载（单文件），
          内存缓存保证切换秒开 */
 
-import { el, renderTickerList, renderTable, skeleton, errorBox, emptyState, fmt2, fmtPct, dirOf, dailyChg, attachDatePicker } from './common.js';
+import { el, renderTickerList, renderTable, skeleton, errorBox, emptyState, fmt2, fmtPct, dirOf, dailyChg, attachDatePicker, openTicker } from './common.js';
 import { loadJSON, klineUrl, indiUrl, COMPONENTS_URL, ANALYSIS_URL } from '../data.js';
 import { createKlineChart, createDonut, disposeChart } from '../charts.js';
 import { scoreOf as anaScoreOf, bandOf, bandCls } from './analysis.js';   // 区间分析公共计算（P4.3 三合一）
@@ -489,7 +489,8 @@ export function buildHistoryView(container, cfg) {
     /* 成分股视图：行业分布环形图 + 成分股表格（数据来自 web/data/components.json） */
     const COMP_COLUMNS = [
       { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
-      { key: 'name', label: '名称', align: 'left', sortable: true },
+      { key: 'name', label: '名称', align: 'left', sortable: true,
+        fmt: (v, row) => el('a', { href: '#', onclick: (e) => { e.preventDefault(); openTicker(row.code, row.name, '股票'); }, class: 'jump-link', title: '查看历史K线（股票）' }, v) },
       { key: 'ind', label: '一级行业', align: 'left', sortable: true },
       { key: 'ind3', label: '二级行业', align: 'left', sortable: true, fmt: (v) => (v ? v : '—') },
       { key: 'weight', label: '权重(%)', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },

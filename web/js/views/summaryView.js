@@ -3,7 +3,7 @@
 /* 入选推荐20只：动态读 manifest 的 rec 标记（由 scripts/_recommend_stocks.py 评分产物驱动），
    替代原硬编码清单（旧人工20只） */
 import { loadJSON, SUMMARY_URL, MANIFEST_URL, COMPONENTS_URL } from '../data.js';
-import { el, fmt2, fmt0, fmtPct, dirOf, renderTable, skeleton, errorBox, favStar } from './common.js';
+import { el, fmt2, fmt0, fmtPct, dirOf, renderTable, skeleton, errorBox, favStar, openTicker } from './common.js';
 import { createDonut, createBar, disposeChart } from '../charts.js';
 
 /* 入选推荐20只标记：动态读 manifest（rec 由评分产物驱动），删除原硬编码清单 */
@@ -11,7 +11,8 @@ import { createDonut, createBar, disposeChart } from '../charts.js';
 const columns = [
   { key: 'fav', label: '★', align: 'center', sortable: false, filter: false, fmt: (_v, row) => favStar(row.code) },
   { key: 'code', label: '证券代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
-  { key: 'name', label: '证券名称', align: 'left', sortable: true, cmp: (a, b) => a.localeCompare(b, 'zh') },
+  { key: 'name', label: '证券名称', align: 'left', sortable: true, cmp: (a, b) => a.localeCompare(b, 'zh'),
+    fmt: (v, row) => el('a', { href: '#', onclick: (e) => { e.preventDefault(); openTicker(row.code, row.name, '股票'); }, class: 'jump-link', title: '查看历史K线（股票）' }, v) },
   { key: 'ind', label: '一级行业', align: 'left', sortable: true, cmp: (a, b) => a.localeCompare(b, 'zh') },
   { key: 'ind3', label: '细分行业', align: 'left', sortable: true, cmp: (a, b) => a.localeCompare(b, 'zh') },
   { key: 'n', label: '入选指数/ETF数', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : String(v)) },

@@ -5,7 +5,7 @@
    数据：cache/analysis_dy.json（dy_pct=股息率分位，高=便宜）+ analysis.json（均衡分）+ manifest（分组） */
 
 import { loadJSON, MANIFEST_URL, ANALYSIS_URL } from '../data.js';
-import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar } from './common.js';
+import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar, openTicker } from './common.js';
 import { scoreOf } from './analysis.js';   // 贵贱度加权分（P4.3 三合一）
 
 const DY_URL = '/cache/analysis_dy.json';
@@ -124,7 +124,8 @@ export default {
         const cols = [
           { key: 'fav', label: '★', align: 'center', sortable: false, filter: false, fmt: (_v, row) => favStar(row.code) },
           { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
-          { key: 'name', label: '名称', align: 'left', sortable: true },
+          { key: 'name', label: '名称', align: 'left', sortable: true,
+            fmt: (v, row) => el('a', { href: '#', onclick: (e) => { e.preventDefault(); openTicker(row.code, row.name, row.type); }, class: 'jump-link', title: '查看历史K线（' + row.type + '）' }, v) },
           { key: 'type', label: '类型', sortable: true, filter: false },
           { key: 'group', label: '分组', sortable: true, filter: false },
           { key: 'dy', label: '当前dy(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },

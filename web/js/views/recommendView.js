@@ -6,7 +6,7 @@
    数据：cache/analysis_dy.json + web/data/analysis.json + web/data/backtest.json(by_p.90) */
 
 import { loadJSON, MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
-import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar } from './common.js';
+import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar, openTicker } from './common.js';
 import { scoreOf as anaScoreOf } from './analysis.js';   // 贵贱度加权分（P4.3 三合一）
 
 const DY_URL = '/cache/analysis_dy.json';
@@ -119,19 +119,6 @@ export default {
         return { 稳健: scoreWith(r, '稳健', base), 均衡: scoreWith(r, '均衡', base), 进取: scoreWith(r, '进取', base) };
       };
 
-      /* 跳转对应板块历史K线：__openTicker 兜底（视图未挂载时挂载后消费）+ open-ticker 事件（已挂载即响应） */
-      const goTicker = (r) => {
-        const view = r.type === '指数' ? 'index' : r.type === 'ETF' ? 'etf' : 'stock';
-        window.__openTicker = { code: r.code, name: r.name };
-        if (location.hash === `#/${view}`) {
-          window.dispatchEvent(new CustomEvent('open-ticker', { detail: { code: r.code, name: r.name } }));
-        } else {
-          location.hash = `#/${view}`;
-          /* 视图容器常驻：已挂载视图不会重新 mount（__openTicker 仅在首次挂载时被消费），
-             必须再派发事件让已挂载视图响应选中；未挂载场景事件无监听者，由 __openTicker 兜底 */
-          window.dispatchEvent(new CustomEvent('open-ticker', { detail: { code: r.code, name: r.name } }));
-        }
-      };
 
       root.append(el('div', { class: 'view-head' },
         el('h1', {}, '智能推荐'),
@@ -255,7 +242,7 @@ export default {
           { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
           { key: 'name', label: '名称', align: 'left', sortable: true,
             fmt: (v, row) => el('div', {},
-              el('a', { href: '#', onclick: (e) => { e.preventDefault(); goTicker(row); }, class: 'jump-link', title: '查看历史K线（' + row.type + '）' }, v),
+              el('a', { href: '#', onclick: (e) => { e.preventDefault(); openTicker(row.code, row.name, row.type); }, class: 'jump-link', title: '查看历史K线（' + row.type + '）' }, v),
               el('div', { class: 'rec-sub' }, row.type + (row.group ? ' · ' + row.group : ''))) },
           { key: 's', label: '推荐分', sortable: true,
             fmt: (v, row) => {
