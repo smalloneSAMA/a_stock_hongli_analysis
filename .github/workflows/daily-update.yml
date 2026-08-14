@@ -1,7 +1,7 @@
 # 红利研究数据每日自动更新（GitHub Actions）
 #
 # 触发：
-#   · schedule 工作日 18:00（北京，cron 用 UTC 10:00）→ 数据源收盘后已齐
+#   · schedule 每日 05:15（北京，cron 用 UTC 21:15）→ 用户开盘前数据已更新至前一交易日
 #   · workflow_dispatch 手动（mode: auto/daily/weekly/full/status）
 #
 # 模式判定（auto）：
@@ -26,7 +26,7 @@ name: 数据每日更新
 
 on:
   schedule:
-    - cron: '0 10 * * 1-5'        # 北京 18:00（UTC+8），工作日
+    - cron: '15 21 * * *'        # 北京 05:15（UTC+8），每日（周末/节假日数据无变化时零提交）
   workflow_dispatch:
     inputs:
       mode:
