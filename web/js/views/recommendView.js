@@ -6,7 +6,7 @@
    数据：cache/analysis_dy.json + web/data/analysis.json + web/data/backtest.json(by_p.90) */
 
 import { loadJSON, MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
-import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar, openTicker } from './common.js';
+import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar, openTicker, signalYearsTitle } from './common.js';
 import { scoreOf as anaScoreOf } from './analysis.js';   // 贵贱度加权分（P4.3 三合一）
 
 const DY_URL = '/cache/analysis_dy.json';
@@ -282,7 +282,8 @@ export default {
           { key: 'base12', label: '基准12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },
           { key: 'ex6', label: '超额6M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },
           { key: 'ex12', label: '超额12M(%)', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v)), color: (v) => dirOf(v) },
-          { key: 'n_buy', label: '信号数', sortable: true, filter: false },
+          { key: 'n_buy', label: '信号数', sortable: true, filter: false,
+            fmt: (v, row) => (v == null ? '—' : el('span', { title: signalYearsTitle(row) }, v)) },
           { key: 'close', label: '现价', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
           { key: 'dd2y', label: '2Y回撤', sortable: true,
             fmt: (v, row) => (v == null ? '—' : el('span', {

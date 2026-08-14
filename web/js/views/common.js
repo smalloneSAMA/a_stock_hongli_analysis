@@ -124,6 +124,36 @@ export function bindFavDelegation(container) {
   });
 }
 
+/* 信号年份分布悬停文本（backtest.json：signal_years={年份: 触发数}、yearly_win={年份: {n,win6,win12}}）：
+   第一行总览（总数+总胜率6M/12M）+ 逐行"YYYY年 N次 · 胜率6M/12M"；每年胜率基于足期样本（同批），
+   尾部未足期信号在总览与年份行标注样本数，供信号数列 title 使用 */
+export function signalYearsTitle(row) {
+  const years = row && row.signal_years;
+  if (!years || typeof years !== 'object') return null;
+  const ys = Object.keys(years).filter((y) => years[y] > 0).sort();
+  if (!ys.length) return null;
+  const yw = row.yearly_win || {};
+  const pct = (v) => (v == null ? '—' : v + '%');
+  const expTotal = ys.reduce((a, y) => a + ((yw[y] && yw[y].n) || 0), 0);
+  const total = row.n_buy == null ? null : row.n_buy;
+  const lines = [];
+  let head = '买入信号 ' + (total == null ? '' : total + ' 次') + ' · 胜率6M ' + pct(row.win6) + ' · 胜率12M ' + pct(row.win12);
+  if (total != null && expTotal < total) head += '（含未足期 ' + (total - expTotal) + ' 次）';
+  lines.push(head);
+  for (const y of ys) {
+    const w = yw[y];
+    let line = y + '年 ' + years[y] + '次';
+    if (w && w.n > 0) {
+      line += ' · 胜率6M ' + pct(w.win6) + ' · 胜率12M ' + pct(w.win12);
+      if (w.n < years[y]) line += '（样本 ' + w.n + '）';
+    } else {
+      line += ' · 胜率6M — · 胜率12M —（无足期样本）';
+    }
+    lines.push(line);
+  }
+  return lines.join('\n');
+}
+
 /* ── 跳转对应板块历史K线（智能推荐/回测报告共用）── */
 /* 视图容器常驻：已挂载视图不会重新 mount（__openTicker 仅在首次挂载时被消费），
    必须再派发事件让已挂载视图响应选中；未挂载场景事件无监听者，由 __openTicker 兜底 */

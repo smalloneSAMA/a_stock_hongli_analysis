@@ -11,6 +11,7 @@
 用法: python scripts/_backtest_analysis.py [--only 000922] [--p 90]
 """
 import sys, io, os, json, argparse, datetime
+from collections import Counter
 import numpy as np
 import pandas as pd
 
@@ -91,9 +92,23 @@ def run_backtest(code, info, p_buy=90):
     if not sig[HORIZONS[0]]:
         return {"code": code, "name": info["name"], "type": info["type"], "skip": "无买入信号"}
 
+    # 每年胜率：同批足期信号（i+252<n）按年份分组，统计 6M/12M 正收益占比（与 signal_years 同源，尾部未足期不计）
+    yearly = {}
+    for i in buy_ex:
+        if i + HORIZONS[-1] < n:
+            y = dates[i][:4]
+            yearly.setdefault(y, []).append((close[i + HORIZONS[1]] / close[i] - 1,
+                                             close[i + HORIZONS[3]] / close[i] - 1))
+    yearly_win = {y: {"n": len(v),
+                      "win6": round(100.0 * np.mean(np.array([x[0] for x in v]) > 0), 1),
+                      "win12": round(100.0 * np.mean(np.array([x[1] for x in v]) > 0), 1)}
+                  for y, v in sorted(yearly.items())}
+
     out = {
         "code": code, "name": info["name"], "type": info["type"],
         "n_buy": len(buy_ex), "n_trades": len(trades),
+        "signal_years": dict(sorted(Counter(dates[i][:4] for i in buy_ex).items())),
+        "yearly_win": yearly_win,
         "win_rate": {H_LABEL[k]: round(100.0 * np.mean(np.array(sig[h]) > 0), 1) for k, h in enumerate(HORIZONS)},
         "avg_ret": {H_LABEL[k]: round(float(np.mean(sig[h])) * 100, 2) for k, h in enumerate(HORIZONS)},
         "excess": {H_LABEL[k]: round((float(np.mean(sig[h])) - base[h]) * 100, 2) for k, h in enumerate(HORIZONS)},
@@ -253,7 +268,9 @@ def main(only=None, p_buy=None):
         if "skip" in r:
             return {"code": r["code"], "name": r["name"], "type": r["type"], "group": r.get("group"), "skip": r["skip"]}
         return {"code": r["code"], "name": r["name"], "type": r["type"], "group": r.get("group"),
-                "n_buy": r["n_buy"], "win6": r["win_rate"]["6M"], "win12": r["win_rate"]["12M"],
+                "n_buy": r["n_buy"], "signal_years": r.get("signal_years") or {},
+                "yearly_win": r.get("yearly_win") or {},
+                "win6": r["win_rate"]["6M"], "win12": r["win_rate"]["12M"],
                 "base6": r["base"]["6M"], "base12": r["base"]["12M"],
                 "ex6": r["excess"]["6M"], "ex12": r["excess"]["12M"]}
     by_p = {str(p): [slim(r) for r in results_by_p[p]] for p in order}
