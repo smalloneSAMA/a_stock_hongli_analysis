@@ -1,6 +1,7 @@
 /* 视图：智能推荐（信号扫描 × 回测报告 × 区间分析 三维融合推荐）
    推荐分 = w_dy×dy分位(高=便宜) + w_ana×(100−贵贱度分) + w_bt×回测分（0~100，越高越推荐）
-   回测分 = 0.4×win12 + 0.4×max(0,ex12) + 20×min(1,n_buy/20)（胜率40% + 超额40%[负计0] + 样本可信20%[≥20次满额]）
+   回测分 = 0.35×win12 + 0.10×win6 + 0.25×max(0,ex12) + 0.1×max(0,超额+基准)（胜率12M 35% + 胜率6M 10%[时效] + 超额25%[负计0] + 绝对收益10%[负计0]）
+   样本可信 20 = 数量 10×min(1,n_buy/20) + 跨年覆盖 10×min(1,有信号年份数/4)（≥4年满分）；时效修正±5
    dy 分位 ≥90（信号触发中，与回测 p90 同口径）→ 推荐分 +5 并标记
    过滤：无回测覆盖（21只）或近5年从未触发买入信号（66只）的标的直接过滤 → 候选池 303
    数据：cache/analysis_dy.json + web/data/analysis.json + web/data/backtest.json(by_p.90) */
@@ -66,7 +67,7 @@ export default {
         const type = d.type;
         const ent = byCode[code] || {};
         all.push({ code, name: d.name || code, type, group: groupOf(code, type),
-          dy: d.dy_now, pct: d.dy_pct, close: d.close_now,
+          dy: d.dy_now, pct: d.dy_pct, dy_p50: d.dy_p50 ?? null, close: d.close_now,
           dd2y: meta[code]?.dd2y ?? null, hi2y: meta[code]?.hi2y ?? null, hi2y_date: meta[code]?.hi2y_date ?? null,
           anchor: (ent.anchors && ent.anchors.buy) ?? null,
           pr: (type === '股票' ? (meta[code]?.last_pr ?? null) : null),   // 市赚率PR（仅股票，指数/ETF 无财报）
@@ -85,15 +86,19 @@ export default {
       let perfect = false;   // 完美模式：三档（稳健/均衡/进取）推荐分均 ≥75 的共识标的
       let typeF = '全部';
 
-      /* 回测分（v3·信号能力评估）：胜率12M 40% + 胜率6M 15%（时效） + 超额12M 25%（负计0）
+      /* 回测分（v3·信号能力评估）：胜率12M 35% + 胜率6M 10%（时效） + 超额12M 25%（负计0）
          + 绝对收益 max(0,超额+基准) 10%（回答"信号买入后绝对赚不赚"，大秦铁路类得 0 分）
-         + 样本可信 10（≥20次满额，置信度配角不主导排序） + 时效修正±5 */
+         + 样本可信 20 = 数量 10×min(1,n_buy/20) + 跨年覆盖 10×min(1,有信号年份数/4)
+           （跨年覆盖只加不罚：信号分散在≥4个年份=多市场环境验证；年份数来自 signal_years）
+         + 时效修正±5 */
       const btScore = (r) => {
         const w6 = r.win6 == null ? r.win12 : r.win6;   // win6 缺失时按 win12（时效修正归零）
         const trend = Math.max(-5, Math.min(5, (w6 - r.win12) * 0.05));   // 近期信号变强加分/变弱减分
         const absRet = (r.ex12 ?? 0) + (r.base12 ?? 0);   // 绝对收益（超额+基准）
-        return 0.4 * r.win12 + 0.15 * w6 + 0.25 * Math.max(0, r.ex12 ?? 0)
-          + 0.1 * Math.max(0, absRet) + 10 * Math.min(1, r.n_buy / 20) + trend;
+        const yearsN = r.signal_years ? Object.keys(r.signal_years).length : 0;   // 有信号年份数（跨年覆盖）
+        return 0.35 * r.win12 + 0.10 * w6 + 0.25 * Math.max(0, r.ex12 ?? 0)
+          + 0.1 * Math.max(0, absRet)
+          + 10 * Math.min(1, r.n_buy / 20) + 10 * Math.min(1, yearsN / 4) + trend;
       };
       /* 与档位无关的公共部分（dy混合分/背离/触发） + 按档位算分 */
       const baseOf = (r) => {
@@ -111,6 +116,26 @@ export default {
         let s = (w.dy * base.dyPart + w.ana * sAna + w.bt * bt) / 100 + base.trig - base.diverge;
         s = Math.max(0, Math.min(100, s));
         return { s, dyPart: base.dyPart, anaPart: sAna, btPart: bt, diverge: base.diverge, trig: base.trig };
+      };
+      /* 股息率悬浮归因：dy = 分红/价格，用价格侧解释当前水平（价格分位/2Y回撤 + dy 自身位置） */
+      const dyTitle = (r) => {
+        const ent = byCode[r.code] || {};
+        const pricePct = ent.factors && ent.factors.price ? ent.factors.price.pct : null;
+        const lines = [];
+        let l1 = '当前股息率 ' + fmt2(r.dy) + '% · 5年分位 ' + fmt2(r.pct) + '%';
+        if (r.dy_p50 != null) l1 += '（中位 ' + fmt2(r.dy_p50) + '%）';
+        lines.push(l1);
+        const p = [];
+        if (r.close != null) p.push('现价 ' + fmt2(r.close));
+        if (pricePct != null) p.push('5年价格分位 ' + fmt2(pricePct) + '%');
+        if (r.dd2y != null) p.push('距2年高点 ' + fmt2(r.dd2y) + '%' + (r.hi2y_date ? '（' + r.hi2y_date + ' ' + fmt2(r.hi2y) + '）' : ''));
+        if (p.length) lines.push('价格归因：' + p.join(' · '));
+        if (pricePct != null) {
+          if (pricePct <= 25) lines.push('→ 价格处历史低位，股息率被动抬升（跌出高息）');
+          else if (pricePct >= 75) lines.push('→ 价格处历史高位，压制当前股息率');
+          else lines.push('→ 价格因素中性');
+        }
+        return lines.join('\n');
       };
       const recOf = (r) => scoreWith(r, preset, baseOf(r));
       /* 完美模式：三档全算完整分项（毫秒级，无需缓存） */
@@ -262,7 +287,8 @@ export default {
             fmt: (_v, row) => perfect
               ? el('span', { class: 'band-pill band-perfect', title: '稳健/均衡/进取三档均 ≥75 的共识标的' }, '完美')
               : el('span', { class: 'band-pill ' + bandCls(bandOf(row.s)) }, bandOf(row.s)) },
-          { key: 'dy', label: '股息率(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
+          { key: 'dy', label: '股息率(%)', sortable: true,
+            fmt: (v, row) => (v == null ? '—' : el('span', { title: dyTitle(row) }, fmt2(v))) },
           { key: 'pct', label: 'dy分位', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), color: (v) => (v >= 90 ? 'up' : v <= 10 ? 'down' : '') },
           { key: 'crossPct', label: '绝对分位', sortable: true, filter: false,
             fmt: (v) => (v == null ? '—' : el('span', { title: '候选池内当前股息率排名分位（高=股息率高），不受全市场估值水平影响' }, fmt2(v))),
