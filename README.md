@@ -10,6 +10,7 @@ a_stock_hongli_analysis/
 ├── 红利指数与ETF成分股.md   # 全部指数/ETF的成分股明细（含权重、数据来源）
 ├── 困难总结.md              # 项目过程困难与经验记录
 ├── update.py                # ★ 数据更新入口（交互式菜单）
+├── serve.py                 # 本地静态服务（no-cache）+ POST /api/holdings 持仓台账落盘（JSON校验+原子写）
 ├── scripts/                 # 全部脚本
 │   ├── _common.py           # ★ 公共工具单一来源：行情批量/前缀路由/东财限流/原子读写/Excel导出
 │   ├── _fetch_history.py    # 历史行情拉取（指数K线/ETF K线+净值，支持增量）
@@ -26,8 +27,9 @@ a_stock_hongli_analysis/
 │   ├── _fetch_index_data.py # （原研究）候选指数行情/估值
 │   ├── _fetch_etf_data.py   # （原研究）候选ETF规模/业绩
 │   └── _find_index_code.py  # （原研究）指数代码查询
-├── cache/                   # 历史行情缓存（JSON，指数11+ETF11+股票335）+ analysis_dy.json（反推股息率序列）+ _推荐20.json（评分产物）
-├── excel/                   # 历史行情Excel（指数/ETF/股票历史.xlsx + 国证指数成分.xlsx）+ 自选股清单.xlsx（唯一事实来源）
+├── cache/                   # 历史行情缓存（JSON，指数11+ETF11+股票335）+ analysis_dy.json（反推股息率序列）+ _推荐20.json（评分产物）+ 持仓.json（我的持仓台账，唯一事实来源）
+├── excel/                   # 历史行情Excel（指数/ETF/股票历史.xlsx + 国证指数成分.xlsx）+ 自选股清单.xlsx（观察池清单，非持仓）
+├── web/                     # 纯 ES Module 前端（10 视图，hash 路由：charts.js + views/*）
 └── docs/                    # 参考资料 + 买卖区间分析-设计方案.md + 回测报告.md
 ```
 
@@ -55,7 +57,7 @@ python update.py status        # 只读数据状态扫描（新鲜度/回测过�
 
 ## 前端展示页（web/）
 
-4 个 Excel 表格的浏览器展示终端：指数历史（11只）/ ETF历史（11只）/ 股票历史（20只）/ 成分股汇总（289只）+ 回测报告页，深色金融科技风，红涨绿跌。
+10 个视图的浏览器研究终端（hash 路由，视图容器常驻切换不销毁）：指数历史 / ETF历史 / 股票历史 / 成分股汇总 / 回测报告 / 组合回测 / 对比分析 / 信号扫描 / 智能推荐 / 我的持仓，深色金融科技风，红涨绿跌。
 
 ```bash
 # 1. 生成前端数据包（指数/ETF/股票 K线直接读 cache/，股票逐日指标与 summary 由此脚本预计算，口径与 Excel 完全一致）
@@ -69,10 +71,18 @@ python serve.py
 #    （若此前打开过页面且图表空白，请按 Ctrl+Shift+R 强制刷新一次）
 ```
 
-- 纯静态零依赖：HTML + 原生 JS（ES Modules）+ 本地 ECharts（web/vendor/）+ 本地 Fira 字体，离线可用
+- 零依赖前端：HTML + 原生 JS（ES Modules）+ 本地 ECharts（web/vendor/）+ 本地 Fira 字体，离线可用；serve.py 除静态服务外仅提供 POST /api/holdings 写接口（持仓台账落盘，改动 serve.py 后需重启服务生效）
 - 数据更新后重跑 `_gen_web_data.py` 即可（只读缓存，不触发任何网络请求；约 5 秒）；或 `python update.py` 选 7 一键（含区间分析重建）
 - 股票逐日指标（股息率/PE-TTM/PE动/PB/PEG/ROE/ROA）复用 `_fetch_stock_data.py` 的 `calc_*` 函数，与 `excel/股票历史.xlsx` 同口径；主图可叠加 6 条指标曲线
 - ETF 视图支持单位/累计净值叠加开关；成分股汇总支持搜索/行业筛选/推荐20只/任意列排序 + 行业分布环形图（点击扇区筛选）+ 股息率 TOP15
+
+### 我的持仓（交易台账 + 持仓决策）
+
+- **台账**：`cache/持仓.json` 为唯一事实来源（交易流水，随 git 提交）；前端增删改后 POST `serve.py` 的 `/api/holdings`（JSON 结构校验 + 256KB 上限 + 原子写）；localStorage 仅作保存失败草稿，换浏览器/换机器数据不丢
+- **计算**：平均成本法重放持仓/盈亏（费用计入成本）；累计分红按东财分红缓存（`cache/分红_*.json`）除权日分段归属，不复投、不摊薄成本（估算口径，忽略送转股）
+- **决策**：与智能推荐同口径（`reco.js` 公共评分模块，三档权重切换），优先级 = 分红异常警惕（近12个月无派息）> dy分位≤10 卖出区（持仓亏损则减仓观察）> 推荐分档（≥75 加仓 / ≥60 持有偏加 / ≥45 持有 / <45 减仓）> 无回测覆盖回退 dy+贵贱度双条件
+- **渗透**：信号扫描/智能推荐表格加持仓角标「持」，信号扫描卖出区附持仓提示条；`holding-change` 事件跨视图同步
+- **口径注意**：现价/自动填价用 `manifest.json` 的 `last_close` 场内价（ETF 的 `analysis_dy.close_now` 是跟踪指数点位，不可作交易价）；指数不可入台账（仅 ETF+股票）
 
 ### 买卖区间分析（S1-S8）
 
