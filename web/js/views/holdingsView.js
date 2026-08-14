@@ -144,7 +144,8 @@ export default {
           '③ 推荐分（与智能推荐同口径，切换权重档位会改变建议）：≥75 强烈推荐→加仓 / ≥60→持有偏加 / ≥45→持有 / <45→减仓；',
           '④ 无回测覆盖标的回退 dy 分位≥90 或贵贱度≤25→加仓、贵贱度≥80→减仓。',
           '本页为规则化辅助决策，非投资建议；累计分红为估算口径（不复投、不摊薄成本、忽略送转股）。'),
-        el('div', { class: 'chart-title', style: 'font-size:13.5px;font-weight:700;margin:16px 2px 4px' }, '交易台账'),
+        el('div', { class: 'chart-title', style: 'font-size:13.5px;font-weight:700;margin:16px 2px 4px' }, '交易台账',
+          el('span', { class: 'txt-3', style: 'font-size:11px;font-weight:400;margin-left:8px' }, '表格可左右滚动 · 最后一列可删除任意一笔交易（持仓/盈亏随之重算）')),
         ledgerBox, formBox);
 
       /* ── 表单区（买入/卖出切换，每次重绘重建） ── */
@@ -390,7 +391,11 @@ export default {
                 return v == null ? '—' : el('span', { class: 'txt-' + dirOf(v) }, (v >= 0 ? '+' : '') + v.toFixed(2));
               } },
             { key: 'op', label: '操作', align: 'center', sortable: false, filter: false,
-              fmt: (_v, row) => el('button', { class: 'hld-del', title: '删除该笔交易', onclick: () => { data.trades = data.trades.filter((t) => t.id !== row.id); persist(); } }, '✕') },
+              fmt: (_v, row) => el('button', { class: 'hld-del', title: '删除该笔交易（持仓/盈亏将重新计算）', onclick: () => {
+                if (!window.confirm('删除这笔交易（' + row.code + ' ' + row.date + ' ' + (row.side === 'buy' ? '买入' : '卖出') + ' ' + row.qty + ' 股）？')) return;
+                data.trades = data.trades.filter((t) => t.id !== row.id);
+                persist();
+              } }, '删除') },
           ];
           const { sells } = replayTrades(data.trades);
           const lrows = trades.map((t) => ({

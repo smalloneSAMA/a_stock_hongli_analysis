@@ -520,8 +520,9 @@ button { font-family: inherit; }
 .hld-field select:disabled { opacity: .6; cursor: not-allowed; }
 .hld-submit { padding: 7px 18px; font-size: 12.5px; font-weight: 700; border-radius: 8px; cursor: pointer; align-self: end;
   border: 1px solid var(--brand); background: linear-gradient(180deg, rgba(251, 191, 36, .18), rgba(251, 191, 36, .08)); color: var(--brand); }
-.hld-del { background: none; border: none; cursor: pointer; color: var(--text-3); font-size: 12px; padding: 2px 6px; }
-.hld-del:hover { color: var(--down); }
+.hld-del { background: none; border: 1px solid var(--down); color: var(--down); cursor: pointer; font-size: 11px;
+  padding: 2px 9px; border-radius: 6px; line-height: 1.6; }
+.hld-del:hover { background: var(--down-bg); }
 .band-warn { color: var(--brand); background: rgba(251, 191, 36, .14); border: 1px solid var(--brand); }
 /* 搜索历史下拉（点击搜索框弹出最近记录，键盘上下选择） */
 .search-hist { position: absolute; z-index: 200; background: var(--surface); border: 1px solid var(--border-strong);
