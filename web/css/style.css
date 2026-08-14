@@ -503,6 +503,26 @@ button { font-family: inherit; }
   transition: color .15s, transform .15s; }
 .fav-star:hover { color: var(--brand); transform: scale(1.2); }
 .fav-star.on { color: var(--brand); }
+/* 持仓角标（我的持仓标记：交易台账中有该标的） */
+.hold-tag { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 5px; font-size: 10px; font-weight: 700;
+  line-height: 16px; color: var(--brand); background: rgba(251, 191, 36, .14); border: 1px solid var(--brand); vertical-align: 1px; }
+/* 我的持仓页：台账表单与操作条 */
+.hld-savebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 11.5px; margin: 6px 2px; }
+.hld-mini-btn { font-size: 11.5px; padding: 3px 10px; border-radius: 7px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-2); cursor: pointer; }
+.hld-mini-btn:hover { border-color: var(--brand); color: var(--brand); }
+.hld-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; margin: 10px 2px; }
+.hld-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.hld-field label { font-size: 11px; color: var(--text-3); }
+.hld-field input, .hld-field select { padding: 6px 9px; font-size: 12.5px; color: var(--text); background: var(--input-bg);
+  border: 1px solid var(--border); border-radius: 7px; outline: none; font-family: var(--font-num); width: 100%; box-sizing: border-box; }
+.hld-field input:focus, .hld-field select:focus { border-color: rgba(34, 211, 238, .55); }
+.hld-field select:disabled { opacity: .6; cursor: not-allowed; }
+.hld-submit { padding: 7px 18px; font-size: 12.5px; font-weight: 700; border-radius: 8px; cursor: pointer; align-self: end;
+  border: 1px solid var(--brand); background: linear-gradient(180deg, rgba(251, 191, 36, .18), rgba(251, 191, 36, .08)); color: var(--brand); }
+.hld-del { background: none; border: none; cursor: pointer; color: var(--text-3); font-size: 12px; padding: 2px 6px; }
+.hld-del:hover { color: var(--down); }
+.band-warn { color: var(--brand); background: rgba(251, 191, 36, .14); border: 1px solid var(--brand); }
 /* 搜索历史下拉（点击搜索框弹出最近记录，键盘上下选择） */
 .search-hist { position: absolute; z-index: 200; background: var(--surface); border: 1px solid var(--border-strong);
   border-radius: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, .35); overflow: hidden; padding: 4px; }
