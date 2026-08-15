@@ -54,7 +54,7 @@ export function createKlineChart(el, opts) {
   const maCount = showMA ? 4 : 0;   // MA5/MA20/MA60/MA250 数量（函数级作用域：setSubSeries 需要访问）
   const overlay = opts.overlay || [];
   /* 主图右轴 overlay 曲线构造（指标/净值）：函数级作用域（setOverlays 需要访问）；
-     指标曲线不占图例（与 ETF 图例样式统一），初始不创建系列，由 setOverlays 按需增删 */
+     初始全部创建（默认隐藏靠图例 selected=false），图例点击/工具栏勾选控制显隐 */
   const mkOverlay = (d, i) => ({
     name: d.name, type: 'line', xAxisIndex: 0, yAxisIndex: 3, data: d.data,
     symbol: 'none', smooth: true, connectNulls: false, sampling: 'lttb', z: 9,
@@ -305,7 +305,7 @@ export function createKlineChart(el, opts) {
         },
       },
       grid: [
-        { left: 62, right: 108, top: 30, height: '62%' },
+        { left: 62, right: 108, top: overlay.length ? 46 : 30, height: '62%' },
         { left: 62, right: 108, top: '76%', height: '9%' },
         { left: 62, right: 108, top: '76%', height: '12%', show: false },
       ],
@@ -348,9 +348,18 @@ export function createKlineChart(el, opts) {
           itemStyle: { color: (p) => (klines[p.dataIndex][1] >= klines[p.dataIndex][0] ? C.volUp : C.volDown) },
           barMaxWidth: 5, sampling: 'lttb',
         },
-        // overlay 指标曲线默认不创建（图例不占位），由 setOverlays 按需添加
+        // overlay 指标曲线：初始全部创建（默认隐藏靠图例 selected=false），图例点击/工具栏勾选控制显隐
+        ...overlay.map((d, i) => mkOverlay(d, i)),
       ],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), '成交量'], selected: { ...(maCount ? { MA5: false, MA20: false, MA60: false, MA250: false } : {}) } },
+      legend: {
+        show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect',
+        textStyle: { color: C.text3, fontSize: 10.5 },
+        data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), '成交量', ...overlay.map(d => d.name)],
+        selected: {
+          ...(maCount ? { MA5: false, MA20: false, MA60: false, MA250: false } : {}),
+          ...overlay.reduce((o, d) => (o[d.name] = false, o), {}),
+        },
+      },
     };
   }
 
@@ -501,7 +510,7 @@ export function createKlineChart(el, opts) {
     const buyPart = cur.series.filter(s => s.name === BUY_SERIES);
     chart.setOption({
       grid: [
-        { left: 62, right: 108, top: 30, height: defs ? '48%' : '62%', show: true },
+        { left: 62, right: 108, top: overlay.length ? 46 : 30, height: defs ? '48%' : '62%', show: true },
         { left: 62, right: 108, top: defs ? '62%' : '76%', height: '9%', show: true },
         { left: 62, right: 108, top: '76%', height: '12%', show: !!defs },
       ],
@@ -516,7 +525,7 @@ export function createKlineChart(el, opts) {
         { gridIndex: 1 },
         { gridIndex: 2, name: defs && defs[0] ? defs[0].unit || '' : '' },
       ],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), '成交量', ...(buyPart.length ? [{ name: BUY_SERIES, icon: 'circle', itemWidth: 8, itemHeight: 8 }] : []), ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), '成交量', ...(overlay.length ? overlay.map(d => d.name) : []), ...(buyPart.length ? [{ name: BUY_SERIES, icon: 'circle', itemWidth: 8, itemHeight: 8 }] : []), ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
       series: [mainSeries, ...maSeries, volSeries2, ...overlayPart, ...buyPart, ...series],
     }, { replaceMerge: ['series', 'legend'] });
   }
@@ -552,17 +561,13 @@ export function createKlineChart(el, opts) {
     }, { replaceMerge: ['series', 'legend'] });
   }
 
-  /* 主图右轴指标曲线显隐（股票视图工具栏多选控件调用）：names = 要显示的指标名数组
-     曲线不占图例（与 ETF 图例样式统一）；按名增删 series（replaceMerge 只动 series，legend/selected 不受影响），
-     与 setSubSeries 重建互不丢系列（重建时 overlayPart 按 yAxisIndex 3 保留） */
+  /* 主图右轴指标曲线显隐（股票视图工具栏多选控件调用；图例点击为 ECharts 原生切换）：
+     series 常驻（初始创建），显隐 = legend selected 同步（merge legend 不动其他配置） */
   function setOverlays(names) {
     const cur = chart.getOption();
-    const rest = cur.series.filter(s => s.yAxisIndex !== 3);   // 主图/MA/成交量/买入信号/副图全保留
-    const add = (names || []).map((n) => {
-      const i = overlay.findIndex(d => d.name === n);
-      return i >= 0 ? mkOverlay(overlay[i], i) : null;
-    }).filter(Boolean);
-    chart.setOption({ series: [...rest, ...add] }, { replaceMerge: ['series'] });
+    const sel = { ...(cur.legend?.[0]?.selected || {}) };
+    for (const d of overlay) sel[d.name] = (names || []).includes(d.name);
+    chart.setOption({ legend: { selected: sel } });
   }
 
   _trackResize(chart);
