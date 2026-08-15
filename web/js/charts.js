@@ -525,7 +525,7 @@ export function createKlineChart(el, opts) {
         { gridIndex: 1 },
         { gridIndex: 2, name: defs && defs[0] ? defs[0].unit || '' : '' },
       ],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), '成交量', ...(overlay.length ? overlay.map(d => d.name) : []), ...(buyPart.length ? [{ name: BUY_SERIES, icon: 'circle', itemWidth: 8, itemHeight: 8 }] : []), ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), '成交量', ...(overlay.length ? overlay.map(d => d.name) : []), ...(buyPart.length ? [{ name: BUY_SERIES, icon: 'circle', itemWidth: 8, itemHeight: 8, itemStyle: { color: C.up, borderColor: 'transparent' } }] : []), ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
       series: [mainSeries, ...maSeries, volSeries2, ...overlayPart, ...buyPart, ...series],
     }, { replaceMerge: ['series', 'legend'] });
   }
@@ -547,7 +547,7 @@ export function createKlineChart(el, opts) {
       legend: {
         show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect',
         textStyle: { color: C.text3, fontSize: 10.5 },
-        data: legendData.map(n => (n === BUY_SERIES ? { name: BUY_SERIES, icon: 'circle', itemWidth: 8, itemHeight: 8 } : n)),
+        data: legendData.map(n => (n === BUY_SERIES ? { name: BUY_SERIES, icon: 'circle', itemWidth: 8, itemHeight: 8, itemStyle: { color: C.up, borderColor: 'transparent' } } : n)),
         selected: sel,
       },
       series: [
