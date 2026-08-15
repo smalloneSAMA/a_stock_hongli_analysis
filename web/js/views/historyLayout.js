@@ -395,6 +395,8 @@ export function buildHistoryView(container, cfg) {
   /* ── 渲染主区 ── */
   function renderMain(mainCard, item, obj, rows, ind, subDefs) {
     mainCard.innerHTML = '';
+    /* 清理上一标的残留的指标浮层外部点击监听（overlayGroup 创建时注册） */
+    if (state.docClick) { document.removeEventListener('click', state.docClick); state.docClick = null; }
     const n = rows.length;
     const last = rows[n - 1];
     const chg = dailyChg(rows, n - 1);
@@ -456,6 +458,7 @@ export function buildHistoryView(container, cfg) {
     /* 自定义起止日期：手动文本输入（YYYY-MM-DD），旁显上下限 */
     const dateRangeApi = dateRangeGroup();
     const vsGroup = viewSwitchGroup();   // 全部视图都有切换（股票：图表|区间分析；指数/ETF：图表|成分股|区间分析）
+    const ovGroup = overlayGroup();      // 主图右轴指标曲线多选控件（仅股票视图；指标不占图例，与 ETF 图例样式统一）
 
     /* 均线开关：走主图图例点击（默认全关，图例灰色，点击即显隐） */
     const head = el('div', { class: 'chart-head' },
@@ -468,6 +471,7 @@ export function buildHistoryView(container, cfg) {
         el('span', { class: 'txt-3', style: 'font-size:11.5px' }, unit)),
       el('div', { class: 'chart-meta' },
         rangeApi.el, dateRangeApi.el,
+        ovGroup ? ovGroup.el : null,
         cfg.subControl !== 'none' ? subControlGroup() : null,
         vsGroup ? vsGroup.el : null),
       );
@@ -508,6 +512,30 @@ export function buildHistoryView(container, cfg) {
         g.append(b);
       }
       return { el: g, setView };
+    }
+
+    /* 主图右轴指标曲线多选控件（仅股票视图：cfg.overlay 有定义且指标数据可用时显示）
+       指标曲线不占图例（与 ETF 图例样式统一），勾选即叠加显示、可多选、默认全关；
+       浮层点击外部关闭；切换标的时随 mainCard 重建重置（默认全关） */
+    function overlayGroup() {
+      const ovs = cfg.overlay ? cfg.overlay(rows, ind) : null;
+      if (!ovs || !ovs.length) return null;
+      const pop = el('div', { class: 'ov-pop' },
+        ovs.map(d => el('label', { class: 'ov-item' },
+          el('input', { type: 'checkbox', value: d.name }),
+          el('span', { class: 'ov-dot', style: 'background:' + d.color }),
+          el('span', {}, d.name))));
+      const btn = el('button', { class: 'seg-btn', title: '主图右轴叠加指标曲线（多选，默认全关）' }, '指标 ▾');
+      const g = el('div', { class: 'seg-group ov-group' }, btn, pop);
+      btn.addEventListener('click', (e) => { e.stopPropagation(); pop.classList.toggle('show'); });
+      pop.addEventListener('change', () => {
+        chartApi.setOverlays([...pop.querySelectorAll('input:checked')].map(x => x.value));
+      });
+      /* 点击控件外部关闭浮层（renderMain 重建时先清理旧监听，防泄漏） */
+      const onDoc = (e) => { if (!g.contains(e.target)) pop.classList.remove('show'); };
+      document.addEventListener('click', onDoc);
+      state.docClick = onDoc;
+      return { el: g };
     }
 
     /* 成分股视图：行业分布环形图 + 成分股表格（数据来自 web/data/components.json） */

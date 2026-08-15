@@ -53,6 +53,14 @@ export function createKlineChart(el, opts) {
   const { dates, klines, volumes, amounts = [], chgN = [], indData = null, unit = '', subUnit = '', mode = 'candlestick', showMA = true, showOHLC = true } = opts;
   const maCount = showMA ? 4 : 0;   // MA5/MA20/MA60/MA250 数量（函数级作用域：setSubSeries 需要访问）
   const overlay = opts.overlay || [];
+  /* 主图右轴 overlay 曲线构造（指标/净值）：函数级作用域（setOverlays 需要访问）；
+     指标曲线不占图例（与 ETF 图例样式统一），初始不创建系列，由 setOverlays 按需增删 */
+  const mkOverlay = (d, i) => ({
+    name: d.name, type: 'line', xAxisIndex: 0, yAxisIndex: 3, data: d.data,
+    symbol: 'none', smooth: true, connectNulls: false, sampling: 'lttb', z: 9,
+    lineStyle: { width: i === 0 ? 1.6 : 1.2, color: d.color, type: d.dash ? 'dashed' : 'solid' },
+    itemStyle: { color: d.color },
+  });
   /* 买入信号标记（股票历史）：buySignals = 信号执行日的行索引数组（由调用方按日期映射）。
      散点系列名固定 '买入信号'，setSubSeries 重建时按名字保留；默认隐藏（图例点击开启，与 MA 一致） */
   const BUY_SERIES = '买入信号';
@@ -228,13 +236,8 @@ export function createKlineChart(el, opts) {
       legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['收盘', 'MA60', 'MA250', '成交量'], selected: { MA60: false, MA250: false } },
     };
   } else {
-    /* ── candlestick 模式：K线 + MA(可关) + 成交量 + 副图（默认）；支持主图右轴叠加 overlay 折线（净值） ── */
-    const overlaySeries = overlay.map((d, i) => ({
-      name: d.name, type: 'line', xAxisIndex: 0, yAxisIndex: 3, data: d.data,
-      symbol: 'none', smooth: true, connectNulls: false, sampling: 'lttb', z: 9,
-      lineStyle: { width: i === 0 ? 1.6 : 1.2, color: d.color, type: d.dash ? 'dashed' : 'solid' },
-      itemStyle: { color: d.color },
-    }));
+    /* ── candlestick 模式：K线 + MA(可关) + 成交量 + 副图（默认）；支持主图右轴叠加 overlay 折线（指标/净值） ──
+       指标曲线不占图例（与 ETF 图例样式统一）：初始不创建系列，由 setOverlays 按需增删（mkOverlay 在函数顶层） */
     option = {
       animationDuration: 420,
       animationDurationUpdate: 0,   // dataZoom 拖动时不播放过渡动画（防卡顿）
@@ -284,7 +287,7 @@ export function createKlineChart(el, opts) {
             const x = indData[i];
             const defs = [
               ['PE-TTM', x.pe_ttm, ' 倍'], ['PE动', x.pe_dyn, ' 倍'], ['PB', x.pb, ' 倍'],
-              ['PEG', x.peg, ''], ['ROE', x.roe, '%'], ['ROA', x.roa, '%'],
+              ['PEG', x.peg, ''], ['市赚率PR', x.pr, ''], ['ROE', x.roe, '%'], ['ROA', x.roa, '%'],
             ];
             for (const [k, v, u] of defs) {
               if (v != null) rows.push(tipRow(k, v.toFixed(2) + u));
@@ -294,7 +297,7 @@ export function createKlineChart(el, opts) {
             if (p.seriesType !== 'candlestick' && p.seriesType !== 'bar') {
               if (p.seriesName.startsWith('MA')) continue;   // 均线已在固定字段行显示，避免重复
               if (p.seriesName === BUY_SERIES) continue;   // 买入信号散点已在固定行显示（值为 [idx,价] 数组，不可 toFixed）
-              if (indData && ['PE-TTM', 'PE(动)', 'PB', 'PEG', 'ROE', 'ROA'].includes(p.seriesName)) continue;   // 指标曲线已在固定字段行显示，避免重复
+              if (indData && ['PE-TTM', 'PE(动)', 'PB', 'PEG', '市赚率PR', 'ROE', 'ROA'].includes(p.seriesName)) continue;   // 指标曲线已在固定字段行显示，避免重复
               rows.push(tipRow(`${p.marker} ${p.seriesName}`, p.value == null ? '—' : Number(p.value).toFixed(2)));
             }
           }
@@ -345,9 +348,9 @@ export function createKlineChart(el, opts) {
           itemStyle: { color: (p) => (klines[p.dataIndex][1] >= klines[p.dataIndex][0] ? C.volUp : C.volDown) },
           barMaxWidth: 5, sampling: 'lttb',
         },
-        ...overlaySeries,
+        // overlay 指标曲线默认不创建（图例不占位），由 setOverlays 按需添加
       ],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), ...overlay.map(d => d.name)], selected: { ...Object.fromEntries(overlay.map(d => [d.name, d.visible !== false])), ...(maCount ? { MA5: false, MA20: false, MA60: false, MA250: false } : {}) } },
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), '成交量'], selected: { ...(maCount ? { MA5: false, MA20: false, MA60: false, MA250: false } : {}) } },
     };
   }
 
@@ -492,7 +495,7 @@ export function createKlineChart(el, opts) {
     const mainSeries = cur.series[0];
     const maSeries = maCount ? cur.series.slice(1, 1 + maCount) : [];
     const volSeries2 = cur.series[1 + maCount];
-    // 主图右轴 overlay 系列（股票指标曲线，yAxisIndex 3）必须保留，否则被 replaceMerge 丢弃
+    // 主图右轴 overlay 系列（股票指标曲线，yAxisIndex 3）必须保留，否则被 replaceMerge 丢弃；不占图例（与 ETF 样式统一）
     const overlayPart = cur.series.filter(s => s.yAxisIndex === 3);
     // 买入信号散点（主图，按名字保留，否则被 replaceMerge 丢弃；图例项为圆点图标）
     const buyPart = cur.series.filter(s => s.name === BUY_SERIES);
@@ -513,7 +516,7 @@ export function createKlineChart(el, opts) {
         { gridIndex: 1 },
         { gridIndex: 2, name: defs && defs[0] ? defs[0].unit || '' : '' },
       ],
-      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), '成交量', ...(buyPart.length ? [{ name: BUY_SERIES, icon: 'circle', itemWidth: 8, itemHeight: 8 }] : []), ...overlayPart.map(s => s.name), ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
+      legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), '成交量', ...(buyPart.length ? [{ name: BUY_SERIES, icon: 'circle', itemWidth: 8, itemHeight: 8 }] : []), ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
       series: [mainSeries, ...maSeries, volSeries2, ...overlayPart, ...buyPart, ...series],
     }, { replaceMerge: ['series', 'legend'] });
   }
@@ -545,6 +548,19 @@ export function createKlineChart(el, opts) {
         },
       ],
     }, { replaceMerge: ['series', 'legend'] });
+  }
+
+  /* 主图右轴指标曲线显隐（股票视图工具栏多选控件调用）：names = 要显示的指标名数组
+     曲线不占图例（与 ETF 图例样式统一）；按名增删 series（replaceMerge 只动 series，legend/selected 不受影响），
+     与 setSubSeries 重建互不丢系列（重建时 overlayPart 按 yAxisIndex 3 保留） */
+  function setOverlays(names) {
+    const cur = chart.getOption();
+    const rest = cur.series.filter(s => s.yAxisIndex !== 3);   // 主图/MA/成交量/买入信号/副图全保留
+    const add = (names || []).map((n) => {
+      const i = overlay.findIndex(d => d.name === n);
+      return i >= 0 ? mkOverlay(overlay[i], i) : null;
+    }).filter(Boolean);
+    chart.setOption({ series: [...rest, ...add] }, { replaceMerge: ['series'] });
   }
 
   _trackResize(chart);
@@ -586,7 +602,7 @@ export function createKlineChart(el, opts) {
     });
   }
 
-  return { chart, setRange, setDateRange, onZoom, getZoom, setSubSeries, addAnchorLines, setExtremes, setBuySignals,
+  return { chart, setRange, setDateRange, onZoom, getZoom, setSubSeries, addAnchorLines, setExtremes, setBuySignals, setOverlays,
            dispose: () => { window.removeEventListener('keydown', kbdMove); disposeChart(chart); } };
 }
 

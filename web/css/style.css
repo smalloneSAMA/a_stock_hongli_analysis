@@ -356,6 +356,23 @@ button { font-family: inherit; }
 .seg-btn:hover { color: var(--text); }
 .seg-btn.active { background: var(--accent-dim); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-line); }
 
+/* 主图右轴指标曲线多选浮层（股票视图工具栏「指标」；指标不占图例，与 ETF 图例样式统一） */
+.ov-group { position: relative; }
+.ov-pop {
+  display: none; position: absolute; top: calc(100% + 6px); right: 0; z-index: 40;
+  min-width: 148px; padding: 6px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border-strong);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+.ov-pop.show { display: block; }
+.ov-item {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px;
+  font-size: 12px; color: var(--text-2); cursor: pointer; user-select: none;
+}
+.ov-item:hover { background: var(--input-bg); color: var(--text); }
+.ov-item input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+.ov-dot { width: 10px; height: 3px; border-radius: 2px; flex: none; }
+
 /* 自定义日期范围：手动输入 + 日历弹窗 */
 .date-range { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .dr-label { font-size: 12px; color: var(--text-3); user-select: none; }
@@ -487,6 +504,9 @@ button { font-family: inherit; }
 .cmp-gtab.active { border-color: var(--brand); color: var(--brand); background: rgba(251, 191, 36, .1); }
 .cmp-gtab em { font-style: normal; opacity: .65; margin-left: 3px; font-size: 10.5px; }
 .cmp-grp { font-style: normal; font-size: 10px; color: var(--text-3); margin-left: 3px; border: 1px solid var(--border); border-radius: 4px; padding: 0 3px; flex-shrink: 0; line-height: 1.5; }
+/* 对比分析窄列列表：允许股票名称换行，避免长名被省略号截断 */
+.cmp-list-panel .ticker-name { white-space: normal; overflow: visible; }
+.cmp-list-panel .ticker-name-text { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3; }
 /* 净值图左上角累计涨跌浮层（对齐股票板块图表左上角浮层样式） */
 .cmp-float { position: absolute; top: 30px; left: 64px; z-index: 6; pointer-events: none; display: none;
   background: var(--tooltip-bg); border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 10px;
@@ -728,6 +748,7 @@ table.data-table { border-collapse: separate; border-spacing: 0; width: 100%; fo
   .ticker-panel { position: static; max-height: none; }
   .ticker-list { display: flex; overflow-x: auto; padding: var(--space-2) var(--space-3); }
   .ticker-item { min-width: 190px; }
+  .cmp-list-panel .ticker-item { min-width: 220px; }
   .ticker-item.active::before { left: 0; top: auto; bottom: 0; right: 0; width: auto; height: 3px; }
   .summary-grid { grid-template-columns: 1fr; }
   .ana-dash { grid-template-columns: 1fr; }
