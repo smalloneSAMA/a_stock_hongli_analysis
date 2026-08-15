@@ -536,6 +536,8 @@ export function createKlineChart(el, opts) {
     if (!legendData.includes(BUY_SERIES)) legendData.splice(legendData.indexOf('成交量') + 1, 0, BUY_SERIES);
     chart.setOption({
       legend: {
+        show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect',
+        textStyle: { color: C.text3, fontSize: 10.5 },
         data: legendData.map(n => (n === BUY_SERIES ? { name: BUY_SERIES, icon: 'circle', itemWidth: 8, itemHeight: 8 } : n)),
         selected: sel,
       },
