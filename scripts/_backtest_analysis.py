@@ -107,6 +107,7 @@ def run_backtest(code, info, p_buy=90):
     out = {
         "code": code, "name": info["name"], "type": info["type"],
         "n_buy": len(buy_ex), "n_trades": len(trades),
+        "buy_dates": [dates[i] for i in buy_ex],   # 买入信号执行日（dy 上穿 p 分位的次一交易日），K线图标记用
         "signal_years": dict(sorted(Counter(dates[i][:4] for i in buy_ex).items())),
         "yearly_win": yearly_win,
         "win_rate": {H_LABEL[k]: round(100.0 * np.mean(np.array(sig[h]) > 0), 1) for k, h in enumerate(HORIZONS)},
@@ -268,7 +269,8 @@ def main(only=None, p_buy=None):
         if "skip" in r:
             return {"code": r["code"], "name": r["name"], "type": r["type"], "group": r.get("group"), "skip": r["skip"]}
         return {"code": r["code"], "name": r["name"], "type": r["type"], "group": r.get("group"),
-                "n_buy": r["n_buy"], "signal_years": r.get("signal_years") or {},
+                "n_buy": r["n_buy"], "buy_dates": r.get("buy_dates") or [],
+                "signal_years": r.get("signal_years") or {},
                 "yearly_win": r.get("yearly_win") or {},
                 "win6": r["win_rate"]["6M"], "win12": r["win_rate"]["12M"],
                 "base6": r["base"]["6M"], "base12": r["base"]["12M"],
