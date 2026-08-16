@@ -5,8 +5,9 @@
    数据：cache/analysis_dy.json（dy_pct=股息率分位，高=便宜）+ analysis.json（均衡分）+ manifest（分组） */
 
 import { loadJSON, MANIFEST_URL, ANALYSIS_URL } from '../data.js';
-import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar } from './common.js';
+import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar, openTicker, refreshHoldMeta, holdBadge, isHold } from './common.js';
 import { scoreOf } from './analysis.js';   // 贵贱度加权分（P4.3 三合一）
+import { groupOf } from './reco.js';   // 分组判定（与回测/智能推荐单一来源）
 
 const DY_URL = '/cache/analysis_dy.json';
 
@@ -16,20 +17,11 @@ export default {
     root.append(skeleton());
     try {
       const [dy, an, m] = await Promise.all([loadJSON(DY_URL), loadJSON(ANALYSIS_URL), loadJSON(MANIFEST_URL)]);
+      await refreshHoldMeta();   // 持仓集合（角标/提示用），失败静默
       root.innerHTML = '';
       const byCode = an.by_code || {};
       const meta = {};
       for (const s of (m.stocks || [])) meta[s.code] = s;
-
-      /* 分组判定（推荐优先于自选，与回测一致） */
-      const groupOf = (code, type) => {
-        if (type === '指数') return '指数';
-        if (type === 'ETF') return 'ETF';
-        const s = meta[code] || {};
-        if (s.rec) return '推荐20';
-        if (s.watch) return '自选股';
-        return '其他成份股';
-      };
 
       /* 构建全池行（跳过无股息率标的） */
       const all = [];
@@ -42,7 +34,7 @@ export default {
           if (last > maxDate) maxDate = last;
         }
         const type = d.type;
-        all.push({ code, name: d.name || code, type, group: groupOf(code, type),
+        all.push({ code, name: d.name || code, type, group: groupOf(code, type, meta),
           dy: d.dy_now, pct: d.dy_pct, score: scoreOf(byCode[code], '均衡', type, an.presets) });
       }
 
@@ -89,8 +81,9 @@ export default {
         el('option', { value: 'score' }, '个股:仅区间分数'),
         el('option', { value: 'both' }, '个股:dy+分数'));
       const sumEl = el('div', { class: 'bt-summary' });
+      const warnEl = el('div', {});   // 持仓在卖出区的提示条
       const tableBox = el('div', { class: 'card table-card' }, el('div', { class: 'table-wrap' }, ''));
-      root.append(sumEl,
+      root.append(sumEl, warnEl,
         el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 2px' }, zoneTabs, typeSel, modeSel),
         tableBox,
         el('div', { class: 'txt-3', style: 'font-size:11.5px;margin:8px 2px;line-height:1.7' },
@@ -113,6 +106,11 @@ export default {
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '卖出区'), el('b', { class: 'txt-down' }, zoneList('sell').length)),
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '观察区'), el('b', {}, zoneList('watch').length)),
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '筛选池'), el('b', {}, all.filter(typeMatch).length)));
+        /* 我的持仓在卖出区的提示（跨视图同步刷新） */
+        warnEl.innerHTML = '';
+        const mySell = zoneList('sell').filter((r) => isHold(r.code));
+        if (mySell.length) warnEl.append(el('div', { class: 'cmp-warn' },
+          '⚠ 你的持仓中有 ' + mySell.length + ' 只处于卖出区：' + mySell.map((r) => r.name).join('、') + '（详见「我的持仓」页）'));
         /* 行构建（距阈值） */
         const rows = zoneList(zone).map(r => {
           let gap = null, side = '';
@@ -124,7 +122,10 @@ export default {
         const cols = [
           { key: 'fav', label: '★', align: 'center', sortable: false, filter: false, fmt: (_v, row) => favStar(row.code) },
           { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
-          { key: 'name', label: '名称', align: 'left', sortable: true },
+          { key: 'name', label: '名称', align: 'left', sortable: true,
+            fmt: (v, row) => el('div', {},
+              el('a', { href: '#', onclick: (e) => { e.preventDefault(); openTicker(row.code, row.name, row.type); }, class: 'jump-link', title: '查看历史K线（' + row.type + '）' }, v),
+              holdBadge(row.code)) },
           { key: 'type', label: '类型', sortable: true, filter: false },
           { key: 'group', label: '分组', sortable: true, filter: false },
           { key: 'dy', label: '当前dy(%)', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
@@ -139,6 +140,8 @@ export default {
 
       typeSel.addEventListener('change', () => { typeF = typeSel.value; paint(); });
       modeSel.addEventListener('change', () => { mode = modeSel.value; paint(); });
+      /* 持仓台账变化 → 刷新角标与卖出区持仓提示（视图容器常驻，mount 仅一次，监听不累积） */
+      window.addEventListener('holding-change', () => { refreshHoldMeta(true).then(() => paint()); });
       paint();
     } catch (err) {
       root.innerHTML = '';

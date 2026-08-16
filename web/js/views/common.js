@@ -124,6 +124,46 @@ export function bindFavDelegation(container) {
   });
 }
 
+/* 信号年份分布悬停文本（backtest.json：signal_years={年份: 触发数}、yearly_win={年份: {n,win6,win12}}）：
+   第一行总览（总数+总胜率6M/12M）+ 逐行"YYYY年 N次 · 胜率6M/12M"；每年胜率基于足期样本（同批），
+   尾部未足期信号在总览与年份行标注样本数，供信号数列 title 使用 */
+export function signalYearsTitle(row) {
+  const years = row && row.signal_years;
+  if (!years || typeof years !== 'object') return null;
+  const ys = Object.keys(years).filter((y) => years[y] > 0).sort();
+  if (!ys.length) return null;
+  const yw = row.yearly_win || {};
+  const pct = (v) => (v == null ? '—' : v + '%');
+  const expTotal = ys.reduce((a, y) => a + ((yw[y] && yw[y].n) || 0), 0);
+  const total = row.n_buy == null ? null : row.n_buy;
+  const lines = [];
+  let head = '买入信号 ' + (total == null ? '' : total + ' 次') + ' · 胜率6M ' + pct(row.win6) + ' · 胜率12M ' + pct(row.win12);
+  if (total != null && expTotal < total) head += '（含未足期 ' + (total - expTotal) + ' 次）';
+  lines.push(head);
+  for (const y of ys) {
+    const w = yw[y];
+    let line = y + '年 ' + years[y] + '次';
+    if (w && w.n > 0) {
+      line += ' · 胜率6M ' + pct(w.win6) + ' · 胜率12M ' + pct(w.win12);
+      if (w.n < years[y]) line += '（样本 ' + w.n + '）';
+    } else {
+      line += ' · 胜率6M — · 胜率12M —（无足期样本）';
+    }
+    lines.push(line);
+  }
+  return lines.join('\n');
+}
+
+/* ── 跳转对应板块历史K线（智能推荐/回测报告共用）── */
+/* 视图容器常驻：已挂载视图不会重新 mount（__openTicker 仅在首次挂载时被消费），
+   必须再派发事件让已挂载视图响应选中；未挂载场景事件无监听者，由 __openTicker 兜底 */
+export function openTicker(code, name, type) {
+  const view = type === '指数' ? 'index' : type === 'ETF' ? 'etf' : 'stock';
+  window.__openTicker = { code, name };
+  window.dispatchEvent(new CustomEvent('open-ticker', { detail: { code, name } }));
+  if (location.hash !== `#/${view}`) location.hash = `#/${view}`;
+}
+
 /* ── 搜索历史：点击搜索框弹出最近 5 条（键盘 ↑/↓ 选择、Enter 确认、Esc 关闭、失焦记录）── */
 const HIST_PREFIX = 'pi_search_hist_';
 export function getSearchHistory(key) {
@@ -660,4 +700,103 @@ export function renderTable(container, { columns, rows, pageSize = 50 }) {
     sortBy(key, dir) { sortKey = key; sortDir = dir || 1; paint(); },
     clearFilters() { filters.clear(); document.querySelectorAll('.col-filter').forEach((i) => { i.value = ''; }); paint(); },
   };
+}
+
+/* ── 持仓：真实交易台账（cache/持仓.json 唯一事实来源；POST /api/holdings 落盘）
+   流水重放：平均成本法（卖出按当时移动平均成本结转已实现盈亏）
+   累计分红：东财分红缓存按除权日分段归属（不复投、不摊薄成本，估算口径）
+   跨视图同步：holding-change 自定义事件（仿 fav-change 模式） */
+
+const HOLDINGS_URL = '/cache/持仓.json';
+const HOLDINGS_API = '/api/holdings';
+
+/* 读台账文件：404 = 文件尚未创建（空台账，missing 标记） */
+export async function loadHoldings() {
+  const r = await fetch(HOLDINGS_URL, { cache: 'no-store' });
+  if (r.status === 404) return { version: 1, trades: [], missing: true };
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const data = await r.json();
+  data.missing = false;
+  return data;
+}
+
+/* 落盘：serve.py POST /api/holdings（原子写）；失败抛错（调用方降级草稿） */
+export async function saveHoldings(data) {
+  const r = await fetch(HOLDINGS_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  window.dispatchEvent(new CustomEvent('holding-change', { detail: { n: (data.trades || []).length } }));
+  return true;
+}
+
+/* 流水重放（按日期升序）：返回每代码持仓 {qty,cost,realized} 与每笔卖出的已实现盈亏 Map(tradeId→盈亏) */
+export function replayTrades(trades) {
+  const posMap = new Map();
+  const sells = new Map();
+  const sorted = [...(trades || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
+  for (const t of sorted) {
+    const p = posMap.get(t.code) || { qty: 0, cost: 0, realized: 0 };
+    if (t.side === 'buy') {
+      p.cost += t.price * t.qty + (t.fee || 0);
+      p.qty += t.qty;
+    } else {
+      const avg = p.qty > 0 ? p.cost / p.qty : 0;
+      const r = t.price * t.qty - (t.fee || 0) - avg * t.qty;
+      p.realized += r;
+      p.cost -= avg * t.qty;
+      p.qty -= t.qty;
+      sells.set(t.id, r);
+    }
+    posMap.set(t.code, p);
+  }
+  return { posMap, sells };
+}
+
+/* 当前持仓列表（qty>0），含平均成本 avg 与累计已实现 realized */
+export function allPositions(trades) {
+  const { posMap } = replayTrades(trades);
+  const kindOf = {};
+  for (const t of trades || []) kindOf[t.code] = t.kind;   // 后写覆盖，取最后一笔的 kind
+  return [...posMap.entries()]
+    .filter(([, p]) => p.qty > 0)
+    .map(([code, p]) => ({ code, kind: kindOf[code] || 'stock', ...p, avg: p.cost / p.qty }));
+}
+
+/* 单标的累计分红（估算）：除权日事件按 [本笔交易日期, 下一笔交易日期) 段末数量归属
+   evs: [{date, ps}] 每股派息（bonus10/10），须升序 */
+export function accruedDiv(trades, code, evs) {
+  const sorted = (trades || []).filter((t) => t.code === code).sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (!sorted.length || !evs || !evs.length) return 0;
+  let qty = 0, total = 0, cur = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    const t = sorted[i];
+    const next = i + 1 < sorted.length ? sorted[i + 1].date : '9999-99-99';
+    qty += t.side === 'buy' ? t.qty : -t.qty;
+    while (cur < evs.length && evs[cur].date < t.date) cur++;   // 跳过本段之前的事件
+    while (cur < evs.length && evs[cur].date >= t.date && evs[cur].date < next) {
+      total += evs[cur].ps * Math.max(0, qty);
+      cur++;
+    }
+  }
+  return total;
+}
+
+/* 持仓代码集合（跨视图角标用；内存缓存，失败静默为空集） */
+let holdCodes = null;
+export async function refreshHoldMeta(force) {
+  if (holdCodes && !force) return holdCodes;
+  try {
+    const data = await loadHoldings();
+    holdCodes = new Set((data.trades || []).map((t) => t.code));
+  } catch {
+    holdCodes = new Set();
+  }
+  return holdCodes;
+}
+export function isHold(code) { return !!(holdCodes && holdCodes.has(code)); }
+export function holdBadge(code) {
+  return isHold(code) ? el('span', { class: 'hold-tag', title: '我的持仓（交易台账中有该标的）' }, '持') : null;
 }

@@ -12,7 +12,7 @@
   · 连续8次失败自动中止（防IP被封后空等）
 """
 import json, os, sys, re, time, random, datetime, urllib.request
-from _common import market_prefix, em_get, tencent_quotes, atomic_load   # 前缀路由 + 东财限流 + 腾讯批量 + 原子读
+from _common import market_prefix, em_get, tencent_quotes, atomic_load, atomic_dump   # 前缀路由 + 东财限流 + 腾讯批量 + 原子读
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(BASE, "cache")
@@ -21,12 +21,6 @@ MD = os.path.join(BASE, "红利指数与ETF成分股.md")
 SUMMARY_JSON = os.path.join(CACHE, "_成分股汇总.json")
 TABLE_JSON = os.path.join(CACHE, "_成分股汇总表.json")
 
-def atomic_dump(path, obj):
-    """原子写 JSON：先写 .tmp 再 os.replace，防止写一半中断损坏缓存"""
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False)
-    os.replace(tmp, path)
 
 # 20只推荐名单（动态：读 cache/_推荐20.json 的 list 段=TOP20；缺失/损坏回退硬编码并告警）
 _FALLBACK_FINAL20 = ["600036", "601838", "601088", "601225", "600938", "601857", "600350", "601006",

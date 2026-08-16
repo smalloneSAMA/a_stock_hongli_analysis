@@ -3,8 +3,8 @@
    性能：列表信息来自 manifest（含最新价/涨跌），K线与指标在选中标的后按需加载（单文件），
          内存缓存保证切换秒开 */
 
-import { el, renderTickerList, renderTable, skeleton, errorBox, emptyState, fmt2, fmtPct, dirOf, dailyChg, attachDatePicker } from './common.js';
-import { loadJSON, klineUrl, indiUrl, COMPONENTS_URL, ANALYSIS_URL } from '../data.js';
+import { el, renderTickerList, renderTable, skeleton, errorBox, emptyState, fmt2, fmtPct, dirOf, dailyChg, attachDatePicker, openTicker } from './common.js';
+import { loadJSON, klineUrl, indiUrl, COMPONENTS_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
 import { createKlineChart, createDonut, disposeChart } from '../charts.js';
 import { scoreOf as anaScoreOf, bandOf, bandCls } from './analysis.js';   // 区间分析公共计算（P4.3 三合一）
 import { cssVar } from '../theme.js';
@@ -16,6 +16,13 @@ let analysisCache = null;
 async function loadAnalysis() {
   if (!analysisCache) analysisCache = await loadJSON(ANALYSIS_URL);
   return analysisCache;
+}
+
+/* 懒加载共享缓存：backtest.json（买入信号标记用，p90 与智能推荐「信号数」同口径） */
+let btCache = null;
+async function loadBacktest() {
+  if (!btCache) btCache = await loadJSON(BACKTEST_URL);
+  return btCache;
 }
 
 async function loadTickerObj(kind, code) {
@@ -245,6 +252,21 @@ export function buildHistoryView(container, cfg) {
     }).catch(() => { /* 分析数据加载失败不影响图表 */ });
   };
 
+  /* 买入信号散点（仅股票视图）：backtest.json by_p['90'].buy_dates（dy 上穿90%分位的次一交易日执行）
+     → 按日期映射到 K线行索引 → setBuySignals（默认隐藏，图例点击开启）。
+     无回测记录/从未触发信号的标的不做任何事（图例不出现空项）；与智能推荐「信号数」同源同口径 */
+  const applyBuySignals = (chartApi, rows, code) => {
+    loadBacktest().then((bt) => {
+      if (state.chart !== chartApi) return;   // 已切换标的/重新渲染，丢弃过期回调
+      const rec = ((bt.by_p || {})['90'] || []).find(x => x.code === code);
+      const dates = rec && rec.buy_dates;
+      if (!dates || !dates.length) return;
+      const idxOf = new Map(rows.map((r, i) => [r.date, i]));
+      const idxArr = dates.map(d => idxOf.get(d)).filter(i => i != null);
+      if (idxArr.length) chartApi.setBuySignals(idxArr);
+    }).catch(() => { /* 回测数据加载失败不影响图表 */ });
+  };
+
   const panel = layout.querySelector('.ticker-panel');
   const mainCard = layout.querySelector('.main-card');
 
@@ -373,6 +395,8 @@ export function buildHistoryView(container, cfg) {
   /* ── 渲染主区 ── */
   function renderMain(mainCard, item, obj, rows, ind, subDefs) {
     mainCard.innerHTML = '';
+    /* 清理上一标的残留的指标浮层外部点击监听（overlayGroup 创建时注册） */
+    if (state.docClick) { document.removeEventListener('click', state.docClick); state.docClick = null; }
     const n = rows.length;
     const last = rows[n - 1];
     const chg = dailyChg(rows, n - 1);
@@ -434,6 +458,7 @@ export function buildHistoryView(container, cfg) {
     /* 自定义起止日期：手动文本输入（YYYY-MM-DD），旁显上下限 */
     const dateRangeApi = dateRangeGroup();
     const vsGroup = viewSwitchGroup();   // 全部视图都有切换（股票：图表|区间分析；指数/ETF：图表|成分股|区间分析）
+    const ovGroup = overlayGroup();      // 主图右轴指标曲线多选控件（仅股票视图；指标不占图例，与 ETF 图例样式统一）
 
     /* 均线开关：走主图图例点击（默认全关，图例灰色，点击即显隐） */
     const head = el('div', { class: 'chart-head' },
@@ -446,6 +471,7 @@ export function buildHistoryView(container, cfg) {
         el('span', { class: 'txt-3', style: 'font-size:11.5px' }, unit)),
       el('div', { class: 'chart-meta' },
         rangeApi.el, dateRangeApi.el,
+        ovGroup ? ovGroup.el : null,
         cfg.subControl !== 'none' ? subControlGroup() : null,
         vsGroup ? vsGroup.el : null),
       );
@@ -460,6 +486,8 @@ export function buildHistoryView(container, cfg) {
     if (vsGroup && st.view && st.view !== 'chart') vsGroup.setView(st.view);
     /* S7：图表叠加区间锚线 + 股息率副图（此时 state.range 已恢复记忆，锚按正确窗口计算） */
     applyAnalysisOverlay(chartApi, rows, item.code);
+    /* S7b：买入信号散点（仅股票视图；p90 与智能推荐「信号数」同口径，默认隐藏图例点击开启） */
+    if (cfg.kind === 'stock') applyBuySignals(chartApi, rows, item.code);
 
     /* 图表 ↔ 成分股 ↔ 区间分析 切换按钮组（股票视图无成分股：cfg.compView === false） */
     let compDonut = null;
@@ -486,10 +514,35 @@ export function buildHistoryView(container, cfg) {
       return { el: g, setView };
     }
 
+    /* 主图右轴指标曲线多选控件（仅股票视图：cfg.overlay 有定义且指标数据可用时显示）
+       指标曲线不占图例（与 ETF 图例样式统一），勾选即叠加显示、可多选、默认全关；
+       浮层点击外部关闭；切换标的时随 mainCard 重建重置（默认全关） */
+    function overlayGroup() {
+      const ovs = cfg.overlay ? cfg.overlay(rows, ind) : null;
+      if (!ovs || !ovs.length) return null;
+      const pop = el('div', { class: 'ov-pop' },
+        ovs.map(d => el('label', { class: 'ov-item' },
+          el('input', { type: 'checkbox', value: d.name }),
+          el('span', { class: 'ov-dot', style: 'background:' + d.color }),
+          el('span', {}, d.name))));
+      const btn = el('button', { class: 'seg-btn', title: '主图右轴叠加指标曲线（多选，默认全关）' }, '指标 ▾');
+      const g = el('div', { class: 'seg-group ov-group' }, btn, pop);
+      btn.addEventListener('click', (e) => { e.stopPropagation(); pop.classList.toggle('show'); });
+      pop.addEventListener('change', () => {
+        chartApi.setOverlays([...pop.querySelectorAll('input:checked')].map(x => x.value));
+      });
+      /* 点击控件外部关闭浮层（renderMain 重建时先清理旧监听，防泄漏） */
+      const onDoc = (e) => { if (!g.contains(e.target)) pop.classList.remove('show'); };
+      document.addEventListener('click', onDoc);
+      state.docClick = onDoc;
+      return { el: g };
+    }
+
     /* 成分股视图：行业分布环形图 + 成分股表格（数据来自 web/data/components.json） */
     const COMP_COLUMNS = [
       { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
-      { key: 'name', label: '名称', align: 'left', sortable: true },
+      { key: 'name', label: '名称', align: 'left', sortable: true,
+        fmt: (v, row) => el('a', { href: '#', onclick: (e) => { e.preventDefault(); openTicker(row.code, row.name, '股票'); }, class: 'jump-link', title: '查看历史K线（股票）' }, v) },
       { key: 'ind', label: '一级行业', align: 'left', sortable: true },
       { key: 'ind3', label: '二级行业', align: 'left', sortable: true, fmt: (v) => (v ? v : '—') },
       { key: 'weight', label: '权重(%)', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },

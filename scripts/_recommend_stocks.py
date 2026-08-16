@@ -27,6 +27,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_stock_data as fsd
+from _common import atomic_dump
 
 OUT = os.path.join(BASE, "cache", "_推荐20.json")
 DY_MIN = 3.0          # 股息率门槛（%）；dy∈[3.0,3.5) 为临界纳入（标记 near）
@@ -387,10 +388,7 @@ def main(top=20, write=True):
                              if m2.get("last_dy") is not None and DY_MIN <= m2["last_dy"] < DY_NEAR][:20],
             "excluded": excluded,
         }
-        tmp = OUT + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(obj, f, ensure_ascii=False, indent=1)
-        os.replace(tmp, OUT)
+        atomic_dump(OUT, obj)
         print(f"\n✅ 产物已写入 {OUT}（TOP{top} + 备选10 + 排除{len(excluded)}）")
 
 

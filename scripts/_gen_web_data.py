@@ -21,6 +21,7 @@ sys.path.insert(0, SCRIPTS)
 import _fetch_history as fh
 import _fetch_stock_data as fsd
 import _fetch_watchlist as watchlist
+from _common import atomic_dump
 
 WEB_DATA = os.path.join(BASE, "web", "data")
 os.makedirs(os.path.join(WEB_DATA, "stocks"), exist_ok=True)
@@ -28,14 +29,6 @@ os.makedirs(os.path.join(WEB_DATA, "stocks"), exist_ok=True)
 # 指数单位换算（与 update.py export_excel 同口径）：
 # 原始单位：腾讯 volume=手/amount=元(估算)；中证官网 tradingVol=股/tradingValue=亿元；国证 volume=万手/amount=亿元
 IDX_DIV = {"tencent": (1e4, 1e8), "csindex": (1e6, 1), "cnindex": (1, 1)}
-
-
-def atomic_dump(path, obj):
-    """原子写 JSON（紧凑格式，减小体积）"""
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
-    os.replace(tmp, path)
 
 
 def last_date(rows):
@@ -188,7 +181,7 @@ def build_manifest():
         "etfs": etfs,
         "stocks": stocks,
     }
-    atomic_dump(os.path.join(WEB_DATA, "manifest.json"), manifest)
+    atomic_dump(os.path.join(WEB_DATA, "manifest.json"), manifest, indent=None, separators=(",", ":"))
     print(f"  ✅ manifest.json：指数{len(indices)} / ETF{len(etfs)} / 股票{len(stocks)}，数据日期 {manifest['data_date']}")
 
 
@@ -276,7 +269,7 @@ def build_stock_indicators():
             out.append({"d": r["date"], "dy": dy[i], "pe_ttm": pe_ttm[i],
                         "pe_dyn": pe_dyn[i], "pb": pb[i], "peg": peg[i],
                         "roe": roe[i], "roa": roa[i], "pr": pr})
-        atomic_dump(os.path.join(WEB_DATA, "stocks", f"{code}.json"), out)
+        atomic_dump(os.path.join(WEB_DATA, "stocks", f"{code}.json"), out, indent=None, separators=(",", ":"))
         ok += 1
         if ok % 20 == 0:
             print(f"  进度 {ok}")
@@ -387,7 +380,7 @@ def build_components():
         n1 = sum(1 for s in cc["stocks"] if s["div_yield"] is not None)
         if n1 > n0:
             print(f"  📥 980092 成分股息率补全：{n0} → {n1} 只（ETF持仓行）")
-    atomic_dump(os.path.join(WEB_DATA, "components.json"), out)
+    atomic_dump(os.path.join(WEB_DATA, "components.json"), out, indent=None, separators=(",", ":"))
     ok = sum(1 for v in out["by_index"].values() if v["n"]) + sum(1 for v in out["by_etf"].values() if v["n"])
     print(f"  ✅ components.json：指数{len(out['by_index'])}只 / ETF{len(out['by_etf'])}只，有成分的 {ok} 只")
 
@@ -408,7 +401,7 @@ def build_summary():
         t["change_pct"] = s.get("change_pct")
         if not t.get("name"):
             t["name"] = s.get("name", "")
-    atomic_dump(os.path.join(WEB_DATA, "summary.json"), table)
+    atomic_dump(os.path.join(WEB_DATA, "summary.json"), table, indent=None, separators=(",", ":"))
     print(f"  ✅ summary.json：{len(table)} 只成分股")
 
 

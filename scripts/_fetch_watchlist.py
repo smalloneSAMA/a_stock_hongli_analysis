@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import market_prefix, tencent_quotes
+from _common import market_prefix, tencent_quotes, atomic_dump
 from _classify import map_ind
 
 XLSX = os.path.join(BASE, "excel", "自选股清单.xlsx")   # 自选股清单（唯一事实来源）
@@ -113,10 +113,7 @@ def refresh_watch_meta(rows):
             if fail >= 8:
                 print("  !!! 连续失败过多，疑似被封，行业补齐中止")
                 break
-    tmp = META_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fp:
-        json.dump({"updated_at": time.strftime("%Y-%m-%d"), "rows": meta}, fp, ensure_ascii=False, indent=1)
-    os.replace(tmp, META_PATH)
+    atomic_dump(META_PATH, {"updated_at": time.strftime("%Y-%m-%d"), "rows": meta})
     print(f"  ✅ 行业缓存已更新 → {META_PATH}")
 
 
@@ -141,10 +138,7 @@ def refresh_indicators_main():
                          "t_mcap": round(mcap, 2) if mcap else None}
         got += 1
     print(f"  腾讯批量行情完成，命中 {got}/{len(rows)}（{time.time() - t0:.0f}s）")
-    tmp = METRICS_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fp:
-        json.dump({"date": time.strftime("%Y-%m-%d"), "rows": metrics}, fp, ensure_ascii=False, indent=1)
-    os.replace(tmp, METRICS_PATH)
+    atomic_dump(METRICS_PATH, {"date": time.strftime("%Y-%m-%d"), "rows": metrics})
     print(f"  ✅ 指标缓存已更新（{got} 只）→ {METRICS_PATH}")
     # 写回 xlsx（先落盘缓存，写 xlsx 失败可重跑不重拉）
     try:
@@ -205,10 +199,7 @@ def load_failed():
 
 
 def save_failed(f):
-    tmp = FAIL_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fp:
-        json.dump(f, fp, ensure_ascii=False, indent=1)
-    os.replace(tmp, FAIL_PATH)
+    atomic_dump(FAIL_PATH, f)
 
 
 def fetch_one(code, name, tcode):

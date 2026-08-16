@@ -1,10 +1,1 @@
-{
- "920599": {
-  "name": "同力股份",
-  "err": "IndexError: list index out of range"
- },
- "920509": {
-  "name": "同惠电子",
-  "err": "IndexError: list index out of range"
- }
-}
+{}

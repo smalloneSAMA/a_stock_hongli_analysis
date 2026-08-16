@@ -1,15 +1,17 @@
 /* 回测报告视图：股息率分位信号回测结果（web/data/backtest.json）
    三档（p85/90/95）切换 + 汇总卡 + 明细表；数据由 scripts/_backtest_analysis.py 生成 */
 
-import { el, renderTable, skeleton, errorBox, fmt2, getFavs } from './common.js';
+import { el, renderTable, skeleton, errorBox, fmt2, getFavs, openTicker, signalYearsTitle } from './common.js';
 import { loadJSON, BACKTEST_URL } from '../data.js';
 
 const COLS = [
   { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
-  { key: 'name', label: '名称', align: 'left', sortable: true },
+  { key: 'name', label: '名称', align: 'left', sortable: true,
+    fmt: (v, row) => el('a', { href: '#', onclick: (e) => { e.preventDefault(); openTicker(row.code, row.name, row.type); }, class: 'jump-link', title: '查看历史K线（' + row.type + '）' }, v) },
   { key: 'type', label: '类型', align: 'center', sortable: true },
   { key: 'group', label: '分组', align: 'center', sortable: true },
-  { key: 'n_buy', label: '信号数', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : v) },
+  { key: 'n_buy', label: '信号数', align: 'center', sortable: true,
+    fmt: (v, row) => (v == null ? '—' : el('span', { title: signalYearsTitle(row) }, v)) },
   { key: 'win6', label: '胜率6M', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : v + '%') },
   { key: 'win12', label: '胜率12M', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : v + '%') },
   { key: 'base6', label: '基准6M', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + fmt2(v) + '%') },

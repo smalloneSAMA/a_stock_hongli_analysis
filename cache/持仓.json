@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "trades": [
+    {
+      "id": "t1786737182038",
+      "code": "000933",
+      "kind": "stock",
+      "side": "buy",
+      "date": "2026-08-13",
+      "price": 27.5,
+      "qty": 4200,
+      "fee": 5
+    }
+  ],
+  "missing": false
+}

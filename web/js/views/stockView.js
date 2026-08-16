@@ -74,7 +74,7 @@ export default {
       showMA: true,               // 股票：MA5/20/60/250 均线可用（工具栏 checkbox 控制显隐，默认关）
       showOHLC: false,            // 股票：浮动面板去掉 开盘/最高/最低 字段
       withIndicator: true,   // 加载指标数据供主图叠加曲线使用
-      // 主图右轴叠加 6 条指标曲线（默认关闭，点击图例展开查看；与 K 线同图）
+      // 主图右轴叠加 7 条指标曲线（默认全关；不占图例——与 ETF 图例样式统一，由工具栏「指标」多选控件开关）
       overlay: (rows, ind) => ind ? INDICATORS.filter(d => d.key !== 'dy').map(d => ({
         name: d.label, data: ind.map(x => x[d.key] ?? null), color: d.color, unit: d.unit, visible: false,
       })) : null,
@@ -84,6 +84,7 @@ export default {
         el('span', {}, 'PE = 总市值(收盘×当日总股本) ÷ 归母净利（TTM/年化）；PEG = PE-TTM ÷ TTM净利同比增速'),
         el('span', {}, '市赚率PR = PE-TTM ÷ 近5年年化ROE（近5年各报告期 TTM 年化 ROE 均值，随财报披露滚动更新）；≈1 合理、<1 低估、>1 高估；周期股盈利波动大时参考价值下降'),
         el('span', {}, '成交额按 量×100×(高+低+收)/3 估算；单位：万手 / 亿元'),
+        el('span', {}, '买入信号：股息率上穿近5年90%分位（dy 进入历史高位区=便宜），次一交易日收盘执行——与「智能推荐」信号数、回测 p90 同口径；默认隐藏，点击图例圆点开启'),
       ],
       quoteExtra: (obj, rows, item) => {
         const s = m.stocks.find(x => x.code === obj.code) || {};

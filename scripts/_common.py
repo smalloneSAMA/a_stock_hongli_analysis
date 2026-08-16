@@ -89,11 +89,11 @@ def em_get(url, timeout=12):
 
 
 # ── 原子读写（缓存保护三件套之一：原子写 tmp+replace）──
-def atomic_dump(path, obj, indent=1):
+def atomic_dump(path, obj, indent=1, separators=None):
     """原子写 JSON：先写 path.tmp 再 os.replace，中断不损坏缓存"""
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=indent)
+        json.dump(obj, f, ensure_ascii=False, indent=indent, separators=separators)
     os.replace(tmp, path)
 
 
