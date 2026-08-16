@@ -885,15 +885,16 @@ export default {
        fav（收藏）类型：全部已收藏标的（指数/ETF/股票，带类型/分组标签） */
     function currentItems() {
       let items;
+      /* 分组标签统一用短标签（推荐20→推荐/自选股→自选），省宽度给股票名称 */
+      const grpOf = (g) => ({ '推荐20': '推荐', '自选股': '自选', '其他': '其他' }[g] || g);
       if (curType === 'fav') {
-        /* 收藏 tab：跨类型合集，分组用短标签（省宽度给名称） */
-        const grpOf = (g) => ({ '推荐20': '推荐', '自选股': '自选', '其他': '其他' }[g] || g);
+        /* 收藏 tab：跨类型合集 */
         items = [...allItems.index.map(x => ({ ...x, grp: '指数' })),
           ...allItems.etf.map(x => ({ ...x, grp: 'ETF' })),
           ...stockGroups.flatMap(g => g.items.map(x => ({ ...x, grp: grpOf(g.label) })))]
           .filter(it => isFav(it.code));
       } else if (curType === 'stock' && (indFilter || query)) {
-        items = stockGroups.flatMap(g => g.items.map(x => ({ ...x, grp: g.label })));
+        items = stockGroups.flatMap(g => g.items.map(x => ({ ...x, grp: grpOf(g.label) })));
         if (indFilter) items = items.filter(it => it.ind === indFilter);
       } else if (curType === 'stock') {
         items = stockGroups[curGroup].items;
@@ -921,20 +922,18 @@ export default {
         /* 复用股票历史板块列表样式：名称行（含分组标签）+ 价格 + 代码 + 副信息；
            选中由打钩改为框选高亮（ticker-item.active）；ETF 不显示黄色规模小标签（副信息保留） */
         const nameBox = el('div', { class: 'ticker-name' },
-          el('span', { class: 'ticker-name-text' }, it.name),
+          el('span', { class: 'ticker-name-text', title: it.name }, it.name),
           it.grp ? el('span', { class: 'cmp-grp' }, it.grp) : null);
         nameBox.append(favStar(it.code));   // 收藏星标（跨板块同步）
         const subTxt = it.type === 'stock'
-          ? curType === 'fav'
-            ? (it.ind ? it.ind + '·' : '') + (it.dy != null ? it.dy.toFixed(2) + '%' : '—')   // 收藏 tab 精简：银行·4.70%
-            : (it.ind ? it.ind + ' · ' : '') + (it.dy != null ? '股息率 ' + it.dy.toFixed(2) + '%' : '—')
+          ? (it.ind ? it.ind + '·' : '') + (it.dy != null ? it.dy.toFixed(2) + '%' : '—')   // 股票/收藏 tab 精简：银行·4.70%
           : (it.type === 'etf' && it.scale != null ? '规模 ' + fmtScale(it.scale) : '');
         const li = el('li', { class: 'ticker-item' + (sel ? ' active' : '') + (isFav(it.code) ? ' fav' : ''), role: 'button', tabindex: '0',
             'aria-label': it.name + it.code },
           nameBox,
           el('div', { class: 'ticker-price txt-' + dirOf(it.chg) }, it.price == null ? '—' : fmt2(it.price)),
           el('div', { class: 'ticker-code' }, it.code),
-          el('div', { class: 'ticker-sub' }, subTxt ? el('span', { class: 'txt-3', style: 'font-size:' + (curType === 'fav' ? '9px' : '10.5px') }, subTxt) : null));
+          el('div', { class: 'ticker-sub' }, subTxt ? el('span', { class: 'txt-3', style: 'font-size:' + (curType === 'fav' ? '9px' : '9.5px') }, subTxt) : null));
         const pick = () => toggle(it);
         li.addEventListener('click', pick);
         li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });

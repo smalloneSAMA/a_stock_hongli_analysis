@@ -10,6 +10,7 @@
 用法: python scripts/_fetch_cnindex_components.py [indexcode ...]
 """
 import io, json, os, sys, time, urllib.request
+from _common import atomic_dump
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -20,13 +21,6 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 
 # 默认清单：980092 国证自由现金流；可用命令行参数追加/覆盖
 INDICES = [("980092", "国证自由现金流")]
-
-
-def atomic_dump(path, obj):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False)
-    os.replace(tmp, path)
 
 
 def fetch(code, name, date_str=None):

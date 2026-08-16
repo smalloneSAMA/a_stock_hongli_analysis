@@ -27,7 +27,7 @@ MELT_LIMIT = 5         # 连续失败熔断阈值
 MELT_PAUSE = 60        # 熔断暂停（秒）
 
 
-from _common import market_prefix   # 唯一正确版本（92→bj 先于 9x；全名语义）
+from _common import market_prefix, atomic_dump   # 唯一正确版本（92→bj 先于 9x；全名语义）
 
 
 def pool_codes():
@@ -51,10 +51,7 @@ def load_failed():
 
 
 def save_failed(f):
-    tmp = FAIL_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fp:
-        json.dump(f, fp, ensure_ascii=False, indent=1)
-    os.replace(tmp, FAIL_PATH)
+    atomic_dump(FAIL_PATH, f)
 
 
 def fetch_one(code, name, tcode):

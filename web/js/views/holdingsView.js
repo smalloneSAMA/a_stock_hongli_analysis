@@ -49,6 +49,7 @@ export default {
         }));
       };
       await ensureDivs();
+      root.innerHTML = '';   // 清掉加载骨架屏，再渲染实际内容
 
       let preset = '均衡';
       let formMode = 'buy';   // buy / sell
