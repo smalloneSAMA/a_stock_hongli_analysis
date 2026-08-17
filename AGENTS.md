@@ -1,4 +1,4 @@
-# AGENTS.md — A股红利研究项目（代理工作指南）
+# AGENTS.md —  A股红利研究项目（代理工作指南）
 
 面向 AI 代理与协作者的开发手册。**结构/数据源等静态信息详见 README.md，本文件侧重"会踩坑的约定"与"改代码前必读的约束"。**
 
@@ -22,6 +22,7 @@ A股红利研究终端：红利指数/ETF/股票的行情、成分、股息率�
 ```bash
 python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry|excel|status [--yes]
 ```
+
 - 交互式维护菜单：`python update.py`（含回测重跑/失败重试/缓存清理/重导Excel）
 - 快捷命令：`python update.py wq`（自选股指标刷新）；`bt`（回测）；`status`（数据过期检测）
 - 本地服务：**必须在项目根目录启动** `python serve.py`（默认 8000，no-cache），页面入口 **`http://localhost:8000/web/`**（资源路径为 `/web/...` 绝对路径，从 web/ 目录启动会导致 404）
@@ -51,25 +52,25 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 
 ## 6. 脚本/视图职责索引
 
-| 文件 | 职责 |
-|---|---|
-| update.py | 数据更新总入口（交互菜单+快捷命令） |
-| _common.py | ★ 公共工具单一来源：market_prefix(92→bj先于9x)/tencent_quotes(50只批)/em_get(东财限流)/atomic_dump|atomic_load/export_workbook——新脚本必须 import 禁止复制 |
-| serve.py | 本地静态服务（项目根启动，no-cache） |
-| _fetch_history.py | 指数/ETF 历史行情（增量拉取，INDICES/ETFS 常量在此） |
-| _fetch_stock_data.py | 推荐20股票日线（不复权 2004 起） |
-| _fetch_pool_data.py | 精选池−推荐20 的 K线/分红/财报/股本 + check-fin |
-| _fetch_watchlist.py | 自选股清单.xlsx 行情/分红/财报 + `--indicators` 指标刷新 |
-| _fetch_etf_data.py / _fetch_etf_holdings.py | ETF 行情 / ETF 持仓 |
-| _fetch_cnindex_components.py / _gen_components.py | 国证成分 / 中证成分md重生成 |
-| _recommend_stocks.py | ★ 推荐20量化评分（硬过滤+三组10因子+三档权重+组合约束→cache/_推荐20.json） |
-| _gen_analysis.py / _gen_web_data.py | 逐日指标预计算 / 前端数据包生成 |
-| _backtest_analysis.py / _backtest_portfolio.py | 回测分析（含基准6M/12M）/ 组合回测 |
-| _update_summary.py / _gen_summary_excel.py | 成分股汇总 / 汇总 Excel |
-| _classify.py / _candidate_dy.py / _find_index_code.py / _full_backfill.py | 行业分类 / 股息率候选 / 指数代码查找 / 全量回填 |
-| web/js/views/*.js | 各视图（indexView/etfView/stockView/summaryView/backtestView/portfolioView/compareView/scanView） |
-| web/js/charts.js | ECharts 工厂（K线/折线/环形/条形，图表重建逻辑） |
-| web/js/views/common.js | 通用：收藏(localStorage)、renderTable、列表渲染 |
+| 文件                                                                      | 职责                                                                                                 |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| update.py                                                                 | 数据更新总入口（交互菜单+快捷命令）                                                                  |
+| _common.py                                                                | ★ 公共工具单一来源：market_prefix(92→bj先于9x)/tencent_quotes(50只批)/em_get(东财限流)/atomic_dump |
+| serve.py                                                                  | 本地静态服务（项目根启动，no-cache）                                                                 |
+| _fetch_history.py                                                         | 指数/ETF 历史行情（增量拉取，INDICES/ETFS 常量在此）                                                 |
+| _fetch_stock_data.py                                                      | 推荐20股票日线（不复权 2004 起）                                                                     |
+| _fetch_pool_data.py                                                       | 精选池−推荐20 的 K线/分红/财报/股本 + check-fin                                                     |
+| _fetch_watchlist.py                                                       | 自选股清单.xlsx 行情/分红/财报 +`--indicators` 指标刷新                                            |
+| _fetch_etf_data.py / _fetch_etf_holdings.py                               | ETF 行情 / ETF 持仓                                                                                  |
+| _fetch_cnindex_components.py / _gen_components.py                         | 国证成分 / 中证成分md重生成                                                                          |
+| _recommend_stocks.py                                                      | ★ 推荐20量化评分（硬过滤+三组10因子+三档权重+组合约束→cache/_推荐20.json）                         |
+| _gen_analysis.py / _gen_web_data.py                                       | 逐日指标预计算 / 前端数据包生成                                                                      |
+| _backtest_analysis.py / _backtest_portfolio.py                            | 回测分析（含基准6M/12M）/ 组合回测                                                                   |
+| _update_summary.py / _gen_summary_excel.py                                | 成分股汇总 / 汇总 Excel                                                                              |
+| _classify.py / _candidate_dy.py / _find_index_code.py / _full_backfill.py | 行业分类 / 股息率候选 / 指数代码查找 / 全量回填                                                      |
+| web/js/views/*.js                                                         | 各视图（indexView/etfView/stockView/summaryView/backtestView/portfolioView/compareView/scanView）    |
+| web/js/charts.js                                                          | ECharts 工厂（K线/折线/环形/条形，图表重建逻辑）                                                     |
+| web/js/views/common.js                                                    | 通用：收藏(localStorage)、renderTable、列表渲染                                                      |
 
 ## 7. 验证流程（改代码后必做）
 
