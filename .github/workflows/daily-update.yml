@@ -89,6 +89,12 @@ jobs:
         run: python update.py daily --yes
         timeout-minutes: 60
 
+      # ── 日常回测同步：池子/成分变化后保证 backtest.json 与 analysis_dy 一致 ──
+      - name: 日常回测同步（backtest.json + 回测报告.md）
+        if: steps.mode.outputs.mode == 'daily'
+        run: python update.py bt
+        timeout-minutes: 10
+
       # ── 每周：失败清单重试 + 信号回测 + 组合回测 ─────────────────────
       - name: 失败清单重试（跳过北交所预期失败项）
         if: steps.mode.outputs.mode == 'weekly'

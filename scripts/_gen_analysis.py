@@ -366,6 +366,17 @@ def build_stock(code, name):
     }
 
 
+def enough_history(info):
+    """与 build_factors 的 close<60 过滤一致：历史不足 60 日不进入分析池，
+    避免 analysis_dy / analysis.json / backtest 池不一致（如新上市北交所仅 1 日 K 线）"""
+    typ, code = info["type"], info["code"]
+    if typ == "ETF":
+        code = info.get("track") or code
+        typ = "指数"
+    c = load_cache(typ, code)
+    return bool(c and sum(1 for r in c.get("rows", []) if "close" in r) >= 60)
+
+
 def official_check():
     """红利介绍.md 官方股息率快照（供参考）：注意官方为『年度静态口径』（上年度分红/现价），
     与 TTM 口径（近12个月除权派息/现价）不可直接对比，仅打印提示不校验。
@@ -389,6 +400,9 @@ def main(only=None):
     def emit(r):
         if r["dy0"] is None:
             rows.append(f"{r['code']:<8}{r['name']:<14}{r['type']:<4}  ⚠️ {r.get('note','')}")
+            out[r["code"]] = r
+        elif not enough_history(r):
+            rows.append(f"{r['code']:<8}{r['name']:<14}{r['type']:<4}  ⚠️ 历史不足60日，暂不纳入分析池")
         else:
             off = official.get(r["name"][:6], None)
             tag = ""
@@ -398,7 +412,7 @@ def main(only=None):
                         f"{r['dy0']:>7.2f}{r['dy_pct']:>7.1f}%"
                         f"{r['dy_p10']:>7.2f}{r['dy_p50']:>7.2f}{r['dy_p90']:>7.2f}"
                         f"{r['n_days']:>6d}天{tag}")
-        out[r["code"]] = r
+            out[r["code"]] = r
 
     print("═══ 股息率反推序列 + 分位（S1）═══")
     print(f"{'代码':<8}{'名称':<14}{'类型':<4}{'dy0':>7}{'分位':>7}{'p10':>7}{'p50':>7}{'p90':>7}{'窗口':>8}")
