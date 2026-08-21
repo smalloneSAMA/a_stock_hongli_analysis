@@ -30,6 +30,16 @@
       "price": 25.54,
       "qty": 200,
       "fee": 5
+    },
+    {
+      "id": "t1787328905195",
+      "code": "601225",
+      "kind": "stock",
+      "side": "buy",
+      "date": "2026-08-21",
+      "price": 25.74,
+      "qty": 100,
+      "fee": 5
     }
   ],
   "missing": false
