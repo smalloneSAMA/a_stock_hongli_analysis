@@ -1,45 +1,52 @@
 {
-  "version": 1,
-  "trades": [
+  "version": 2,
+  "portfolios": [
     {
-      "id": "t1787143906306",
-      "code": "000933",
-      "kind": "stock",
-      "side": "buy",
-      "date": "2025-12-19",
-      "price": 27.5,
-      "qty": 4200,
-      "fee": 5
-    },
-    {
-      "id": "t1787144166097",
-      "code": "000933",
-      "kind": "stock",
-      "side": "buy",
-      "date": "2026-05-13",
-      "price": 31.22,
-      "qty": 1600,
-      "fee": 5
-    },
-    {
-      "id": "t1787144236485",
-      "code": "000807",
-      "kind": "stock",
-      "side": "buy",
-      "date": "2026-07-27",
-      "price": 25.54,
-      "qty": 200,
-      "fee": 5
-    },
-    {
-      "id": "t1787328905195",
-      "code": "601225",
-      "kind": "stock",
-      "side": "buy",
-      "date": "2026-08-21",
-      "price": 25.74,
-      "qty": 100,
-      "fee": 5
+      "id": "p1787926062005",
+      "name": "默认持仓",
+      "preset": "均衡",
+      "trades": [
+        {
+          "id": "t1787143906306",
+          "code": "000933",
+          "kind": "stock",
+          "side": "buy",
+          "date": "2025-12-19",
+          "price": 27.5,
+          "qty": 4200,
+          "fee": 5
+        },
+        {
+          "id": "t1787144166097",
+          "code": "000933",
+          "kind": "stock",
+          "side": "buy",
+          "date": "2026-05-13",
+          "price": 31.22,
+          "qty": 1600,
+          "fee": 5
+        },
+        {
+          "id": "t1787144236485",
+          "code": "000807",
+          "kind": "stock",
+          "side": "buy",
+          "date": "2026-07-27",
+          "price": 25.54,
+          "qty": 200,
+          "fee": 5
+        },
+        {
+          "id": "t1787328905195",
+          "code": "601225",
+          "kind": "stock",
+          "side": "buy",
+          "date": "2026-08-21",
+          "price": 25.74,
+          "qty": 100,
+          "fee": 5
+        }
+      ]
     }
   ],
   "missing": false

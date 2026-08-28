@@ -527,6 +527,12 @@ button { font-family: inherit; }
 .hold-tag { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 5px; font-size: 10px; font-weight: 700;
   line-height: 16px; color: var(--brand); background: rgba(251, 191, 36, .14); border: 1px solid var(--brand); vertical-align: 1px; }
 /* 我的持仓页：台账表单与操作条 */
+/* 多持仓页签栏（我的持仓） */
+.hld-tabs { margin: 10px 2px 0; max-width: 100%; }
+.hld-tabs .seg-btn { white-space: nowrap; }
+.hld-tab-add { border: 1px dashed var(--border-strong) !important; color: var(--text-3) !important; }
+.hld-tab-add:hover { color: var(--brand) !important; border-color: var(--brand) !important; }
+
 .hld-savebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 11.5px; margin: 6px 2px; }
 .hld-mini-btn { font-size: 11.5px; padding: 3px 10px; border-radius: 7px; border: 1px solid var(--border);
   background: transparent; color: var(--text-2); cursor: pointer; }

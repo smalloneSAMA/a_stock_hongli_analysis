@@ -1,18 +1,20 @@
-/* 视图：我的持仓（真实交易台账 + 持仓决策面板）
+/* 视图：我的持仓（真实交易台账 + 持仓决策面板，多持仓页签）
    台账 = 交易流水，唯一事实来源 cache/持仓.json（serve.py POST /api/holdings 原子写；localStorage 仅失败草稿）
+   v2 多持仓页：{version:2, portfolios:[{id,name,preset,trades:[...]}]}，每页独立台账/持仓/盈亏/决策，档位每页记忆
    持仓/成本/盈亏：平均成本法重放（common.replayTrades）；累计分红：东财分红缓存按除权日分段归属（估算，不复投不摊薄成本）
    决策：与智能推荐同口径（reco.js 推荐分三档）+ 分红异常检查 + 卖出区检查；无回测覆盖标的回退 dy+贵贱度双条件
    动作映射：强烈推荐→加仓 / 推荐→持有偏加 / 关注→持有 / 回避→减仓；dy分位≤10→卖出（持仓亏损则减仓观察） */
 
 import { loadJSON, MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
 import { el, fmt2, fmt0, dirOf, skeleton, errorBox, emptyState, renderTable, openTicker, attachDatePicker, favStar,
-  loadHoldings, saveHoldings, replayTrades, allPositions, accruedDiv, refreshHoldMeta } from './common.js';
+  loadHoldings, saveHoldings, normalizeHoldings, replayTrades, allPositions, accruedDiv, refreshHoldMeta } from './common.js';
 import { buildRecoPool, recoScoreOf, recoBandOf, recoBandCls, RECO_PRESET_DESC } from './reco.js';
 import { scoreOf as anaScoreOf } from './analysis.js';
 
 const DY_URL = '/cache/analysis_dy.json';
 const DIV_PREFIX = '/cache/分红_';
 const DRAFT_KEY = 'pi_holdings_draft';
+const ACTIVE_KEY = 'pi_holdings_active';
 
 export default {
   async mount(root) {
@@ -21,6 +23,11 @@ export default {
     try {
       const [dy, an, bt, m] = await Promise.all([loadJSON(DY_URL), loadJSON(ANALYSIS_URL), loadJSON(BACKTEST_URL), loadJSON(MANIFEST_URL)]);
       let data = await loadHoldings();
+      let curId = data.portfolios[0].id;
+      try {
+        const saved = localStorage.getItem(ACTIVE_KEY);
+        if (saved && data.portfolios.some((p) => p.id === saved)) curId = saved;
+      } catch { /* 忽略 */ }
       const byCode = an.by_code || {};
       const { all, maxDate } = buildRecoPool(dy, bt, an, m);
       const poolByCode = new Map(all.map((r) => [r.code, r]));
@@ -35,10 +42,14 @@ export default {
         ...(m.etfs || []).map((s) => ({ code: s.code, name: s.name, kind: 'etf' })),
       ];
 
-      /* 分红缓存：按当前持仓股票懒加载（缺失/失败→null，分红列显示 —）；新买入后 persist 会补齐 */
+      /* 当前持仓页（normalize 保证至少一页） */
+      const cur = () => data.portfolios.find((p) => p.id === curId) || data.portfolios[0];
+
+      /* 分红缓存：按全部持仓页的股票代码懒加载（跨页共享，切页不重拉；缺失/失败→null，分红列显示 —） */
       const divCache = new Map();
       const ensureDivs = async () => {
-        const codes = [...new Set(data.trades.filter((t) => t.kind === 'stock').map((t) => t.code))];
+        const codes = [...new Set(data.portfolios.flatMap((p) => (p.trades || [])
+          .filter((t) => t.kind === 'stock').map((t) => t.code)))];
         await Promise.all(codes.map(async (code) => {
           if (divCache.has(code)) return;
           try {
@@ -51,21 +62,21 @@ export default {
       await ensureDivs();
       root.innerHTML = '';   // 清掉加载骨架屏，再渲染实际内容
 
-      let preset = '均衡';
       let formMode = 'buy';   // buy / sell
       let saveState = { ok: null, err: null };
 
-      /* 持仓行构建（平均成本法重放） */
+      /* 持仓行构建（平均成本法重放，仅当前页） */
       const rowsOf = () => {
-        const positions = allPositions(data.trades);
-        const { sells } = replayTrades(data.trades);
+        const trades = cur().trades;
+        const positions = allPositions(trades);
+        const { sells } = replayTrades(trades);
         return positions.map((p) => {
           const dEnt = dy[p.code];
           const r = poolByCode.get(p.code) || null;
           /* 现价优先 manifest last_close（真实交易价格；ETF 的 dy.close_now 是跟踪指数点位） */
           const close = (meta[p.code] && meta[p.code].last_close != null) ? meta[p.code].last_close : (dEnt ? dEnt.close_now : null);
           const divs = divCache.get(p.code) || null;
-          const divTotal = divs ? accruedDiv(data.trades, p.code, divs) : null;
+          const divTotal = divs ? accruedDiv(trades, p.code, divs) : null;
           return { ...p, r, close, divs, divTotal, sells,
             name: (dEnt && dEnt.name) || (meta[p.code] && meta[p.code].name) || p.code,
             type: (dEnt && dEnt.type) || (p.kind === 'etf' ? 'ETF' : '股票'),
@@ -78,6 +89,7 @@ export default {
       const decide = (row) => {
         const pct = row.pct, close = row.close, avg = row.avg;
         const pnl = close != null ? (close / avg - 1) * 100 : null;
+        const preset = cur().preset;
         /* 1. 分红异常：股票、有分红历史但最近除息距今 >400 天（约13个月无派息） */
         const divs = row.divs;
         if (divs && divs.length && maxDate) {
@@ -113,7 +125,7 @@ export default {
         try {
           await saveHoldings(data);
           saveState = { ok: new Date().toLocaleTimeString('zh-CN', { hour12: false }), err: null };
-          try { localStorage.removeItem(DRAFT_KEY); } catch { /* 忽略 */ }
+          try { localStorage.removeItem(DRAFT_KEY); localStorage.setItem(ACTIVE_KEY, curId); } catch { /* 忽略 */ }
           await refreshHoldMeta(true);
           await ensureDivs();   // 新买入股票的分红缓存补齐
           paint();
@@ -124,7 +136,37 @@ export default {
         }
       };
 
+      /* ── 持仓页操作：新增 / 重命名 / 删除（删除连同台账，至少保留一页） ── */
+      const addPortfolio = () => {
+        const defName = '持仓' + (data.portfolios.length + 1);
+        const name = window.prompt('新持仓名称（留空自动命名为「' + defName + '」）', defName);
+        if (name === null) return;   // 取消
+        const id = 'p' + Date.now();
+        data.portfolios.push({ id, name: (name.trim() || defName).slice(0, 20), preset: cur().preset, trades: [] });
+        curId = id;
+        persist();
+      };
+      const renamePortfolio = () => {
+        const p = cur();
+        const name = window.prompt('重命名持仓页', p.name);
+        if (name === null || !name.trim() || name.trim() === p.name) return;
+        p.name = name.trim().slice(0, 20);
+        persist();
+      };
+      const delPortfolio = () => {
+        if (data.portfolios.length <= 1) {
+          window.alert('至少保留一个持仓页');
+          return;
+        }
+        const p = cur();
+        if (!window.confirm('删除持仓页「' + p.name + '」？将连同该页全部 ' + p.trades.length + ' 笔交易记录一起删除，且不可恢复。')) return;
+        data.portfolios = data.portfolios.filter((x) => x.id !== p.id);
+        curId = data.portfolios[0].id;
+        persist();
+      };
+
       /* ── DOM 骨架 ── */
+      const tabsEl = el('div', { class: 'seg-group hld-tabs', role: 'tablist', 'aria-label': '持仓页签' });
       const saveBar = el('div', { class: 'hld-savebar' });
       const warnBar = el('div', {});
       const sumEl = el('div', { class: 'bt-summary' });
@@ -136,8 +178,8 @@ export default {
 
       root.append(el('div', { class: 'view-head' },
           el('h1', {}, '我的持仓'),
-          el('div', { class: 'desc' }, '真实交易台账（平均成本法）· 决策与智能推荐同口径（推荐分三档）+ 卖出区/分红异常检查')),
-        saveBar, warnBar, sumEl,
+          el('div', { class: 'desc' }, '真实交易台账（平均成本法）· 多持仓页签 · 决策与智能推荐同口径（推荐分三档）+ 卖出区/分红异常检查')),
+        tabsEl, saveBar, warnBar, sumEl,
         el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 2px' }, presetSel, presetNote),
         tableBox,
         el('div', { class: 'txt-3', style: 'font-size:11.5px;margin:8px 2px;line-height:1.7' },
@@ -149,10 +191,26 @@ export default {
           el('span', { class: 'txt-3', style: 'font-size:11px;font-weight:400;margin-left:8px' }, '表格可左右滚动 · 最后一列可删除任意一笔交易（持仓/盈亏随之重算）')),
         ledgerBox, formBox);
 
-      /* ── 表单区（买入/卖出切换，每次重绘重建） ── */
+      /* ── 持仓页签栏（每页一个 tab + 新增 + 当前页操作） ── */
+      const paintTabs = () => {
+        tabsEl.innerHTML = '';
+        for (const p of data.portfolios) {
+          tabsEl.append(el('button', {
+            class: 'seg-btn' + (p.id === curId ? ' active' : ''),
+            role: 'tab', 'aria-selected': p.id === curId ? 'true' : 'false',
+            title: p.name + ' · ' + p.trades.length + ' 笔交易',
+            onclick: () => { curId = p.id; try { localStorage.setItem(ACTIVE_KEY, curId); } catch { /* 忽略 */ } paint(); },
+          }, p.name));
+        }
+        tabsEl.append(el('button', { class: 'seg-btn hld-tab-add', title: '新建一个独立持仓页（各自台账/盈亏/决策）', onclick: addPortfolio }, '＋新增'));
+        tabsEl.append(el('button', { class: 'hld-mini-btn', title: '重命名当前持仓页', onclick: renamePortfolio }, '重命名'));
+        tabsEl.append(el('button', { class: 'hld-mini-btn', title: '删除当前持仓页（连同台账，至少保留一页）', onclick: delPortfolio }, '删除'));
+      };
+
+      /* ── 表单区（买入/卖出切换，每次重绘重建；作用于当前持仓页） ── */
       const paintForm = () => {
         formBox.innerHTML = '';
-        const positions = allPositions(data.trades);
+        const positions = allPositions(cur().trades);
         const modeSel = el('div', { class: 'seg-group', role: 'group', 'aria-label': '交易方向' },
           ...['buy', 'sell'].map((k) => el('button', {
             class: 'seg-btn' + (formMode === k ? ' active' : ''), onclick: () => { formMode = k; paintForm(); },
@@ -190,7 +248,7 @@ export default {
             if (!(qty > 0)) return flash('数量无效');
             if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput.value)) return flash('日期格式 YYYY-MM-DD');
             const c = candidates.find((x) => x.code === code);
-            data.trades.push({ id: 't' + Date.now(), code, kind: c ? c.kind : kindSel.value, side: 'buy',
+            cur().trades.push({ id: 't' + Date.now(), code, kind: c ? c.kind : kindSel.value, side: 'buy',
               date: dateInput.value, price, qty, fee });
             persist();
           } }, '记买入');
@@ -207,12 +265,15 @@ export default {
             modeSel);
         } else {
           if (!positions.length) {
-            formBox.append(el('div', { class: 'txt-3', style: 'margin:10px 2px' }, '暂无持仓可卖，请先记买入。'), modeSel);
+            formBox.append(el('div', { class: 'txt-3', style: 'margin:10px 2px' }, '当前持仓页暂无持仓可卖，请先记买入。'), modeSel);
             return;
           }
           const sel = el('select', { class: 'hld-input', 'aria-label': '持仓选择' },
-            ...positions.map((p) => el('option', { value: p.code },
-              p.code + '（可卖 ' + fmt0(p.qty) + ' 股 · 成本 ' + fmt2(p.avg) + '）')));
+            ...positions.map((p) => {
+              const nm = (dy[p.code] && dy[p.code].name) || (meta[p.code] && meta[p.code].name) || '';
+              return el('option', { value: p.code },
+                (nm ? nm + ' ' : '') + p.code + '（可卖 ' + fmt0(p.qty) + ' 股 · 成本 ' + fmt2(p.avg) + '）');
+            }));
           const dateInput = el('input', { type: 'text', placeholder: 'YYYY-MM-DD', 'aria-label': '日期' });
           dateInput.value = maxDate || new Date().toISOString().slice(0, 10);
           const priceInput = el('input', { type: 'number', step: '0.001', placeholder: '价格', 'aria-label': '价格' });
@@ -220,9 +281,9 @@ export default {
           const feeInput = el('input', { type: 'number', step: '0.01', placeholder: '费用', 'aria-label': '费用' });
           feeInput.value = '5';
           const preview = el('span', { class: 'txt-3', style: 'font-size:11px' });
-          const cur = () => positions.find((p) => p.code === sel.value) || positions[0];
+          const cur2 = () => positions.find((p) => p.code === sel.value) || positions[0];
           const refresh = () => {
-            const p = cur();
+            const p = cur2();
             const mv = meta[p.code];   // 真实交易价格：ETF 用场内价
             if (!priceInput.value && mv && mv.last_close != null) priceInput.value = String(mv.last_close);
             if (!qtyInput.value) qtyInput.value = String(p.qty);
@@ -238,12 +299,12 @@ export default {
           feeInput.addEventListener('input', refresh);
           refresh();
           const submit = el('button', { class: 'hld-submit', onclick: () => {
-            const p = cur();
+            const p = cur2();
             const price = parseFloat(priceInput.value), qty = parseInt(qtyInput.value, 10), fee = parseFloat(feeInput.value) || 0;
             if (!(price > 0)) return flash('价格无效');
             if (!(qty > 0) || qty > p.qty) return flash('数量须在 1~' + fmt0(p.qty) + ' 之间');
             if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput.value)) return flash('日期格式 YYYY-MM-DD');
-            data.trades.push({ id: 't' + Date.now(), code: p.code, kind: p.kind, side: 'sell',
+            cur().trades.push({ id: 't' + Date.now(), code: p.code, kind: p.kind, side: 'sell',
               date: dateInput.value, price, qty, fee });
             persist();
           } }, '记卖出');
@@ -261,12 +322,13 @@ export default {
 
       /* ── 主重绘 ── */
       const paint = () => {
+        paintTabs();
         /* 保存状态条 + 草稿提示 */
         saveBar.innerHTML = '';
         if (saveState.ok) saveBar.append(el('span', { class: 'txt-up', style: 'font-size:11.5px' }, '已保存 ' + saveState.ok));
         if (data.missing) saveBar.append(el('span', { class: 'txt-3', style: 'font-size:11.5px' }, 'cache/持仓.json 尚未创建：首次保存后自动生成'));
         if (saveState.err) saveBar.append(el('span', { class: 'txt-down', style: 'font-size:11.5px' }, '⚠ ' + saveState.err));
-        const exportBtn = el('button', { class: 'hld-mini-btn', title: '下载持仓 JSON（备份/换机器迁移）', onclick: () => {
+        const exportBtn = el('button', { class: 'hld-mini-btn', title: '下载持仓 JSON（全部持仓页，备份/换机器迁移）', onclick: () => {
           const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
           const a = document.createElement('a');
           a.href = URL.createObjectURL(blob);
@@ -279,44 +341,44 @@ export default {
           const file = importInput.files && importInput.files[0];
           if (!file) return;
           try {
-            const d = JSON.parse(await file.text());
-            if (d.version !== 1 || !Array.isArray(d.trades)) throw new Error('结构不符');
+            const d = normalizeHoldings(JSON.parse(await file.text()));
             data = d;
+            curId = d.portfolios[0].id;
             await persist();
           } catch (e) { saveState = { ok: saveState.ok, err: '导入失败：' + e.message }; paint(); }
         });
         saveBar.append(el('button', { class: 'hld-mini-btn', onclick: () => importInput.click() }, '导入JSON'), importInput);
-        /* 草稿检测（上次保存失败遗留） */
+        /* 草稿检测（上次保存失败遗留；v1 旧草稿自动归一化） */
         warnBar.innerHTML = '';
         try {
           const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
           if (draft && Array.isArray(draft.trades) && draft.trades.length) {
-            const fileIds = new Set(data.trades.map((t) => t.id));
+            const fileIds = new Set(data.portfolios.flatMap((p) => (p.trades || []).map((t) => t.id)));
             const extra = draft.trades.filter((t) => !fileIds.has(t.id)).length;
             if (extra > 0) {
               warnBar.append(el('div', { class: 'cmp-warn', style: 'display:flex;align-items:center;gap:10px;flex-wrap:wrap' },
                 el('span', {}, '检测到本地草稿（上次保存可能失败）：含 ' + extra + ' 笔未落盘的交易'),
-                el('button', { class: 'hld-mini-btn', onclick: () => { data = draft; persist(); } }, '恢复草稿'),
+                el('button', { class: 'hld-mini-btn', onclick: () => { data = normalizeHoldings(draft); curId = data.portfolios[0].id; persist(); } }, '恢复草稿'),
                 el('button', { class: 'hld-mini-btn', onclick: () => { try { localStorage.removeItem(DRAFT_KEY); } catch { /* 忽略 */ } warnBar.innerHTML = ''; } }, '清除草稿')));
             }
           }
         } catch { /* 忽略 */ }
 
-        /* 档位切换 */
+        /* 档位切换（每页独立记忆：写入当前页 preset 并落盘） */
         presetSel.innerHTML = '';
         for (const p of ['稳健', '均衡', '进取']) {
           presetSel.append(el('button', {
-            class: 'seg-btn' + (preset === p ? ' active' : ''),
+            class: 'seg-btn' + (cur().preset === p ? ' active' : ''),
             title: p + '：' + RECO_PRESET_DESC[p].w + ' —— ' + RECO_PRESET_DESC[p].tip,
-            onclick: () => { preset = p; paint(); },
+            onclick: () => { cur().preset = p; persist(); },
           }, p));
         }
-        presetNote.textContent = '当前：' + preset + ' → ' + RECO_PRESET_DESC[preset].w + '（切档改变推荐分与建议动作）';
+        presetNote.textContent = '当前：' + cur().preset + ' → ' + RECO_PRESET_DESC[cur().preset].w + '（切档改变推荐分与建议动作，每持仓页独立记忆）';
 
         const rows = rowsOf();
         const decided = rows.map((row) => ({ ...row, d: decide(row) }));
 
-        /* 汇总卡 */
+        /* 汇总卡（仅当前页） */
         const mkt = rows.reduce((a, p) => a + p.qty * (p.close != null ? p.close : p.avg), 0);   // 池外标的按成本近似
         const cost = rows.reduce((a, p) => a + p.cost, 0);
         const divT = rows.reduce((a, p) => a + (p.divTotal != null ? p.divTotal : 0), 0);
@@ -325,6 +387,7 @@ export default {
         const total = unreal + divT + rel;
         sumEl.innerHTML = '';
         sumEl.append(
+          el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '持仓页'), el('b', {}, cur().name)),
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '数据日期'), el('b', {}, maxDate || m.data_date || '—')),
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '持仓标的'), el('b', {}, rows.length)),
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '总市值'), el('b', {}, mkt.toLocaleString('zh-CN', { maximumFractionDigits: 0 }))),
@@ -337,7 +400,7 @@ export default {
         /* 决策表 */
         if (!rows.length) {
           tableBox.querySelector('.table-wrap').innerHTML = '';
-          tableBox.querySelector('.table-wrap').append(emptyState('暂无持仓',
+          tableBox.querySelector('.table-wrap').append(emptyState('「' + cur().name + '」暂无持仓',
             '在下方台账记一笔买入，或先到「信号扫描 / 智能推荐」找当前值得买的标的。'));
         } else {
           const cols = [
@@ -359,7 +422,7 @@ export default {
             { key: 'dyNow', label: '股息率%', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },
             { key: 'pct', label: 'dy分位', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), color: (v) => (v >= 90 ? 'up' : v <= 10 ? 'down' : '') },
             { key: 's', label: '推荐分', align: 'center', sortable: true,
-              fmt: (_v, row) => (row.d.sc ? el('span', { title: '与智能推荐同口径（' + preset + '档）：dy混合 ' + fmt2(row.d.sc.dyPart) + ' · 贵贱度反向 ' + fmt2(row.d.sc.anaPart) + ' · 回测 ' + fmt2(row.d.sc.btPart) }, fmt2(row.d.sc.s)) : '—'),
+              fmt: (_v, row) => (row.d.sc ? el('span', { title: '与智能推荐同口径（' + cur().preset + '档）：dy混合 ' + fmt2(row.d.sc.dyPart) + ' · 贵贱度反向 ' + fmt2(row.d.sc.anaPart) + ' · 回测 ' + fmt2(row.d.sc.btPart) }, fmt2(row.d.sc.s)) : '—'),
               color: (_v, row) => (row.d.sc && row.d.sc.s >= 75 ? 'up' : '') },
             { key: 'band', label: '评级', align: 'center', sortable: false, filter: false,
               fmt: (_v, row) => (row.d.sc ? el('span', { class: 'band-pill ' + recoBandCls(recoBandOf(row.d.sc.s)) }, recoBandOf(row.d.sc.s)) : el('span', { class: 'txt-3' }, '无覆盖')) },
@@ -371,8 +434,8 @@ export default {
           renderTable(tableBox.querySelector('.table-wrap'), { columns: cols, rows: decided, pageSize: 20 });
         }
 
-        /* 台账流水表（降序展示，最新在前） */
-        const trades = [...data.trades].sort((a, b) => (a.date > b.date ? -1 : 1));
+        /* 台账流水表（当前页，降序展示，最新在前） */
+        const trades = [...cur().trades].sort((a, b) => (a.date > b.date ? -1 : 1));
         if (!trades.length) {
           ledgerBox.querySelector('.table-wrap').innerHTML = '';
           ledgerBox.querySelector('.table-wrap').append(emptyState('台账为空', '用下方表单记录第一笔交易。'));
@@ -394,11 +457,11 @@ export default {
             { key: 'op', label: '操作', align: 'center', sortable: false, filter: false,
               fmt: (_v, row) => el('button', { class: 'hld-del', title: '删除该笔交易（持仓/盈亏将重新计算）', onclick: () => {
                 if (!window.confirm('删除这笔交易（' + row.code + ' ' + row.date + ' ' + (row.side === 'buy' ? '买入' : '卖出') + ' ' + row.qty + ' 股）？')) return;
-                data.trades = data.trades.filter((t) => t.id !== row.id);
+                cur().trades = cur().trades.filter((t) => t.id !== row.id);
                 persist();
               } }, '删除') },
           ];
-          const { sells } = replayTrades(data.trades);
+          const { sells } = replayTrades(trades);
           const lrows = trades.map((t) => ({
             ...t,
             name: (dy[t.code] && dy[t.code].name) || (meta[t.code] && meta[t.code].name) || '—',

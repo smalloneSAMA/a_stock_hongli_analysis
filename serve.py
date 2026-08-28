@@ -14,9 +14,39 @@ import sys
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 # 持仓台账（唯一事实来源：cache/持仓.json；前端 POST /api/holdings 落盘）
+# v2 结构 {version:2, portfolios:[{id,name,preset,trades:[...]}]}（多持仓页）；v1 {version:1,trades:[...]} 仍兜底接受
 HOLDINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cache', '持仓.json')
-MAX_HOLDINGS_BYTES = 256 * 1024
+MAX_HOLDINGS_BYTES = 512 * 1024
 TRADE_KEYS = ('id', 'code', 'kind', 'side', 'date', 'price', 'qty', 'fee')
+
+
+def _check_trade(t):
+    return isinstance(t, dict) and all(k in t for k in TRADE_KEYS)
+
+
+def _check_holdings(data):
+    """校验台账结构：v2 多持仓页 / v1 单台账（兜底）。返回 (ok, 交易总数)"""
+    if not isinstance(data, dict):
+        return False, 0
+    v = data.get('version')
+    if v == 1:
+        trades = data.get('trades')
+        if not isinstance(trades, list) or not all(_check_trade(t) for t in trades):
+            return False, 0
+        return True, len(trades)
+    if v == 2:
+        ps = data.get('portfolios')
+        if not isinstance(ps, list) or not ps:
+            return False, 0
+        n = 0
+        for p in ps:
+            if (not isinstance(p, dict) or not isinstance(p.get('id'), str)
+                    or not isinstance(p.get('name'), str) or not isinstance(p.get('trades'), list)
+                    or not all(_check_trade(t) for t in p['trades'])):
+                return False, 0
+            n += len(p['trades'])
+        return True, n
+    return False, 0
 
 
 class NoCacheHandler(SimpleHTTPRequestHandler):
@@ -46,19 +76,16 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         except Exception:
             self.send_error(400, 'Invalid JSON')
             return
-        if not isinstance(data, dict) or data.get('version') != 1 or not isinstance(data.get('trades'), list):
+        ok, n = _check_holdings(data)
+        if not ok:
             self.send_error(400, 'Bad Structure')
             return
-        for t in data['trades']:
-            if not isinstance(t, dict) or not all(k in t for k in TRADE_KEYS):
-                self.send_error(400, 'Bad Trade')
-                return
         os.makedirs(os.path.dirname(HOLDINGS_PATH), exist_ok=True)
         tmp = HOLDINGS_PATH + '.tmp'
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         os.replace(tmp, HOLDINGS_PATH)
-        resp = json.dumps({'ok': True, 'n': len(data['trades'])}, ensure_ascii=False).encode('utf-8')
+        resp = json.dumps({'ok': True, 'n': n}, ensure_ascii=False).encode('utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(resp)))

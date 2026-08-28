@@ -710,14 +710,29 @@ export function renderTable(container, { columns, rows, pageSize = 50 }) {
 const HOLDINGS_URL = '/cache/持仓.json';
 const HOLDINGS_API = '/api/holdings';
 
+/* 归一化台账结构：v1（单台账 trades）→ v2（多持仓页 portfolios），保证至少一个持仓页
+   v2: {version:2, portfolios:[{id, name, preset, trades:[...]}]}；迁移/导入均走此函数 */
+export function normalizeHoldings(d) {
+  const out = { version: 2, portfolios: [], missing: !!d && !!d.missing };
+  if (!d || typeof d !== 'object') return out;
+  if (d.version === 2 && Array.isArray(d.portfolios)) {
+    out.portfolios = d.portfolios.filter((p) => p && typeof p === 'object' && typeof p.id === 'string')
+      .map((p) => ({ id: p.id, name: p.name || p.id, preset: p.preset || '均衡', trades: Array.isArray(p.trades) ? p.trades : [] }));
+  } else {
+    /* v1 或结构不符：旧 trades 并入「默认持仓」（导入兼容） */
+    const trades = Array.isArray(d.trades) ? d.trades : [];
+    out.portfolios = [{ id: 'p' + Date.now(), name: '默认持仓', preset: '均衡', trades }];
+  }
+  if (!out.portfolios.length) out.portfolios = [{ id: 'p' + Date.now(), name: '默认持仓', preset: '均衡', trades: [] }];
+  return out;
+}
+
 /* 读台账文件：404 = 文件尚未创建（空台账，missing 标记） */
 export async function loadHoldings() {
   const r = await fetch(HOLDINGS_URL, { cache: 'no-store' });
-  if (r.status === 404) return { version: 1, trades: [], missing: true };
+  if (r.status === 404) return normalizeHoldings({ missing: true });
   if (!r.ok) throw new Error('HTTP ' + r.status);
-  const data = await r.json();
-  data.missing = false;
-  return data;
+  return normalizeHoldings({ ...(await r.json()), missing: false });
 }
 
 /* 落盘：serve.py POST /api/holdings（原子写）；失败抛错（调用方降级草稿） */
@@ -728,7 +743,8 @@ export async function saveHoldings(data) {
     body: JSON.stringify(data),
   });
   if (!r.ok) throw new Error('HTTP ' + r.status);
-  window.dispatchEvent(new CustomEvent('holding-change', { detail: { n: (data.trades || []).length } }));
+  const n = (data.portfolios || []).reduce((a, p) => a + (p.trades || []).length, 0);
+  window.dispatchEvent(new CustomEvent('holding-change', { detail: { n } }));
   return true;
 }
 
@@ -790,7 +806,8 @@ export async function refreshHoldMeta(force) {
   if (holdCodes && !force) return holdCodes;
   try {
     const data = await loadHoldings();
-    holdCodes = new Set((data.trades || []).map((t) => t.code));
+    holdCodes = new Set();
+    for (const p of data.portfolios || []) for (const t of p.trades || []) holdCodes.add(t.code);
   } catch {
     holdCodes = new Set();
   }
