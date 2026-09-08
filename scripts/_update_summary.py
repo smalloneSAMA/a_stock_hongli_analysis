@@ -176,7 +176,7 @@ def build_table():
             "idx": idx,
         })
     rows.sort(key=lambda r: (r["ind"], -r["n"], -r["maxw"]))
-    atomic_dump(TABLE_JSON, rows)
+    atomic_dump(TABLE_JSON, rows, indent=None, separators=(",", ":"))   # 紧凑写（与 web/data/summary.json 同款，避免 1.7 万行纯格式 diff）
     print(f"  [归并] 汇总表缓存 {len(rows)} 只（{len(set(r['ind'] for r in rows))} 个一级行业）")
 
 # ── 6. 生成 excel/红利成分股汇总.xlsx ─────────────────────────────────

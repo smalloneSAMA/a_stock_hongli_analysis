@@ -127,6 +127,10 @@ def refresh_indicators_main():
     rows = read_watchlist_xlsx()
     if not rows:
         return
+    bj = [r for r in rows if is_bj(r["code"])]
+    if bj:
+        print(f"  ⚠️ 清单含北交所 {len(bj)} 只，按 R2 不拉取其行情（xlsx 原值保留）：{'、'.join(r['code'] for r in bj)}")
+        rows = [r for r in rows if not is_bj(r["code"])]
     print(f"═══ 自选股清单指标刷新（{len(rows)} 只 · 腾讯批量 · 全量）═══")
 
     metrics, got, t0 = {}, 0, time.time()

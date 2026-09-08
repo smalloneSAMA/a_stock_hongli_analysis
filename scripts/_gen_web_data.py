@@ -148,6 +148,7 @@ def build_manifest():
     all_codes = [c for c, _, _ in fsd.STOCKS]
     all_codes += [c for c in pool_meta if c not in rec_set]
     all_codes += [r["code"] for r in watch_rows if r["code"] not in rec_set and r["code"] not in pool_meta]
+    all_codes = [c for c in all_codes if not is_bj(c)]   # 北交所不进个股池（R2；上游已过滤，此处兜底）
     for code in all_codes:
         c = fh.load_cache("股票", code)
         rows = (c or {}).get("rows", [])
