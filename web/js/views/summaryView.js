@@ -218,7 +218,14 @@ export default {
         barChart = createBar(barEl, dyTop, { title: '近12个月股息率 TOP15', unit: '%' });
       };
 
-      searchInput.addEventListener('input', applyFilter);
+      /* N7：搜索框防抖 200ms（每键都要重排 300+ 行表格 + 重建股息率条形图）；
+         下拉/勾选为离散操作保持即时；回车/失焦（change）立即结算，避免"输入后要等一下" */
+      let searchTimer = 0;
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(applyFilter, 200);
+      });
+      searchInput.addEventListener('change', () => { clearTimeout(searchTimer); applyFilter(); });
       indSelect.addEventListener('change', applyFilter);
       poolSelect.addEventListener('change', () => { poolSel = poolSelect.value; applyFilter(); });
       const recInput = recCheck.querySelector('input');
