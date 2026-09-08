@@ -4,7 +4,8 @@
 import { loadJSON, klineUrl, indiUrl, decodeRows, decodeIndicator, MANIFEST_URL, ANALYSIS_URL, DY_SERIES_URL } from '../data.js';
 import { el, fmt2, fmtSigned, dirOf, fmtScale, skeleton, errorBox, emptyState, attachSearchHistory, favStar, isFav, bindFavDelegation } from './common.js';
 import { scoreOf, bandOf, bandCls } from './analysis.js';   // 区间分析公共计算（P4.3 三合一）
-import { cssVar } from '../theme.js';
+import { cssVar, onThemeChange } from '../theme.js';
+import { recolorOption } from '../charts.js';
 
 const MAX = 8;   // 最多同时对比的标的数
 const KIND = { index: '指数', etf: 'ETF', stock: '股票' };
@@ -211,6 +212,13 @@ export default {
       if (dz) ctx.chartApi.dispatchAction({ type: 'dataZoom', ...dz });
     };
     window.addEventListener('keydown', kbdMove);
+
+    /* N8 主题热切换：本视图直接用 echarts.init，按「旧色→新色」映射重着色重绘
+       （保留当前图表 tab、缩放窗口与选中标的，无需 reload） */
+    onThemeChange((colorMap) => {
+      if (!chartApi) return;
+      chartApi.setOption(recolorOption(chartApi.getOption(), colorMap), { notMerge: true });
+    });
 
     /* ⓘ 使用说明：per-tab 展开状态 + 卡片 DOM 引用（buildMain 重建时按状态恢复） */
     const helpOpen = {};

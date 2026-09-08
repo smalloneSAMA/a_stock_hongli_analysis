@@ -1,15 +1,17 @@
 /* 应用入口：hash 路由 + 视图懒加载（容器常驻，切换不销毁——保留各板块操作状态）+ 数据日期徽章 */
 
 import { loadJSON, MANIFEST_URL } from './data.js';
-import { mountThemeToggle } from './theme.js';
+import { mountThemeToggle, onThemeChange } from './theme.js';
+import { rethemeCharts } from './charts.js';
 
 const VIEWS = ['index', 'etf', 'stock', 'summary', 'backtest', 'portfolio', 'compare', 'scan', 'recommend', 'holdings'];
 
 const viewEl = document.getElementById('view');
 const dateEl = document.getElementById('data-date');
 
-/* 主题切换按钮 */
+/* 主题切换按钮 + N8 热切换：canvas 图表按「旧色→新色」映射重绘（无 reload、无数据请求） */
 mountThemeToggle(document.getElementById('theme-toggle'));
+onThemeChange((colorMap) => rethemeCharts(colorMap));
 
 function currentView() {
   const h = location.hash.replace(/^#\/?/, '');

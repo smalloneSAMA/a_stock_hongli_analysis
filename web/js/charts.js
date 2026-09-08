@@ -2,15 +2,44 @@
    A股习惯：红涨绿跌 */
 import { cssVar } from './theme.js';
 
-const C = {
-  up: cssVar('--up'), down: cssVar('--down'),
-  ma5: cssVar('--brand'), ma20: cssVar('--accent'), ma60: '#A78BFA', ma250: '#60A5FA',
-  volUp: cssVar('--up-bg'), volDown: cssVar('--down-bg'),
-  axis: cssVar('--text-3'), split: cssVar('--grid-line'), text2: cssVar('--text-2'), text3: cssVar('--text-3'),
-  accent: cssVar('--accent'), brand: cssVar('--brand'), indigo: cssVar('--indigo'),
-};
+/* 调色板：取值全部来自 CSS 变量。N8 主题热切换时 refreshPalette() 重新取值，
+   保证切换后新建的图表也用新主题颜色（MA60/MA250 为固定色，不随主题变） */
+const C = { ma60: '#A78BFA', ma250: '#60A5FA' };
+function refreshPalette() {
+  Object.assign(C, {
+    up: cssVar('--up'), down: cssVar('--down'),
+    ma5: cssVar('--brand'), ma20: cssVar('--accent'),
+    volUp: cssVar('--up-bg'), volDown: cssVar('--down-bg'),
+    axis: cssVar('--text-3'), split: cssVar('--grid-line'), text2: cssVar('--text-2'), text3: cssVar('--text-3'),
+    accent: cssVar('--accent'), brand: cssVar('--brand'), indigo: cssVar('--indigo'),
+  });
+}
+refreshPalette();
 
 const MA_STYLE = { type: 'line', smooth: true, symbol: 'none', sampling: 'lttb', lineStyle: { width: 1.2 }, z: 6 };
+
+/* ── N8 主题热切换：注册需随主题重着色重绘的图表 ──
+   canvas 图表颜色在创建时取自 CSS 变量，切主题无法被 CSS 刷新，故按「旧色→新色」映射重写 option 后重绘
+   （notMerge 按新配色整图重建；getOption 已含当前 dataZoom 窗口与图例选中，故缩放/勾选状态保留） */
+const _themables = new Map();   // chart -> (colorMap) => void
+function _registerThemable(chart) {
+  _themables.set(chart, (colorMap) => {
+    chart.setOption(recolorOption(chart.getOption(), colorMap), { notMerge: true });
+  });
+}
+export function rethemeCharts(colorMap) {
+  refreshPalette();   // 之后新建的图表也用新主题色
+  for (const fn of [..._themables.values()]) {
+    try { fn(colorMap); } catch (e) { console.error('[charts] 主题重绘失败', e); }
+  }
+}
+/* 递归把 option 中等于「旧色」的字符串换成新色（图表颜色均为 cssVar 直取的整串，精确匹配即可） */
+export function recolorOption(v, colorMap) {
+  if (typeof v === 'string') return colorMap.get(v) ?? v;
+  if (Array.isArray(v)) { for (let i = 0; i < v.length; i++) v[i] = recolorOption(v[i], colorMap); return v; }
+  if (v && typeof v === 'object') { for (const k in v) v[k] = recolorOption(v[k], colorMap); return v; }
+  return v;
+}
 
 /* ── resize 监听注册表（P4.1 泄漏治理）：dispose 时统一移除，避免匿名监听随图表重建无限累积 ──
    每次图表创建注册命名 handler；disposeChart 按实例查找并移除；已 dispose 的实例空转跳过 */
@@ -21,6 +50,7 @@ function _trackResize(chart) {
   _resizeHandlers.set(chart, onWinResize);
 }
 export function disposeChart(chart) {
+  _themables.delete(chart);
   const h = _resizeHandlers.get(chart);
   if (h) { window.removeEventListener('resize', h); _resizeHandlers.delete(chart); }
   if (chart && typeof chart.dispose === 'function') chart.dispose();
@@ -368,6 +398,7 @@ export function createKlineChart(el, opts) {
   }
 
   const chart = echarts.init(el, null, { renderer: 'canvas' });
+  _registerThemable(chart);
   chart.setOption(option);
   chart.on('datazoom', onZoomHandler);
 
@@ -634,6 +665,7 @@ export function createKlineChart(el, opts) {
 /* 环形图（行业分布） */
 export function createDonut(el, data, { title = '', selectable = false } = {}) {
   const chart = echarts.init(el);
+  _registerThemable(chart);
   chart.setOption({
     backgroundColor: 'transparent',
     tooltip: {
@@ -664,6 +696,7 @@ export function createDonut(el, data, { title = '', selectable = false } = {}) {
 /* 横向条形图（股息率 TOP） */
 export function createBar(el, data, { title = '', unit = '%' } = {}) {
   const chart = echarts.init(el);
+  _registerThemable(chart);
   const max = Math.max(...data.map(d => d.value), 0.1);
   chart.setOption({
     backgroundColor: 'transparent',
