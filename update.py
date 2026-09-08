@@ -10,7 +10,7 @@
   python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry|excel|status [--yes]
 用法: python update.py [命令]
 """
-import sys, io, os, time, json
+import sys, io, os, time
 from datetime import datetime, date
 
 BASE = os.path.dirname(os.path.abspath(__file__))

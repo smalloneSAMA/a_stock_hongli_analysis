@@ -8,13 +8,11 @@
   快照随行情漂移属已知现象（AGENTS.md），CI 每次更新后快照必过期，
   结构性断言全部保留；本地人工全量测试保持开启（漂移时同步刷新快照并注释）
 """
-import sys, io, os, json, math, argparse
-import numpy as np
+import sys, os, json, argparse
 
 sys.stdout.reconfigure(encoding="utf-8")   # 不换对象，避免与 import 模块的包装冲突
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
-import _fetch_history as fh
 from _common import decode_rows, decode_indicator   # T17/T18：列式 + 稀疏列解码
 
 _ap = argparse.ArgumentParser()

@@ -9,7 +9,7 @@
 产出：cache/analysis_dy.json（每标的 dy0/当前dy/分位/10·50·90分位值/全量序列/点位锚参数 D）
 用法: python scripts/_gen_analysis.py [--only 000922]
 """
-import sys, io, os, json, argparse, datetime, re
+import sys, os, json, argparse, re
 import numpy as np
 
 sys.stdout.reconfigure(encoding="utf-8")   # 不换对象，import 无副作用（避免二次包装关闭 buffer）
@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import (atomic_dump, is_bj, decode_rows, decode_indicator,   # 原子写 + 北交所剔除 + 列式/稀疏解码
+from _common import (atomic_dump, is_bj, decode_indicator,   # 原子写 + 北交所剔除 + 列式/稀疏解码
                      pct_rank, WINDOW, ETF_TRACK)   # T22 分位 + T23 常量/ETF 元数据唯一来源
 
 

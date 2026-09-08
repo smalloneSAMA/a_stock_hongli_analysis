@@ -11,8 +11,8 @@
   · 股息率/分红：默认仅补新增股票；--force 全量重算（约6分钟）
   · 连续8次失败自动中止（防IP被封后空等）
 """
-import json, os, sys, re, time, random, datetime, urllib.request
-from _common import (market_prefix, em_get, tencent_quotes, atomic_load, atomic_dump, is_bj,   # 前缀路由 + 东财限流 + 腾讯批量 + 原子读 + 北交所判定
+import json, os, sys, re, time, datetime
+from _common import (em_get, tencent_quotes, atomic_load, atomic_dump, is_bj,   # 东财限流 + 腾讯批量 + 原子读 + 北交所判定
                      save_workbook_if_changed, em_secid)   # T20 Excel 去噪 + T23 东财 secid
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

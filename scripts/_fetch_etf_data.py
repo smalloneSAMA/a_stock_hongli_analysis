@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """抓取候选红利ETF的规模/成交额/收益率(腾讯源,不封IP)"""
-import json, urllib.request, time, re
+import json, urllib.request, time
 from _common import tencent_quotes, market_prefix, UA   # 腾讯批量行情 + 前缀/UA（T23）
 
 # 候选ETF: 代码 -> (名称, 类别)

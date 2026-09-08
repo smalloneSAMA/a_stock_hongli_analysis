@@ -72,6 +72,13 @@ jobs:
       - name: _common 冒烟自测
         run: python scripts/_common.py
 
+      # ── Lint（T28）：ruff F（未用 import / 未定义名）/ E9（语法级）/ B（常见坑）
+      #    规则与排除见 pyproject.toml（scripts/_archive 已排除）
+      - name: Lint（ruff）
+        run: |
+          pip install ruff
+          ruff check .
+
       # ── 模式判定（auto：季度日 > 周一 > 日常）────────────────────────
       - name: 判定更新模式
         id: mode

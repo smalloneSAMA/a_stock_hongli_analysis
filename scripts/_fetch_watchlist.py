@@ -15,7 +15,7 @@
   python scripts/_fetch_watchlist.py --retry-failed # 只重试失败清单
   python scripts/_fetch_watchlist.py --check-fin   # 季度分红/财报/股本检测（约 2s/只）
 """
-import sys, os, json, time, argparse, urllib.request
+import sys, os, json, time, argparse
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

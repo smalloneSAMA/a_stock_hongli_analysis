@@ -10,7 +10,7 @@
 用法: python scripts/_gen_web_data.py
 前置：先运行 update.py 相应选项生成缓存（指数1/ETF2/汇总表4/股票5）
 """
-import sys, io, os, json, time
+import sys, os, json, time
 from datetime import datetime
 
 sys.stdout.reconfigure(encoding="utf-8")

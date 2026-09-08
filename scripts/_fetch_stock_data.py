@@ -17,7 +17,7 @@
 - Excel：excel/股票历史.xlsx（每只一个sheet，含股息率(%)列）
 用法: python scripts/_fetch_stock_data.py [--refresh]
 """
-import sys, io, os, json, time, argparse, urllib.request, random
+import sys, io, os, json, time, argparse, urllib.request
 import pandas as pd
 
 if __name__ == "__main__":

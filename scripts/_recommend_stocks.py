@@ -27,7 +27,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_stock_data as fsd
-from _common import (atomic_dump, is_bj, decode_rows, decode_indicator,   # 北交所剔除 + 列式/稀疏解码
+from _common import (is_bj, decode_rows, decode_indicator,   # 北交所剔除 + 列式/稀疏解码
                      pct_rank)   # T22：分位唯一实现（统一 <）
 
 OUT = os.path.join(BASE, "cache", "_推荐20.json")

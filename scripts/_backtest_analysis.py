@@ -10,7 +10,7 @@
 产出：docs/回测报告.md + web/data/backtest.json + 控制台摘要
 用法: python scripts/_backtest_analysis.py [--only 000922] [--p 90]
 """
-import sys, io, os, json, argparse, datetime
+import sys, os, json, argparse, datetime
 from collections import Counter
 import numpy as np
 import pandas as pd
