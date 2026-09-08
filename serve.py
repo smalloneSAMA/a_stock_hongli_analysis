@@ -54,32 +54,56 @@ def _check_holdings(data):
 class NoCacheHandler(SimpleHTTPRequestHandler):
     GZIP_EXT = ('.json', '.js', '.css')   # 仅文本类压缩（图片/字体等二进制无收益）
     GZIP_MIN = 1024                       # >1KB 才压，避免小文件压完反而变大
+    DATA_PREFIX = ('/cache/', '/web/data/')   # 数据文件：no-cache + ETag（可缓存，但每次校验）
+    # 代码/页面仍 no-store：改了 JS 必须立刻生效（serve.py 存在的初衷）
+
+    def _cache_control(self):
+        if self.path.split('?')[0].startswith(self.DATA_PREFIX):
+            return 'no-cache'
+        return 'no-store, no-cache, must-revalidate'
 
     def send_head(self):
-        """标准 send_head + gzip：文本类且 >1KB 且客户端接受 gzip 时压缩响应体，
-        并按压缩后长度改写 Content-Length。目录/索引/错误响应仍交回标准实现（保留目录列表与 404）。"""
+        """标准 send_head + gzip + ETag/304：
+        · 文本类(.json/.js/.css)且 ≥1KB 且客户端接受 gzip → 压缩，按压缩后长度改写 Content-Length
+        · /cache、/web/data 下的数据文件 → 返回 ETag；命中 If-None-Match 直接 304（无响应体）
+        目录/索引/错误响应仍交回标准实现（保留目录列表与 404）。"""
         path = self.translate_path(self.path)
         if not os.path.isfile(path):
             return super().send_head()
         try:
+            st = os.stat(path)
             with open(path, 'rb') as f:
                 raw = f.read()
         except OSError:
             return super().send_head()
-        use_gz = (path.lower().endswith(self.GZIP_EXT) and len(raw) >= self.GZIP_MIN
+        is_data = self.path.split('?')[0].startswith(self.DATA_PREFIX)
+        compressible = path.lower().endswith(self.GZIP_EXT)
+        use_gz = (compressible and len(raw) >= self.GZIP_MIN
                   and 'gzip' in (self.headers.get('Accept-Encoding') or ''))
+        # ETag 由 mtime+size 派生（重生成即变）；带编码后缀，避免同一 ETag 对应两种表示
+        etag = '"%x-%x%s"' % (int(st.st_mtime), st.st_size, '-gz' if use_gz else '')
+        if is_data:
+            inm = (self.headers.get('If-None-Match') or '').strip()
+            if inm and inm in (etag, '*'):
+                self.send_response(304)
+                self.send_header('ETag', etag)
+                self.end_headers()
+                return None                      # 304 不带响应体
         body = gzip.compress(raw, 6) if use_gz else raw
         self.send_response(200)
         self.send_header('Content-Type', self.guess_type(path))
         self.send_header('Content-Length', str(len(body)))
+        if is_data:
+            self.send_header('ETag', etag)
+        if compressible:
+            self.send_header('Vary', 'Accept-Encoding')
         if use_gz:
             self.send_header('Content-Encoding', 'gzip')
-            self.send_header('Vary', 'Accept-Encoding')
         self.end_headers()
         return io.BytesIO(body)
 
     def end_headers(self):
-        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("Cache-Control", self._cache_control())
         self.send_header("Pragma", "no-cache")
         super().end_headers()
 
