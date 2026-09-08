@@ -18,7 +18,8 @@ from _common import atomic_load, atomic_dump, em_secid   # 原子读写 + 东财
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-FCF_ETFS = ["159201", "159229", "159221", "159222", "159166", "159223", "159225", "159276", "159232"]
+# 自由现金流主题 ETF 清单（T25：已移除退役的 159229——它跟踪中证800自由现金流 932368，用户已用 159201 替代）
+FCF_ETFS = ["159201", "159221", "159222", "159166", "159223", "159225", "159276", "159232"]
 
 def _recent_quarters(n=5):
     """最近 n 个已结束季度 [(年, 季末月)]（由今日推导，勿硬编码）"""
@@ -159,7 +160,7 @@ def main():
                            ignore=("date",), indent=None)   # T20：数值未变则不写盘
     print(f"\n980092 股息率估算 dy0 = {est['dy0']}%（{est['etfs']}）")
     if est["dy0"]:
-        print("  → 供 _gen_analysis 使用：980092/159229 将接入买卖区间分析")
+        print("  → 供 _gen_analysis 使用：980092/159201 接入买卖区间分析")
     print("✅ cache/成分_980092_股息率.json 已生成")
 
 

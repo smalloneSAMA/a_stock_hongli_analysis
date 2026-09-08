@@ -385,7 +385,7 @@ def build_components():
         if track and src and src.get("n") and not out["by_etf"].get(code, {}).get("stocks"):
             out["by_etf"][code] = dict(src)
             print(f"  📥 {code} {name}: 跟踪指数成分兜底（{src['name']} {src['n']} 只）")
-    # ETF 自身季报持仓覆盖（159229→932368 无行情/成分源）：真实持仓+占净值比+个股股息率
+    # ETF 自身季报持仓覆盖（跟踪指数无行情/成分源时）：真实持仓+占净值比+个股股息率
     for code, name, _t in fh.ETFS:
         p = os.path.join(BASE, "cache", f"ETF持仓_{code}.json")
         if not os.path.exists(p):

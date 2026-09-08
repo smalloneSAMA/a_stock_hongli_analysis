@@ -302,7 +302,7 @@ def load_est_dy0(code):
 
 def build_index_etf(typ, code, name, stocks, index_info=None):
     """指数：加权 dy0 反推；ETF：跟踪指数序列优先（净值反推有分红增长漂移），
-    跟踪指数无数据时用 ETF 自身季报持仓估算（159229→932368 无行情缓存）"""
+    跟踪指数无数据时用 ETF 自身季报持仓估算（如 980092 由 159201 等季报持仓加权）"""
     if typ == "ETF":
         if index_info is None or index_info.get("dy0") is None:
             est = load_etf_dy_est(code)
