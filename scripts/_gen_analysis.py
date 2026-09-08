@@ -215,7 +215,9 @@ def build_factors():
                                 "win_start": info.get("window_start"), "n_days": info.get("n_days"),
                                 "dy_series": dy_series}
         rows_out.append((code, info["name"], typ, scores))
-    out["date"] = max((info["series"][-1][0] for info in dy_data.values() if info.get("series")), default="")
+    # T19(5d)：股票 series 不再落盘 → 用写入时保留的 last_date 兜底；指数/ETF 仍有 series
+    out["date"] = max((info["series"][-1][0] if info.get("series") else info.get("last_date") or ""
+                       for info in dy_data.values()), default="")
     path = os.path.join(BASE, "web", "data", "analysis.json")
     atomic_dump(path, out, indent=None)
 
@@ -491,6 +493,12 @@ def main(only=None):
     print(f"\n自检：反推末值=dy0 一致（{len(out)-len(bad)}/{len(out)} 标的）" + (f"，异常: {bad}" if bad else ""))
 
     os.makedirs(os.path.join(BASE, "cache"), exist_ok=True)
+    # T19(5d)：股票逐日 dy 序列不再落盘（回测/前端均已改读指标文件 dy 列），
+    # 仅留末日期 last_date 供 analysis.date 计算；指数/ETF 序列保留
+    for r in out.values():
+        if r.get("type") == "股票" and r.get("series"):
+            r["last_date"] = r["series"][-1][0]
+            r.pop("series")
     atomic_dump(os.path.join(BASE, "cache", "analysis_dy.json"), out, indent=None)
     print(f"\n✅ cache/analysis_dy.json 已生成（{len(out)} 标的）")
 

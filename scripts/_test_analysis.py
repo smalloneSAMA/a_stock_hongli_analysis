@@ -45,6 +45,27 @@ def rows_of_cache(typ, code):
     return decode_rows(load(f"cache/{typ}_{code}.json"))
 
 
+_series_cache = {}
+
+
+def series_of(code, info):
+    """T19：标的逐日 dy 序列 —— 指数/ETF 取 analysis_dy 的 series；
+    股票改从指标文件 dy 列（与 K 线按索引对齐，dy>0 与旧口径一致）"""
+    if code in _series_cache:
+        return _series_cache[code]
+    if info.get("series"):
+        s = info["series"]
+    elif info.get("type") == "股票":
+        ind = decode_indicator(load(f"web/data/stocks/{code}.json"))
+        krows = rows_of_cache("股票", code)
+        s = [(krows[i]["date"], r["dy"]) for i, r in enumerate(ind)
+             if i < len(krows) and r.get("dy") is not None and r["dy"] > 0]
+    else:
+        s = []
+    _series_cache[code] = s
+    return s
+
+
 print("═══ S1-S5 全面测试 ═══\n")
 dy_data = load("cache/analysis_dy.json")
 analysis = load("web/data/analysis.json")
@@ -57,16 +78,17 @@ n_ok = sum(1 for v in dy_data.values() if v.get("dy0") is not None)
 check("标的覆盖（全池有数据、无缺口）", n_all == n_ok,
       f"{n_all} 标的，{n_ok} 有数据")
 # 1.2 反推末值 == dy0
-bad = [c for c, v in dy_data.items() if v.get("dy0") and abs(v["series"][-1][1] - v["dy0"]) > 1e-6]
+bad = [c for c, v in dy_data.items() if v.get("dy0") and series_of(c, v)
+       and abs(series_of(c, v)[-1][1] - v["dy0"]) > 1e-6]
 check("反推末值==dy0", not bad, f"异常: {bad}")
 # 1.4 无 dy<=0
-bad = [c for c, v in dy_data.items() if v.get("dy0") and any(x[1] <= 0 for x in v["series"])]
+bad = [c for c, v in dy_data.items() if v.get("dy0") and any(x[1] <= 0 for x in series_of(c, v))]
 check("序列无<=0", not bad, f"异常: {bad}")
 # 1.5 分位单调
 bad = [c for c, v in dy_data.items() if v.get("dy0") and not (v["dy_p10"] <= v["dy_p50"] <= v["dy_p90"])]
 check("p10<=p50<=p90", not bad, f"异常: {bad}")
 # 1.6 窗口
-bad = [c for c, v in dy_data.items() if v.get("dy0") and v["n_days"] != min(1250, len(v["series"]))]
+bad = [c for c, v in dy_data.items() if v.get("dy0") and v["n_days"] != min(1250, len(series_of(c, v)))]
 check("窗口天数", not bad, f"异常: {bad}")
 # 1.7 ETF == 跟踪指数序列
 for code, v in dy_data.items():
@@ -340,7 +362,7 @@ check("backtest.json 与 md 结论一致", m and abs(float(m.group(1)) - s["avg6
 
 # ── T9 数据边界 ──────────────────────────────────────────────────
 print("\n── T9 数据边界 ──")
-bad = [c for c, v in dy_data.items() if v.get("dy0") and not all(isinstance(x[1], float) and x[1] == x[1] for x in v["series"])]
+bad = [c for c, v in dy_data.items() if v.get("dy0") and not all(isinstance(x[1], float) and x[1] == x[1] for x in series_of(c, v))]
 check("序列无 NaN/非浮点", not bad, f"异常: {bad[:3]}")
 bad = [c for c, v in dy_data.items() if v.get("dy0") and v["dy_pct"] is not None and not (0 <= v["dy_pct"] <= 100)]
 check("dy_pct∈[0,100]", not bad, f"异常: {bad}")
@@ -363,8 +385,8 @@ for c, v in dy_data.items():
         continue
     rows = decode_indicator(json.load(open(os.path.join(BASE, "web", "data", "stocks", f"{c}.json"), encoding="utf-8")))   # T16/T17/T18
     n = sum(1 for r in rows if r.get("dy") is not None and r["dy"] > 0)
-    if len(v["series"]) != n:
-        bad.append((c, len(v["series"]), n))
+    if len(series_of(c, v)) != n:
+        bad.append((c, len(series_of(c, v)), n))
 check("股票series==指标文件dy>0数", not bad, f"异常: {bad}")
 print("\n" + "\n".join(RESULTS))
 print(f"\n═══ 测试汇总：PASS {PASS} / FAIL {FAIL} ═══")

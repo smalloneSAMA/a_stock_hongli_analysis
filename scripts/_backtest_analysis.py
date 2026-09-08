@@ -20,7 +20,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import atomic_dump   # 原子写（tmp+replace）
+from _common import atomic_dump, decode_indicator   # 原子写 + 指标文件解码（T17/T18/T19）
 
 WINDOW = 1250                       # 5年交易日滚动窗口
 HORIZONS = (21, 63, 126, 252)       # 1/3/6/12 个月（交易日）
@@ -32,6 +32,17 @@ def load_analysis():
     return json.load(open(os.path.join(BASE, "cache", "analysis_dy.json"), encoding="utf-8"))
 
 
+def stock_dy_series(code, kcache):
+    """T19(5d)：股票逐日 dy 序列 = 指标文件 dy 列（按索引与 K 线对齐，dy>0 与旧 analysis_dy 口径一致）"""
+    p = os.path.join(BASE, "web", "data", "stocks", f"{code}.json")
+    if not os.path.exists(p):
+        return []
+    ind = decode_indicator(json.load(open(p, encoding="utf-8")))
+    krows = kcache.get("rows", [])
+    return [(krows[i]["date"], r["dy"]) for i, r in enumerate(ind)
+            if i < len(krows) and r.get("dy") is not None and r["dy"] > 0]
+
+
 def merge_close(typ, code, info):
     """(date, dy) 序列 + 缓存 close 按日期合并 → [(date, dy, close)]
     ETF 用跟踪指数的完整行情（自身上市短、rolling 窗口失效；ETF 区间=跟踪指数区间）"""
@@ -41,7 +52,8 @@ def merge_close(typ, code, info):
     if not c:
         return []
     cmap = {r["date"]: r["close"] for r in c.get("rows", []) if r.get("close") is not None}
-    return [(d, v, cmap[d]) for d, v in info["series"] if d in cmap]
+    series = stock_dy_series(code, c) if typ == "股票" else info["series"]   # T19：股票改读指标文件
+    return [(d, v, cmap[d]) for d, v in series if d in cmap]
 
 
 def run_backtest(code, info, p_buy=90):

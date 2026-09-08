@@ -290,11 +290,13 @@ def main(start=None):
         kc = fh.load_cache("股票", code)   # T17：load_cache 内部解码列式行
         dc = fh.load_cache("分红", code)
         fc = fh.load_cache("财报", code)
-        ad = load_json(os.path.join(BASE, "cache", "analysis_dy.json")) or {}
         if not ind or not kc:
             continue
         px = [[r["date"], r.get("close"), r.get("amount"), 0.0] for r in kc["rows"]]
-        dser = (ad.get(code) or {}).get("series", [])
+        # T19(5d)：股票 dy 序列改取指标文件 dy 列（analysis_dy 已不含股票 series）；
+        # 原实现每只都重新解析 30.7MB 的 analysis_dy.json（364 次）→ 一并消除
+        dser = [(px[i][0], r["dy"]) for i, r in enumerate(ind)
+                if i < len(px) and r.get("dy") is not None and r["dy"] > 0]
         data[code] = {"px": px, "ind": ind, "dc": dc, "fc": fc, "dy_ser": dser}
     # 分红并入 K线（除权日对齐）——period_return 用 r[3]
     for code, d in data.items():
