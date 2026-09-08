@@ -550,6 +550,40 @@ def retry_failed():
     gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
     print("✅ 重试完成（刷新浏览器即可）")
 
+def gc_orphans(auto=False):
+    """清理池外孤儿缓存（T21）：cache/{股票,分红,财报,股本}_*.json + web/data/stocks/*.json。
+    池 = 推荐20 + 其他成份股 + 自选股(展示=1)；默认只列清单，加 --yes 才删除。
+    孤儿标的若日后重新入池，下次更新会全量重拉（删除自愈）。"""
+    import glob
+    import _gen_web_data as gwd
+    pool = {c for c, _ in gwd.stock_pool()}
+    codes = {os.path.basename(p)[len("股票_"):-5]
+             for p in glob.glob(os.path.join(BASE, "cache", "股票_*.json"))}
+    orphans = sorted(codes - pool)
+    if not orphans:
+        print("✅ 无池外孤儿缓存")
+        return
+    files = []
+    for c in orphans:
+        for typ in ("股票", "分红", "财报", "股本"):
+            p = os.path.join(BASE, "cache", f"{typ}_{c}.json")
+            if os.path.exists(p):
+                files.append(p)
+        p = os.path.join(WEB_DATA, "stocks", f"{c}.json")
+        if os.path.exists(p):
+            files.append(p)
+    size = sum(os.path.getsize(p) for p in files)
+    print(f"═══ 池外孤儿缓存：{len(orphans)} 只 / {len(files)} 个文件（{size / 1048576:.2f} MB）═══")
+    for c in orphans:
+        print(f"  {c}")
+    if not auto:
+        print("（未删除；加 --yes 执行删除）")
+        return
+    for p in files:
+        os.remove(p)
+    print(f"✅ 已删除 {len(files)} 个孤儿文件（{size / 1048576:.2f} MB）")
+
+
 def clear_cache():
     """删除指定标的缓存 → 下次更新全量重拉（删除自愈）"""
     print("\n═══ 缓存清理（删除后对应更新将全量重拉）═══")
@@ -753,6 +787,7 @@ CMDS = {
     "retry":   retry_failed,
     "excel":   export_excel,
     "status":  scan_status,
+    "gc":      lambda: gc_orphans(auto="--yes" in sys.argv),   # 池外孤儿缓存清理（T21）
 }
 
 def run_cmd(args):
