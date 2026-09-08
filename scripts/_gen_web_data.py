@@ -171,11 +171,12 @@ def build_manifest():
         ind_last = None
         if os.path.exists(p):
             try:
-                ind = json.load(open(p, encoding="utf-8"))
-                if ind:
-                    s["last_dy"] = ind[-1].get("dy")
-                    s["last_pr"] = ind[-1].get("pr")   # 市赚率 PR（PE-TTM ÷ 近5年TTM年化ROE）
-                    ind_last = ind[-1].get("d")        # T3：指标文件末行日期（已在内存，零额外 IO）
+                obj = json.load(open(p, encoding="utf-8"))
+                irows = (obj or {}).get("rows") or []
+                if irows:
+                    s["last_dy"] = irows[-1].get("dy")
+                    s["last_pr"] = irows[-1].get("pr")   # 市赚率 PR（PE-TTM ÷ 近5年TTM年化ROE）
+                ind_last = (obj or {}).get("last")       # T3 陈旧检测：指标文件末日期（T16 起单独存 last）
             except Exception:
                 pass
         s["ind_last"] = ind_last
@@ -292,10 +293,13 @@ def build_stock_indicators():
         out = []
         for i, r in enumerate(rows):
             pr = round(pe_ttm[i] / roe5y, 2) if (roe5y and pe_ttm[i] is not None) else None
-            out.append({"d": r["date"], "dy": dy[i], "pe_ttm": pe_ttm[i],
+            out.append({"dy": dy[i], "pe_ttm": pe_ttm[i],
                         "pe_dyn": pe_dyn[i], "pb": pb[i], "peg": peg[i],
                         "roe": roe[i], "roa": roa[i], "pr": pr})
-        atomic_dump(os.path.join(WEB_DATA, "stocks", f"{code}.json"), out, indent=None, separators=(",", ":"))
+        # T16(5a)：逐行日期与 K 线完全重复（376/376 长度+首末日期一致）→ 不再落盘，
+        # 读取方按索引与 K 线对齐；仅保留末日期 last（manifest 的 ind_last 陈旧检测需要）
+        atomic_dump(os.path.join(WEB_DATA, "stocks", f"{code}.json"),
+                    {"last": rows[-1]["date"], "rows": out}, indent=None, separators=(",", ":"))
         ok += 1
         if ok % 20 == 0:
             print(f"  进度 {ok}")

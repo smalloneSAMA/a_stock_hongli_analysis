@@ -373,7 +373,9 @@ export function buildHistoryView(container, cfg) {
       let ind = null;
       if (cfg.subControl === 'indicator' || cfg.withIndicator) {
         try {
-          ind = await loadJSON(indiUrl(item.code));
+          const indFile = await loadJSON(indiUrl(item.code));
+          /* T16(5a)：指标文件结构 {last, rows}，逐行日期已去掉 → 只取 rows，按索引与 K 线对齐 */
+          ind = (indFile && indFile.rows) || null;
         } catch { ind = null; }
         if (state.code !== item.code) return;
         if (!ind || ind.length !== rows.length) ind = null;

@@ -98,7 +98,7 @@ bad = []
 for c, v in dy_data.items():
     if v.get("type") != "股票":
         continue
-    rows = load(f"web/data/stocks/{c}.json")
+    rows = (load(f"web/data/stocks/{c}.json") or {}).get("rows") or []   # T16：{last, rows}
     last = next((r["dy"] for r in reversed(rows) if r.get("dy")), None)
     if last is not None and abs(v["dy_now"] - last) > 1e-6:
         bad.append((c, v["dy_now"], last))
@@ -359,7 +359,7 @@ bad = []
 for c, v in dy_data.items():
     if v.get("type") != "股票":
         continue
-    rows = json.load(open(os.path.join(BASE, "web", "data", "stocks", f"{c}.json"), encoding="utf-8"))
+    rows = (json.load(open(os.path.join(BASE, "web", "data", "stocks", f"{c}.json"), encoding="utf-8")) or {}).get("rows") or []   # T16
     n = sum(1 for r in rows if r.get("dy") is not None and r["dy"] > 0)
     if len(v["series"]) != n:
         bad.append((c, len(v["series"]), n))

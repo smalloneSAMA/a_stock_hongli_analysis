@@ -138,11 +138,13 @@ def pick_at(t_date, stocks, data):
         close_t = seg[-1][1]
         if not close_t:
             continue
-        # 指标文件 t 日 dy/pe/pb（指标文件与 K线日期对齐，用 <=t 的最后一行）
+        # 指标文件 t 日 dy/pe/pb（指标文件与 K线逐行对齐，用 <=t 的最后一行）
+        # T16(5a)：指标文件已无日期列 → 日期取同一索引的 K 线行
         ind = d["ind"]
+        kx = d["px"]
         ii = None
         for i, r in enumerate(ind):
-            if r["d"] > t_date:
+            if i >= len(kx) or kx[i][0] > t_date:
                 ii = i
                 break
         if ii is None:
@@ -283,7 +285,7 @@ def main(start=None):
     stocks = [(s["code"], s) for s in m.get("stocks", []) if s.get("ready")]
     data = {}
     for code, sm in stocks:
-        ind = load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json"))
+        ind = (load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json")) or {}).get("rows") or []   # T16：{last, rows}
         kc = load_json(os.path.join(BASE, "cache", f"股票_{code}.json"))
         dc = load_json(os.path.join(BASE, "cache", f"分红_{code}.json"))
         fc = load_json(os.path.join(BASE, "cache", f"财报_{code}.json"))

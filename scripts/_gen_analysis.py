@@ -113,7 +113,7 @@ def build_stock_factors(code):
     p = os.path.join(BASE, "web", "data", "stocks", f"{code}.json")
     if not os.path.exists(p):
         return {}
-    rows = json.load(open(p, encoding="utf-8"))
+    rows = (json.load(open(p, encoding="utf-8")) or {}).get("rows") or []   # T16：文件结构 {last, rows}
 
     def last_of(key):
         vals = [r[key] for r in rows if r.get(key) is not None]
@@ -357,15 +357,18 @@ def build_stock(code, name):
     p = os.path.join(BASE, "web", "data", "stocks", f"{code}.json")
     if not os.path.exists(p):
         return {"code": code, "name": name, "type": "股票", "dy0": None, "note": "无指标文件"}
-    rows = json.load(open(p, encoding="utf-8"))
-    px_rows = [(r["d"], r["dy"]) for r in rows if r.get("dy") is not None and r["dy"] > 0]
+    ind = (json.load(open(p, encoding="utf-8")) or {}).get("rows") or []
+    c = load_cache("股票", code)
+    krows = (c or {}).get("rows", [])
+    # T16(5a)：指标文件不再存日期列 → 按索引与 K 线缓存对齐（写入时逐行同源，长度一致）
+    px_rows = [(krows[i]["date"], r["dy"]) for i, r in enumerate(ind)
+               if i < len(krows) and r.get("dy") is not None and r["dy"] > 0]
     if not px_rows:
         return {"code": code, "name": name, "type": "股票", "dy0": None, "note": "无股息率数据"}
     dy0 = px_rows[-1][1]
     win = px_rows[-WINDOW:]
     vals = [v for _, v in win]
     close_now = None
-    c = load_cache("股票", code)
     if c and c.get("rows"):
         close_now = c["rows"][-1].get("close")
     return {

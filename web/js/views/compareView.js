@@ -270,8 +270,12 @@ export default {
           let dyPts = null;
           if (it.type === 'stock') {
             try {
-              const ind = await loadJSON(indiUrl(it.code));
-              dyPts = (ind || []).filter(r => r.dy != null).map(r => [r.d, r.dy]);
+              const indFile = await loadJSON(indiUrl(it.code));
+              const ind = (indFile && indFile.rows) || null;
+              /* T16(5a)：指标文件已无日期列 → 按索引取 K 线日期配对（长度不一致则放弃该序列） */
+              dyPts = (ind && ind.length === rows.length)
+                ? ind.map((r, i) => [rows[i].date, r.dy]).filter((p) => p[1] != null)
+                : null;
             } catch { dyPts = null; }
           } else {
             /* dy_series.json 的 by_code[code] 本身就是 [date, dy] 数组（原 analysis_dy 需再取 .series） */

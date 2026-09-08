@@ -138,7 +138,7 @@ def build_factors(codes, meta):
     raw = {}
     for code in codes:
         m = meta[code]
-        ind = load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json"))
+        ind = (load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json")) or {}).get("rows") or []   # T16：{last, rows}
         last = ind[-1] if ind else {}
         kline = load_json(os.path.join(BASE, "cache", f"股票_{code}.json"))
         rows = (kline or {}).get("rows", [])
