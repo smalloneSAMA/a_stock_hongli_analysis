@@ -22,7 +22,7 @@ sys.path.insert(0, SCRIPTS)
 import _fetch_history as fh
 import _fetch_stock_data as fsd
 import _fetch_watchlist as watchlist
-from _common import atomic_dump, STALE_LAG_DAYS   # T3：manifest 陈旧标记阈值
+from _common import atomic_dump, STALE_LAG_DAYS, is_bj   # T3 陈旧标记阈值 + T6 北交所剔除
 
 WEB_DATA = os.path.join(BASE, "web", "data")
 os.makedirs(os.path.join(WEB_DATA, "stocks"), exist_ok=True)
@@ -259,7 +259,7 @@ def stock_pool():
     rec_set = {c for c, _ in rec}
     other += [(r["code"], r["name"]) for r in watchlist.read_watchlist_xlsx()
               if r["show"] and r["code"] not in rec_set and r["code"] not in other_set]
-    return rec + other
+    return [(c, n) for c, n in rec + other if not is_bj(c)]   # 北交所不进个股池（R2）
 
 
 def build_stock_indicators():

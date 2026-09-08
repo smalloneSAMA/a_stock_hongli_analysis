@@ -46,6 +46,8 @@ export default {
     buildHistoryView(container, {
       kind: 'etf',
       title: '精选ETF',
+      /* D1：成分记录保留但无行情数据的标的（北交所）不可点开 */
+      stockCodes: new Set(m.stocks.map(s => s.code)),
       items: m.etfs.map(i => ({
         code: i.code, name: i.name,
         price: i.last_nav,          // 主数字：最新单位净值

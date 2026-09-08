@@ -47,6 +47,8 @@ export default {
       kind: 'index',
       title: '精选指数',
       manifestMap: idxMap,
+      /* D1：成分记录保留但无行情数据的标的（北交所 920599/920509）不可点开 */
+      stockCodes: new Set(m.stocks.map(s => s.code)),
       chartType: 'line',   // 指数：收盘折线 + 成交量（简洁展示）
       items: m.indices.map(i => ({ code: i.code, name: i.name, price: i.last_close, chg: i.last_chg })),
       chartUnit: '点',

@@ -548,7 +548,10 @@ export function buildHistoryView(container, cfg) {
     const COMP_COLUMNS = [
       { key: 'code', label: '代码', align: 'left', sortable: true, cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
       { key: 'name', label: '名称', align: 'left', sortable: true,
-        fmt: (v, row) => el('a', { href: '#', onclick: (e) => { e.preventDefault(); openTicker(row.code, row.name, '股票'); }, class: 'jump-link', title: '查看历史K线（股票）' }, v) },
+        /* D1：成分记录保留的北交所标的无行情数据 → 不可点开（否则跳到个股页落到列表首只，误导） */
+        fmt: (v, row) => (cfg.stockCodes && !cfg.stockCodes.has(row.code))
+          ? el('span', { class: 'txt-3', title: '无行情数据、不参与计算（已从个股池剔除）' }, v)
+          : el('a', { href: '#', onclick: (e) => { e.preventDefault(); openTicker(row.code, row.name, '股票'); }, class: 'jump-link', title: '查看历史K线（股票）' }, v) },
       { key: 'ind', label: '一级行业', align: 'left', sortable: true },
       { key: 'ind3', label: '二级行业', align: 'left', sortable: true, fmt: (v) => (v ? v : '—') },
       { key: 'weight', label: '权重(%)', align: 'center', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)) },

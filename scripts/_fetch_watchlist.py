@@ -24,7 +24,8 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
 import _fetch_stock_data as fsd
 from _common import (market_prefix, tencent_quotes, atomic_dump,
-                     find_stale, update_stale_report, STALE_GAP_DAYS)   # T1 陈旧检测
+                     find_stale, update_stale_report, STALE_GAP_DAYS,   # T1 陈旧检测
+                     is_bj)   # T6 北交所剔除（R2）
 from _classify import map_ind
 
 XLSX = os.path.join(BASE, "excel", "自选股清单.xlsx")   # 自选股清单（唯一事实来源）
@@ -219,6 +220,10 @@ def main(retry_failed=False, check_fin=False):
     if not rows:
         return
     rows = [r for r in rows if r["show"]]   # 仅展示字段==1 的股票参与拉取/展示
+    bj = [r for r in rows if is_bj(r["code"])]
+    if bj:
+        print(f"⚠️ 自选股清单含北交所 {len(bj)} 只（{'、'.join(r['code'] for r in bj)}），按 R2 不参与抓取/展示")
+        rows = [r for r in rows if not is_bj(r["code"])]
     if not rows:
         print("⚠️ 自选股清单无展示股票（展示字段需为 1）")
         return

@@ -27,7 +27,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_stock_data as fsd
-from _common import atomic_dump
+from _common import atomic_dump, is_bj   # is_bj：北交所剔除（R2/T6）
 
 OUT = os.path.join(BASE, "cache", "_推荐20.json")
 DY_MIN = 3.0          # 股息率门槛（%）；dy∈[3.0,3.5) 为临界纳入（标记 near）
@@ -299,6 +299,8 @@ def main(top=20, write=True):
         why = None
         if "ST" in (s.get("name") or ""):
             why = "ST/*ST"
+        elif is_bj(c):
+            why = "北交所(不纳入)"   # 权威排除点（R2）：其余池构造点均由本产物/汇总表下游跟随
         elif not s.get("ready"):
             why = "K线未就绪"
         elif s.get("last_dy") is None or s["last_dy"] < DY_MIN:

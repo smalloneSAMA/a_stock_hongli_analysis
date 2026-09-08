@@ -26,7 +26,8 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
 from _common import (em_get,   # 东财限流请求（1s/请求防封，全局限流）
-                     find_stale, update_stale_report, STALE_GAP_DAYS)   # T1 陈旧检测
+                     find_stale, update_stale_report, STALE_GAP_DAYS,   # T1 陈旧检测
+                     is_bj)   # T6 北交所剔除（R2）
 
 STALE_PATH = os.path.join(BASE, "cache", "_stale.json")   # 陈旧检测报告（T1，各池分段合并）
 
@@ -67,8 +68,8 @@ def _rec_stocks():
             out = []
             for r in rows:
                 code = r.get("code")
-                if not code:
-                    continue
+                if not code or is_bj(code):
+                    continue   # 北交所不进个股池（R2）；同时规避下方 9x→sh/sz 前缀误判
                 tcode = ("sh" if code.startswith(("6", "9")) else "sz") + code
                 out.append((code, r.get("name", code), tcode))
             if out:

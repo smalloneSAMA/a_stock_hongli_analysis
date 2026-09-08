@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import atomic_dump   # 原子写（tmp+replace）
+from _common import atomic_dump, is_bj   # 原子写（tmp+replace）+ 北交所剔除（R2/T6）
 
 WINDOW = 1250   # 近5年交易日
 
@@ -398,6 +398,8 @@ def main(only=None):
     rows = []
 
     def emit(r):
+        if is_bj(r["code"]):
+            return   # 北交所个股不进分析池（R2）；指数成分记录仍保留（D1）
         if r["dy0"] is None:
             rows.append(f"{r['code']:<8}{r['name']:<14}{r['type']:<4}  ⚠️ {r.get('note','')}")
             out[r["code"]] = r

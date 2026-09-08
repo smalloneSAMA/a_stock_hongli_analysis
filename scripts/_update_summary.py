@@ -12,7 +12,7 @@
   · 连续8次失败自动中止（防IP被封后空等）
 """
 import json, os, sys, re, time, random, datetime, urllib.request
-from _common import market_prefix, em_get, tencent_quotes, atomic_load, atomic_dump   # 前缀路由 + 东财限流 + 腾讯批量 + 原子读
+from _common import market_prefix, em_get, tencent_quotes, atomic_load, atomic_dump, is_bj   # 前缀路由 + 东财限流 + 腾讯批量 + 原子读 + 北交所判定
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(BASE, "cache")
@@ -160,6 +160,8 @@ def build_table():
     stock = json.load(open(SUMMARY_JSON, encoding="utf-8"))
     rows = []
     for c, s in stock.items():
+        if is_bj(c):
+            continue   # 北交所不进个股汇总表（R2）；成分记录仍在 _成分股汇总.json（D1）
         maxw = max([w for w in s["w"].values() if w], default=0)
         idx = sorted([(k, v) for k, v in s["w"].items() if v], key=lambda x: -x[1])[:8]
         if not idx:   # 权重全部未公开的（如980092/000151成分）
@@ -318,7 +320,11 @@ def run(force=False):
             old[c] = s
         atomic_dump(SUMMARY_JSON, old)
         print("[2/7] 首次生成基础缓存（或缓存损坏后基于 md 重建）")
-    codes = list(parsed.keys())
+    # 北交所不抓取（R2②）：缓存记录保留（D1），但行业/行情/分红均不发起请求
+    codes = [c for c in parsed if not is_bj(c)]
+    bj_n = len(parsed) - len(codes)
+    if bj_n:
+        print(f"  ⚠️ 北交所 {bj_n} 只不参与抓取（成分记录保留）：{[c for c in parsed if is_bj(c)]}")
     print("[3/7] 行业补齐（增量）")
     fetch_industry(codes)
     print("[4/7] 行情刷新（腾讯批量）")

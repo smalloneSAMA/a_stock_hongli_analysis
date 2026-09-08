@@ -29,7 +29,8 @@ MELT_PAUSE = 60        # 熔断暂停（秒）
 
 
 from _common import (market_prefix, atomic_dump,   # 唯一正确版本（92→bj 先于 9x；全名语义）
-                     find_stale, update_stale_report, STALE_GAP_DAYS)   # T1 陈旧检测
+                     find_stale, update_stale_report, STALE_GAP_DAYS,   # T1 陈旧检测
+                     is_bj)   # T6 北交所剔除（R2）
 
 
 def pool_codes():
@@ -41,7 +42,7 @@ def pool_codes():
     table = json.load(open(t_path, encoding="utf-8"))
     rec = {c for c, _, _ in fsd.STOCKS}
     out = [(r["code"], r.get("name", r["code"]), market_prefix(r["code"]))
-           for r in table if r["code"] not in rec]
+           for r in table if r["code"] not in rec and not is_bj(r["code"])]   # 北交所剔除（R2）
     return out
 
 
