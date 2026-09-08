@@ -1,20 +1,44 @@
-/* 数据层：缓存 JSON 加载（内存缓存，K线文件大只加载一次） */
+/* 数据层：缓存 JSON 加载（内存缓存，K线文件大只加载一次）
+   N4：内存 LRU 上限——小数据（manifest/analysis/dy_series 等）常驻白名单；
+   K线/指标按「字节预算 + 条数」淘汰最久未用，避免长时间浏览持续涨堆 */
 
-const cache = new Map();
+const cache = new Map();     // url -> json（插入序即 LRU 序，命中时移到末尾）
+const sizes = new Map();     // url -> 近似字节（响应 Content-Length，缺失记 0）
+let cacheBytes = 0;          // 非白名单条目合计字节
 const FETCH_TIMEOUT = 15000;
 
 export async function loadJSON(url) {
-  if (cache.has(url)) return cache.get(url);
+  if (cache.has(url)) {
+    const v = cache.get(url);
+    if (!PINNED.has(url)) { cache.delete(url); cache.set(url, v); }   // LRU touch
+    return v;
+  }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
   try {
     const r = await fetch(url, { signal: ctrl.signal });
     if (!r.ok) throw new Error(`HTTP ${r.status} ${url}`);
     const j = await r.json();
+    const bytes = Number(r.headers.get('content-length')) || 0;
     cache.set(url, j);
+    sizes.set(url, bytes);
+    if (!PINNED.has(url)) { cacheBytes += bytes; evictOldest(); }
     return j;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+function evictOldest() {
+  while (cache.size > MAX_ENTRIES || cacheBytes > MAX_BYTES) {
+    let victim = null;
+    for (const k of cache.keys()) {
+      if (!PINNED.has(k)) { victim = k; break; }
+    }
+    if (victim === null) return;   // 只剩白名单，不再淘汰
+    cacheBytes -= sizes.get(victim) || 0;
+    sizes.delete(victim);
+    cache.delete(victim);
   }
 }
 
@@ -70,6 +94,18 @@ export const BACKTEST_URL = '/web/data/backtest.json';
 export const DY_SERIES_URL = '/web/data/dy_series.json';   // 指数+ETF 的 dy 全量序列（T11 产出）
 export const PORTFOLIO_URL = '/web/data/portfolio_backtest.json';
 
+/* N4：常驻白名单（体积小、每个视图都要用；淘汰后反复重拉反而更慢）与淘汰阈值 */
+const PINNED = new Set([
+  MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL, PORTFOLIO_URL, SUMMARY_URL, COMPONENTS_URL, DY_SERIES_URL,
+]);
+const MAX_ENTRIES = 200;                 // 非白名单最多缓存条数
+const MAX_BYTES = 48 * 1024 * 1024;      // 非白名单字节预算（≈100 只 K线 + 指标）
+
 export function has(url) {
   return cache.has(url);
+}
+
+/* N4：缓存诊断（浏览器验证/调试用） */
+export function cacheStats() {
+  return { entries: cache.size, bytes: cacheBytes, pinned: PINNED.size, maxEntries: MAX_ENTRIES, maxBytes: MAX_BYTES };
 }
