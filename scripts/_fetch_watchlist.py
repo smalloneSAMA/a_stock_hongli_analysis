@@ -23,9 +23,9 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import (market_prefix, tencent_quotes, atomic_dump,
+from _common import (market_prefix, tencent_quotes, atomic_dump, atomic_load,
                      find_stale, update_stale_report, STALE_GAP_DAYS,   # T1 陈旧检测
-                     is_bj)   # T6 北交所剔除（R2）
+                     is_bj, save_workbook_if_changed)   # T6 北交所剔除 + T20 Excel 去噪
 from _classify import map_ind
 
 XLSX = os.path.join(BASE, "excel", "自选股清单.xlsx")   # 自选股清单（唯一事实来源）
@@ -146,8 +146,12 @@ def refresh_indicators_main():
                          "t_mcap": round(mcap, 2) if mcap else None}
         got += 1
     print(f"  腾讯批量行情完成，命中 {got}/{len(rows)}（{time.time() - t0:.0f}s）")
-    atomic_dump(METRICS_PATH, {"date": time.strftime("%Y-%m-%d"), "rows": metrics})
-    print(f"  ✅ 指标缓存已更新（{got} 只）→ {METRICS_PATH}")
+    old = atomic_load(METRICS_PATH) or {}
+    if (old.get("rows") or {}) == metrics:
+        print(f"  ✅ 指标无变化，跳过写盘（{got} 只）→ {METRICS_PATH}")
+    else:
+        atomic_dump(METRICS_PATH, {"date": time.strftime("%Y-%m-%d"), "rows": metrics})
+        print(f"  ✅ 指标缓存已更新（{got} 只）→ {METRICS_PATH}")
     # 写回 xlsx（先落盘缓存，写 xlsx 失败可重跑不重拉）
     try:
         write_indicators_xlsx(metrics)
@@ -194,9 +198,9 @@ def write_indicators_xlsx(metrics):
             continue
         ws.cell(r, pos["总市值(亿)"], m["t_mcap"]); ws.cell(r, pos["PE(TTM)"], m["t_pe"]); ws.cell(r, pos["PB"], m["t_pb"])
         n += 1
-    wb.save(XLSX)
+    changed = save_workbook_if_changed(wb, XLSX)   # T20：指标列内容未变则不重写用户 xlsx
     wb.close()
-    print(f"  写回 {n} 行（命中率 {n / max(ws.max_row - 1, 1) * 100:.1f}%）")
+    print(f"  写回 {n} 行（命中率 {n / max(ws.max_row - 1, 1) * 100:.1f}%）" + ("" if changed else "，内容未变未写盘"))
 
 
 def load_failed():

@@ -125,7 +125,7 @@ def update_dividends(refresh=False, codes=None):
             rows = fetch_dividend(code)
             obj = {"code": code, "name": name,
                    "fetched_at": time.strftime("%Y-%m-%d"), "rows": rows}
-            fh.save_cache("分红", code, obj)   # 原子写
+            fh.save_cache_if_changed("分红", code, obj)   # T20：无变化不写盘
             print(f"  [{code} {name}] 分红 {len(rows)} 条 -> cache/分红_{code}.json")
         except Exception as e:
             print(f"  ❌ [{code} {name}] 分红拉取失败: {repr(e)[:80]}")
@@ -225,7 +225,7 @@ def update_share_hist(refresh=False, codes=None):
             rows = fetch_share_history(code)
             obj = {"code": code, "name": name,
                    "fetched_at": time.strftime("%Y-%m-%d"), "rows": rows}
-            fh.save_cache("股本", code, obj)
+            fh.save_cache_if_changed("股本", code, obj)   # T20
             print(f"  [{code} {name}] 股本变动 {len(rows)} 条 -> cache/股本_{code}.json")
         except Exception as e:
             print(f"  ❌ [{code} {name}] 股本拉取失败: {repr(e)[:80]}")
@@ -258,7 +258,7 @@ def update_financials(refresh=False, codes=None):
             rows = fetch_financials(code)
             obj = {"code": code, "name": name,
                    "fetched_at": time.strftime("%Y-%m-%d"), "rows": rows}
-            fh.save_cache("财报", code, obj)   # 原子写
+            fh.save_cache_if_changed("财报", code, obj)   # T20：无变化不写盘
             print(f"  [{code} {name}] 财报 {len(rows)} 条 -> cache/财报_{code}.json")
         except Exception as e:
             print(f"  ❌ [{code} {name}] 财报拉取失败: {repr(e)[:80]}")
@@ -487,7 +487,7 @@ def export_excel():
         if c:
             fh.fill_etf_amount(c["rows"])          # 估算成交额（元）
             fh.fill_chg_n(c["rows"])               # 30/60/90 交易日涨跌幅（交易日口径）
-            fh.save_cache("股票", code, c)          # 写回缓存
+            fh.save_cache_if_changed("股票", code, c)   # T20：chg 无变化则不写盘
             div = load_cache("分红", code)
             fin = load_cache("财报", code)
             share = load_cache("股本", code)
@@ -518,8 +518,9 @@ def export_excel():
         df.index.name = "日期"
         sheets[f"{code} {info['name'][:10]}"] = df
     if sheets:
-        safe_export("推荐股指标Excel", lambda: export_workbook(os.path.join(BASE, "excel", "股票历史.xlsx"), sheets))
-        print(f"✅ excel/股票历史.xlsx 已生成（{len(sheets)} 只，2004-01-01 起，不复权，含股息率）")
+        ok = safe_export("推荐股指标Excel", lambda: export_workbook(os.path.join(BASE, "excel", "股票历史.xlsx"), sheets))
+        print(f"✅ excel/股票历史.xlsx 已处理（{len(sheets)} 只，2004-01-01 起，不复权，含股息率）" if ok
+              else "⚠️ excel/股票历史.xlsx 未更新（文件被占用）")
 
 def check_financials(codes=None):
     """检测分红/财报是否有更新（如新财报公告/新除权日）：
@@ -543,8 +544,8 @@ def check_financials(codes=None):
                     old_v = old_rows[0].get(key) if old_rows else None
                     changed = new_v != old_v or len(rows) != len(old_rows)
                 if changed:
-                    fh.save_cache(typ, code, {"code": code, "name": name,
-                                              "fetched_at": time.strftime("%Y-%m-%d"), "rows": rows})
+                    fh.save_cache_if_changed(typ, code, {"code": code, "name": name,
+                                                         "fetched_at": time.strftime("%Y-%m-%d"), "rows": rows})
                     updated.append(f"{typ} {code} {name}（{len(rows)}条）")
             except Exception as e:
                 print(f"  ❌ [{code} {name}] {typ}检测失败: {repr(e)[:60]}")
@@ -568,8 +569,11 @@ def update_all(refresh=False, refresh_fin=False):
         if refresh:
             rows = fetch_kline(tcode, code, full=True)
             obj = {"code": code, "name": name, "fetched_at": time.strftime("%Y-%m-%d"), "rows": rows}
-            fh.save_cache("股票", code, obj)
-            print(f"  [{code} {name}] 全量刷新 {len(rows)}条 -> cache/股票_{code}.json")
+            # T20：重拉结果与缓存一致 → 不写盘
+            if fh.save_cache_if_changed("股票", code, obj):
+                print(f"  [{code} {name}] 全量刷新 {len(rows)}条 -> cache/股票_{code}.json")
+            else:
+                print(f"  [{code} {name}] 全量刷新结果与缓存一致，跳过写盘（{len(rows)}条）")
             records.append((code, rows[-1]["date"] if rows else None))
         else:
             try:

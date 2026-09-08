@@ -89,8 +89,9 @@ def export_excel(objs):
         ws2.cell(row=i, column=1, value=line)
     ws2.column_dimensions["A"].width = 90
     out = os.path.join(BASE, "excel", "国证指数成分.xlsx")
-    wb.save(out)
-    print(f"✅ excel/国证指数成分.xlsx 已生成（{len(objs)} 个指数 sheet）")
+    from _common import save_workbook_if_changed
+    changed = save_workbook_if_changed(wb, out)   # T20：内容未变则不覆盖
+    print(f"✅ excel/国证指数成分.xlsx {'已生成' if changed else '内容未变，跳过写盘'}（{len(objs)} 个指数 sheet）")
 
 
 def main(codes=None):

@@ -12,7 +12,8 @@
   · 连续8次失败自动中止（防IP被封后空等）
 """
 import json, os, sys, re, time, random, datetime, urllib.request
-from _common import market_prefix, em_get, tencent_quotes, atomic_load, atomic_dump, is_bj   # 前缀路由 + 东财限流 + 腾讯批量 + 原子读 + 北交所判定
+from _common import (market_prefix, em_get, tencent_quotes, atomic_load, atomic_dump, is_bj,   # 前缀路由 + 东财限流 + 腾讯批量 + 原子读 + 北交所判定
+                     save_workbook_if_changed)   # T20：Excel 内容未变不写盘
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(BASE, "cache")
@@ -252,8 +253,8 @@ def gen_excel():
         ws2.cell(row=i, column=1, value=line)
     ws2.column_dimensions["A"].width = 110
     out = os.path.join(EXCEL, "红利成分股汇总.xlsx")
-    wb.save(out)
-    print(f"  [Excel] 已生成 {out}（{len(table)} 只 × {len(headers)} 列）")
+    changed = save_workbook_if_changed(wb, out)   # T20：内容未变则不覆盖
+    print(f"  [Excel] {'已生成' if changed else '内容未变，跳过写盘'} {out}（{len(table)} 只 × {len(headers)} 列）")
 
 def stock_change(code):
     stock = json.load(open(SUMMARY_JSON, encoding="utf-8"))

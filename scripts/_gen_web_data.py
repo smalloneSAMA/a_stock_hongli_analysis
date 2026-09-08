@@ -52,7 +52,7 @@ def ensure_amount_filled(typ, code, obj):
     missing = [r for r in rows if r.get("amount") is None and r.get("volume") and r.get("close")]
     if missing:
         fh.fill_etf_amount(rows)
-        fh.save_cache(typ, code, obj)
+        fh.save_cache_if_changed(typ, code, obj)   # T20
         return len(missing)
     return 0
 

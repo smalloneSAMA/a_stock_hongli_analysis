@@ -154,7 +154,9 @@ def main():
     dys = [d for _, d in est["parts"] if d]
     if dys:
         est["dy0"] = round(sum(dys) / len(dys), 4)
-    atomic_dump(os.path.join(BASE, "cache", "成分_980092_股息率.json"), est, indent=None)
+    from _common import atomic_dump_if_changed
+    atomic_dump_if_changed(os.path.join(BASE, "cache", "成分_980092_股息率.json"), est,
+                           ignore=("date",), indent=None)   # T20：数值未变则不写盘
     print(f"\n980092 股息率估算 dy0 = {est['dy0']}%（{est['etfs']}）")
     if est["dy0"]:
         print("  → 供 _gen_analysis 使用：980092/159229 将接入买卖区间分析")

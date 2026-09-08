@@ -70,8 +70,11 @@ def safe_export(desc, fn):
 # ────────────────────────────── 变更摘要（_change_log.json） ──────────────────────────────
 
 def _record_changes(key, cur):
-    """采集变更日志：旧值挪到 {key}_prev，新值写入 {key}"""
+    """采集变更日志：旧值挪到 {key}_prev，新值写入 {key}。
+    T20：{key} 与 {key}_prev 都已是当前值时不写盘（否则每次运行都会因 time 字段产生噪声提交）"""
     log = load_json(CHANGE_LOG) or {}
+    if log.get(key) == cur and log.get(f"{key}_prev") == cur:
+        return
     log[f"{key}_prev"] = log.get(key)
     log[key] = cur
     log["time"] = time.strftime("%Y-%m-%d %H:%M")
@@ -300,8 +303,14 @@ def update_etfs():
         q = fed.tencent_quote([c for c, _, _ in ETFS])
         scale = {c: {"scale_yi": v.get("mcap_yi"), "date": time.strftime("%Y-%m-%d")}
                  for c, v in q.items() if v.get("mcap_yi")}
-        save_json(os.path.join(BASE, "cache", "_ETF规模.json"), scale)
-        print(f"  ✅ ETF规模已更新（{len(scale)} 只，腾讯实时）")
+        # T20：规模数值未变则不写盘（否则每天仅 date 变化就产生噪声提交）
+        sp = os.path.join(BASE, "cache", "_ETF规模.json")
+        old_scale = load_json(sp) or {}
+        if {c: v.get("scale_yi") for c, v in old_scale.items()} == {c: v["scale_yi"] for c, v in scale.items()}:
+            print(f"  ✅ ETF规模无变化，跳过写盘（{len(scale)} 只）")
+        else:
+            save_json(sp, scale)
+            print(f"  ✅ ETF规模已更新（{len(scale)} 只，腾讯实时）")
     except Exception as e:
         print(f"  ⚠️ ETF规模拉取失败: {repr(e)[:80]}（前端将不显示规模）")
     print("\n✅ ETF历史更新完成")
@@ -354,7 +363,7 @@ def export_excel():
         c = load_cache("指数", code)
         if c:
             fh.fill_chg_n(c["rows"])   # 30/60/90 交易日涨跌幅（交易日口径）
-            fh.save_cache("指数", code, c)
+            fh.save_cache_if_changed("指数", code, c)   # T20：无变化不写盘
             rows = c["rows"]
             if not rows:
                 continue
@@ -380,7 +389,7 @@ def export_excel():
         if c:
             fh.fill_etf_amount(c["rows"])
             fh.fill_chg_n(c["rows"])   # 30/60/90 交易日涨跌幅（交易日口径）
-            fh.save_cache("ETF", code, c)
+            fh.save_cache_if_changed("ETF", code, c)   # T20：无变化不写盘
             rows = c["rows"]
             if not rows:
                 continue

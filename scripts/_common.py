@@ -147,6 +147,19 @@ def atomic_dump(path, obj, indent=1, separators=None):
     os.replace(tmp, path)
 
 
+def atomic_dump_if_changed(path, obj, ignore=(), indent=1, separators=None):
+    """T20：与现有文件比较（顶层 ignore 中的键忽略，如 date/checked_at）→ 一致则不写盘；返回是否写盘"""
+    old = atomic_load(path)
+    if isinstance(old, dict) and isinstance(obj, dict):
+        a = {k: v for k, v in old.items() if k not in ignore}
+        b = {k: v for k, v in obj.items() if k not in ignore}
+        # 经 JSON 归一后比较（内存里可能是 tuple，磁盘上是 list；直接用 == 会误判为变化）
+        if json.dumps(a, ensure_ascii=False, sort_keys=True) == json.dumps(b, ensure_ascii=False, sort_keys=True):
+            return False
+    atomic_dump(path, obj, indent=indent, separators=separators)
+    return True
+
+
 def atomic_load(path, default=None):
     """读 JSON：不存在/解码失败返回 default（损坏自愈入口，P2 全面启用）"""
     try:
@@ -293,15 +306,53 @@ def beautify_workbook(path):
     wb.save(path)
 
 
+# ── Excel 写盘去噪（T20：内容未变则不覆盖文件）──
+def _xlsx_same(path, tmp):
+    """两个 xlsx 是否同内容：除 docProps/core.xml（openpyxl 每次保存都会刷新时间戳）外逐成员比较"""
+    import zipfile
+    try:
+        with zipfile.ZipFile(path) as a, zipfile.ZipFile(tmp) as b:
+            na, nb = a.namelist(), b.namelist()
+            if na != nb:
+                return False
+            for n in na:
+                if n == "docProps/core.xml":
+                    continue
+                if a.read(n) != b.read(n):
+                    return False
+            return True
+    except Exception:
+        return False
+
+
+def replace_if_changed(tmp, path):
+    """T20：tmp 与 path 内容一致 → 丢弃 tmp、不覆盖（返回 False）；否则替换（返回 True）"""
+    if os.path.exists(path) and _xlsx_same(path, tmp):
+        os.remove(tmp)
+        return False
+    os.replace(tmp, path)
+    return True
+
+
+def save_workbook_if_changed(wb, path):
+    """T20：openpyxl 工作簿落盘前与现有文件比较，内容一致则不覆盖；返回是否写盘"""
+    tmp = path + ".new.xlsx"   # 保留 .xlsx 后缀（pandas/openpyxl 会校验扩展名）
+    wb.save(tmp)
+    return replace_if_changed(tmp, path)
+
+
 def export_workbook(path, sheets, post=True):
     """统一 Excel 导出：sheets = {sheet名: DataFrame}（已含日期索引+中文列名+单位换算）。
-    post=True 时导出后统一日期格式与美化。文件被占用抛 PermissionError，由 safe_export 包裹。"""
+    post=True 时导出后统一日期格式与美化。文件被占用抛 PermissionError，由 safe_export 包裹。
+    T20：与现有文件内容一致则不覆盖，避免无数据变化时的噪声提交"""
     import pandas as pd
-    with pd.ExcelWriter(path, engine="openpyxl") as w:
+    tmp = path + ".new.xlsx"   # 保留 .xlsx 后缀（ExcelWriter 会校验扩展名）
+    with pd.ExcelWriter(tmp, engine="openpyxl") as w:
         for name, df in sheets.items():
             df.to_excel(w, sheet_name=name[:31])
     if post:
-        beautify_workbook(path)
+        beautify_workbook(tmp)
+    return replace_if_changed(tmp, path)
 
 
 if __name__ == "__main__":

@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 *.tmp
 scripts/__pycache__/
+*.new.xlsx
+_cons_tmp/
+cache/_stale.json

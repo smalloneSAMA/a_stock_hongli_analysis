@@ -75,6 +75,17 @@ def save_cache(typ, code, obj):
         obj.update(encode_rows(obj.pop("rows")))
     atomic_dump(cache_path(typ, code), obj, indent=None)   # 保持原紧凑格式（与旧 json.dump 默认分隔符一致）
 
+
+def save_cache_if_changed(typ, code, obj, old=None):
+    """T20：行数据与缓存一致时不写盘（fetched_at 保持旧值），避免「每天成功、git 脏一片」。
+    old 可传入已读缓存避免二次 IO；返回是否真的写盘"""
+    if old is None:
+        old = load_cache(typ, code)
+    if old and (old.get("rows") or []) == (obj.get("rows") or []):
+        return False
+    save_cache(typ, code, obj)
+    return True
+
 # ── 1. 腾讯K线（全历史或增量，翻页）────────────────────────────
 def fetch_tencent_kline(tcode, code, start=None):
     """tcode: sh000922; start=起始日期(YYYY-MM-DD,含), 默认全量; 返回 [{date, open, close, high, low, volume, amount}]"""
@@ -233,10 +244,14 @@ def update_incremental(typ, code, name, fetcher):
             n_new += 1
     merged = [old_rows[k] for k in sorted(old_rows)]
     if typ == "指数":
-        merged = [{k: r.get(k) for k in ("date", "open", "close", "high", "low", "volume", "amount")} for r in merged]
+        # 规范化列序并保留 fill_chg_n 写入的涨跌幅列（T20：丢弃它们会让"无变化"也写盘两次）
+        KEYS = ("date", "open", "close", "high", "low", "volume", "amount", "chg30", "chg60", "chg90")
+        merged = [{k: r[k] for k in KEYS if k in r} for r in merged]
     obj = {"code": code, "name": name, "fetched_at": time.strftime("%Y-%m-%d"), "rows": merged}
-    save_cache(typ, code, obj)
-    print(f"  [{code} {name}] 新增 {n_new}条，累计 {len(merged)}条，最新 {merged[-1]['date']}")
+    if save_cache_if_changed(typ, code, obj, cached):
+        print(f"  [{code} {name}] 新增 {n_new}条，累计 {len(merged)}条，最新 {merged[-1]['date']}")
+    else:
+        print(f"  [{code} {name}] 无变化，跳过写盘（累计 {len(merged)}条，最新 {merged[-1]['date']}）")
     return n_new, len(merged), merged[-1]["date"]
 
 # ── ETF成交额估算 ───────────────────────────────────────────────
@@ -268,17 +283,19 @@ def fill_chg_n(rows, ns=(30, 60, 90)):
 
 # ── 主流程 ────────────────────────────────────────────────────────
 def get_or_fetch(typ, code, name, fetcher, refresh):
-    if not refresh:
-        cached = load_cache(typ, code)
-        if cached:
-            print(f"  [{code} {name}] 使用缓存（{cached['fetched_at']}，{len(cached['rows'])}条）")
-            return cached
+    cached = load_cache(typ, code)
+    if cached and not refresh:
+        print(f"  [{code} {name}] 使用缓存（{cached['fetched_at']}，{len(cached['rows'])}条）")
+        return cached
     print(f"  [{code} {name}] 拉取中...")
     rows = fetcher()
     obj = {"code": code, "name": name, "fetched_at": time.strftime("%Y-%m-%d"),
            "rows": rows}
-    save_cache(typ, code, obj)
-    print(f"  [{code} {name}] 完成 {len(rows)}条 -> cache/{typ}_{code}.json")
+    # T20：--refresh 重拉结果与缓存一致时同样不写盘
+    if save_cache_if_changed(typ, code, obj, cached):
+        print(f"  [{code} {name}] 完成 {len(rows)}条 -> cache/{typ}_{code}.json")
+    else:
+        print(f"  [{code} {name}] 重拉结果与缓存一致，跳过写盘（{len(rows)}条）")
     return obj
 
 def main():
@@ -356,8 +373,9 @@ def main():
         df.index.name = "日期"
         idx_sheets[f"{code} {info['name'][:10]}"] = df
     if idx_sheets:
-        export_workbook(os.path.join(EXCEL_DIR, "指数历史.xlsx"), idx_sheets)
-        print("✅ excel/指数历史.xlsx（万手/亿元口径，与 update.py excel 一致）")
+        ch = export_workbook(os.path.join(EXCEL_DIR, "指数历史.xlsx"), idx_sheets)
+        print("✅ excel/指数历史.xlsx" + ("（万手/亿元口径，与 update.py excel 一致）" if ch is not False
+                                          else " 内容未变，跳过写盘"))
 
     etf_sheets = {}
     for code, info in etf_data.items():
@@ -379,8 +397,9 @@ def main():
         df.index.name = "日期"
         etf_sheets[f"{code} {info['name'][:10]}"] = df
     if etf_sheets:
-        export_workbook(os.path.join(EXCEL_DIR, "ETF历史.xlsx"), etf_sheets)
-        print("✅ excel/ETF历史.xlsx（万手/亿元口径，与 update.py excel 一致）")
+        ch = export_workbook(os.path.join(EXCEL_DIR, "ETF历史.xlsx"), etf_sheets)
+        print("✅ excel/ETF历史.xlsx" + ("（万手/亿元口径，与 update.py excel 一致）" if ch is not False
+                                         else " 内容未变，跳过写盘"))
 
     print("全部完成。缓存目录: cache/ · Excel目录: excel/")
 

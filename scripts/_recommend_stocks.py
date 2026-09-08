@@ -395,8 +395,12 @@ def main(top=20, write=True):
                              if m2.get("last_dy") is not None and DY_MIN <= m2["last_dy"] < DY_NEAR][:20],
             "excluded": excluded,
         }
-        atomic_dump(OUT, obj)
-        print(f"\n✅ 产物已写入 {OUT}（TOP{len(picked)} + 备选{len(obj['backup'])} + 排除{len(excluded)}）")
+        # T20：仅日期变化（评分结果一致）时不写盘，避免非交易日产生噪声提交
+        from _common import atomic_dump_if_changed
+        if atomic_dump_if_changed(OUT, obj, ignore=("date", "factor_date")):
+            print(f"\n✅ 产物已写入 {OUT}（TOP{len(picked)} + 备选{len(obj['backup'])} + 排除{len(excluded)}）")
+        else:
+            print(f"\n✅ 评分结果无变化，跳过写盘 {OUT}（保留原日期 {load_json(OUT).get('date')}）")
 
 
 if __name__ == "__main__":
