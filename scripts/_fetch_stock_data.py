@@ -25,7 +25,10 @@ if __name__ == "__main__":
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
-from _common import em_get   # 东财限流请求（1s/请求防封，全局限流）
+from _common import (em_get,   # 东财限流请求（1s/请求防封，全局限流）
+                     find_stale, update_stale_report, STALE_GAP_DAYS)   # T1 陈旧检测
+
+STALE_PATH = os.path.join(BASE, "cache", "_stale.json")   # 陈旧检测报告（T1，各池分段合并）
 
 # ── 推荐股清单（动态：读 cache/_推荐20.json 评分产物；缺失时回退硬编码清单）──
 # 推荐清单由 scripts/_recommend_stocks.py 生成（量化评分）；此清单同时驱动 manifest rec 标记、
@@ -559,19 +562,31 @@ def update_all(refresh=False, refresh_fin=False):
         return
     update_dividends(refresh=refresh)   # 分红缓存缺失才拉（秒级），删除自愈；refresh 强制重拉
     update_financials(refresh=refresh)  # 财报缓存缺失才拉，删除自愈
+    records = []          # [(code, last_date)] —— 陈旧检测（T1）
     for code, name, tcode in STOCKS:
         if refresh:
             rows = fetch_kline(tcode, code, full=True)
             obj = {"code": code, "name": name, "fetched_at": time.strftime("%Y-%m-%d"), "rows": rows}
             fh.save_cache("股票", code, obj)
             print(f"  [{code} {name}] 全量刷新 {len(rows)}条 -> cache/股票_{code}.json")
+            records.append((code, rows[-1]["date"] if rows else None))
         else:
             try:
-                fh.update_incremental("股票", code, name, make_fetcher(tcode, code))
+                _, _, last = fh.update_incremental("股票", code, name, make_fetcher(tcode, code))
+                records.append((code, last))
             except Exception as e:
                 print(f"  ❌ [{code} {name}] 失败: {repr(e)[:80]}")
         time.sleep(0.3)
     export_excel()
+    # ── 陈旧检测（T1）：抓取"成功"但数据没跟上的标的必须可见，不再静默 ──
+    base, stale = find_stale(records)
+    if base:
+        update_stale_report(STALE_PATH, "推荐20", base, stale)
+    if stale:
+        print(f"  ⚠️ 数据陈旧 {len(stale)} 只（落后基准 {base} >{STALE_GAP_DAYS} 自然日）："
+              + "、".join(f"{c}({l}, {g}天)" for c, l, g in stale[:8])
+              + ("…" if len(stale) > 8 else ""))
+        print("     详见 cache/_stale.json")
     print("\n✅ 股票历史更新完成")
 
 if __name__ == "__main__":

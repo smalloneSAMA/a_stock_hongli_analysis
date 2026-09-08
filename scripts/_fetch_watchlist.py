@@ -23,13 +23,15 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import market_prefix, tencent_quotes, atomic_dump
+from _common import (market_prefix, tencent_quotes, atomic_dump,
+                     find_stale, update_stale_report, STALE_GAP_DAYS)   # T1 陈旧检测
 from _classify import map_ind
 
 XLSX = os.path.join(BASE, "excel", "自选股清单.xlsx")   # 自选股清单（唯一事实来源）
 META_PATH = os.path.join(BASE, "cache", "_自选股清单.json")   # 仅行业等增强信息
 METRICS_PATH = os.path.join(BASE, "cache", "_自选股指标.json")  # 指标缓存（总市值/PE-TTM/PB + 数据日期）
 FAIL_PATH = os.path.join(BASE, "cache", "_watchlist_failed.json")
+STALE_PATH = os.path.join(BASE, "cache", "_stale.json")   # 陈旧检测报告（T1，各池分段合并）
 SLEEP_KLINE = 0.8      # 腾讯 K 线节流（秒）
 MELT_LIMIT = 5         # 连续失败熔断阈值
 MELT_PAUSE = 60        # 熔断暂停（秒）
@@ -203,11 +205,13 @@ def save_failed(f):
 
 
 def fetch_one(code, name, tcode):
-    """单只：K线增量 + 分红/财报/股本缺失补齐。抛异常表示 K 线失败（入失败清单）"""
-    fh.update_incremental("股票", code, name, fsd.make_fetcher(tcode, code))
+    """单只：K线增量 + 分红/财报/股本缺失补齐。抛异常表示 K 线失败（入失败清单）。
+    返回 K 线增量结果 (新增条数, 总条数, 最后日期)——供 main 做陈旧检测（T1）"""
+    ret = fh.update_incremental("股票", code, name, fsd.make_fetcher(tcode, code))
     fsd.update_dividends(codes=[code])
     fsd.update_financials(codes=[code])
     fsd.update_share_hist(codes=[code])
+    return ret
 
 
 def main(retry_failed=False, check_fin=False):
@@ -244,10 +248,12 @@ def main(retry_failed=False, check_fin=False):
     new_failed = {k: v for k, v in failed.items()}
     consec = 0
     ok = 0
+    records = []          # [(code, last_date)] —— 陈旧检测（T1）
     t0 = time.time()
     for i, r in enumerate(todo, 1):
         try:
-            fetch_one(r["code"], r["name"], r["tcode"])
+            _, _, last = fetch_one(r["code"], r["name"], r["tcode"])
+            records.append((r["code"], last))
             new_failed.pop(r["code"], None)
             consec = 0
             ok += 1
@@ -267,6 +273,15 @@ def main(retry_failed=False, check_fin=False):
     print(f"✅ 完成：成功 {ok} / 失败 {fail_n}（失败明细 → cache/_watchlist_failed.json）")
     if fail_n:
         print("   下次运行 --retry-failed 只补失败项")
+    # ── 陈旧检测（T1）：抓取"成功"但数据没跟上的标的必须可见，不再静默 ──
+    base, stale = find_stale(records)
+    if base:
+        update_stale_report(STALE_PATH, "自选股", base, stale)
+    if stale:
+        print(f"⚠️  数据陈旧 {len(stale)} 只（落后基准 {base} >{STALE_GAP_DAYS} 自然日）："
+              + "、".join(f"{c}({l}, {g}天)" for c, l, g in stale[:8])
+              + ("…" if len(stale) > 8 else ""))
+        print("   详见 cache/_stale.json")
     print("⚠️  随后请运行 update.py 选项7（前端数据包 + 区间分析）")
 
 

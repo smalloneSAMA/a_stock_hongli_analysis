@@ -88,6 +88,47 @@ def em_get(url, timeout=12):
         _last_em[0] = time.time()
 
 
+# ── 数据陈旧检测（T1：抓取"空返回"不再算成功）────────────────────
+# 背景：920599 因前缀错误每天"成功、新增 0 条"，缓存冻结 10 个交易日而全链路无告警。
+# 口径：基准 = 本轮全池最新行情日（最大 last_date）；落后 >5 自然日（≈3 交易日）判为陈旧。
+STALE_GAP_DAYS = 5
+
+def find_stale(records, max_gap_days=STALE_GAP_DAYS):
+    """records=[(code, last_date)] → (baseline, [(code, last_date, gap_days)])
+    基准取全池最大 last_date（自包含，不依赖交易日历）；日期缺失/非法条目跳过。
+    注：用自然日近似交易日，周末/长假不误报（基准随全池同步后移）。"""
+    from datetime import datetime as _dt
+    dated = []
+    for code, last in records:
+        try:
+            dated.append((code, last, _dt.strptime(last, "%Y-%m-%d").date()))
+        except (TypeError, ValueError):
+            continue
+    if not dated:
+        return None, []
+    baseline = max(d for _, _, d in dated)
+    stale = [(c, l, (baseline - d).days) for c, l, d in dated if (baseline - d).days > max_gap_days]
+    stale.sort(key=lambda x: -x[2])
+    return baseline.isoformat(), stale
+
+
+def update_stale_report(path, pool, baseline, stale, checked_at=None):
+    """合并写入陈旧报告（cache/_stale.json）：按 pool 段覆盖、其余段保留；返回该池陈旧条数。
+    结构：{checked_at, pools: {pool: {baseline, items: [{code, last_date, gap_days}]}}}"""
+    rep = atomic_load(path, {}) or {}
+    if not isinstance(rep, dict):
+        rep = {}
+    pools = rep.get("pools")
+    if not isinstance(pools, dict):
+        pools = {}
+    pools[pool] = {"baseline": baseline,
+                   "items": [{"code": c, "last_date": l, "gap_days": g} for c, l, g in stale]}
+    rep["checked_at"] = checked_at or time.strftime("%Y-%m-%d %H:%M")
+    rep["pools"] = pools
+    atomic_dump(path, rep, indent=1)
+    return len(stale)
+
+
 # ── 原子读写（缓存保护三件套之一：原子写 tmp+replace）──
 def atomic_dump(path, obj, indent=1, separators=None):
     """原子写 JSON：先写 path.tmp 再 os.replace，中断不损坏缓存"""
@@ -227,5 +268,15 @@ if __name__ == "__main__":
     chk("atomic_load 缺失返 default", atomic_load(tp + ".none") is None)
     chk("atomic_load 损坏返 default", atomic_load(__file__) is None)  # py 源码非 JSON
     os.remove(tp)
+    # ── find_stale 用例（T1：920599 冻结场景复刻）──
+    recs = [("600036", "2026-09-08"), ("920599", "2026-08-24"), ("000858", "2026-09-05")]
+    base, stale = find_stale(recs)
+    chk("find_stale 基准=全池最新日", base == "2026-09-08")
+    chk("find_stale 命中滞后项", [c for c, _, _ in stale] == ["920599"])
+    chk("find_stale gap 天数", stale and stale[0][2] == 15)
+    chk("find_stale 3 日内不报（容差）", find_stale(recs, max_gap_days=20)[1] == [])
+    chk("find_stale 空输入", find_stale([]) == (None, []))
+    chk("find_stale 非法/缺失日期跳过", find_stale([("x", None), ("600036", "2026-09-08")])[1] == [])
+    chk("find_stale 单标的永不报", find_stale([("600036", "2026-09-08")])[1] == [])
     print("═══ 汇总：%s ═══" % ("PASS" if fails == 0 else "FAIL %d" % fails))
     raise SystemExit(1 if fails else 0)
