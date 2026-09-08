@@ -77,10 +77,10 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 ## 7. 验证流程（改代码后必做）
 
 - **Python 脚本**：直接运行对应命令，检查 cache/ 与 web/data/ 产物字段/数值合理性
-- **测试断言关系化**：池规模/标的数类断言一律写关系式（全池有数据、产物池一致、分组对账），**禁止硬编码数字**（380/294 已废除，困难总结 #136/#146）；数值快照（T4.5/T7）随行情漂移属已知现象，CI 用 --no-snapshot
+- **测试断言关系化**：池规模/标的数类断言一律写关系式（全池有数据、产物池一致、分组对账），**禁止硬编码数字**（380/294 已废除，困难总结 #136/#146）；**禁止精确数值快照**（N3 起：原 T4.5/T7 已改区间/关系断言，CI 与本地同口径跑全部 66 项）
 - **前端语法**：所有改动 JS 转 `.mjs` 后 `node --check`
 - **前端行为**：真实浏览器验证用 **playwright-core + 系统 Edge headless**（`executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'`）打开 `http://localhost:8000/web/#/视图`，用 `echarts.getInstanceByDom(document.querySelector('.chart')).getOption()` 探测 legend/series/selected（模型无法直接查看截图，此路径为唯一可靠验证；CloakBrowser Chromium 下载被网络阻断不可用）
-- 回测 T7 快照随行情更新会漂移（因子微变），属正常非回归，同步刷新并注释即可
+- 回测数值断言已无快照（N3）：改区间/关系断言后，行情漂移不再误报；新增断言同样遵守「关系化」约定
 
 ## 8. 协作工作流
 

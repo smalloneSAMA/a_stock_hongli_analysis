@@ -5,7 +5,7 @@
 | `frontend/` | 前端纯函数单测（`analysis.js` / `reco.js`：权重表、分档边界、候选池构建、评分公式） | `node --test --test-isolation=none tests/frontend/analysis.test.mjs tests/frontend/reco.test.mjs` | ✅（CI 前置步骤） |
 | `browser/` | 浏览器端冒烟（陈旧角标渲染、三主视图不请求 `analysis_dy`、对比页改读 `dy_series`） | 见下 | ❌（需 Edge + playwright-core，本地人工） |
 
-> Python 侧测试不在此目录：`python scripts/_common.py`（公共模块自测，54 项）、`python scripts/_test_analysis.py [--no-snapshot]`（65 项 / CI 63 项结构断言）。
+> Python 侧测试不在此目录：`python scripts/_common.py`（公共模块自测，54 项）、`python scripts/_test_analysis.py`（66 项，CI 与本地同口径）。
 
 ## 浏览器冒烟 `tests/browser/smoke.mjs`
 

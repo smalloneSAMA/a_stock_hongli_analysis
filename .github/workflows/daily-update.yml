@@ -11,7 +11,7 @@
 #
 # 提交策略：
 #   · 仅当工作区有实际数据变化才提交（节假日/数据源无更新 → 零提交，正常退出）
-#   · 提交前跑 _common.py 冒烟自测（54 项）+ _test_analysis.py 回归断言（65 项），失败则中止不提交（数据安全第一）
+#   · 提交前跑 _common.py 冒烟自测（54 项）+ _test_analysis.py 回归断言（66 项），失败则中止不提交（数据安全第一）
 #   · push 前 pull --rebase + 重试 3 次（防并行会话提交冲突）
 #
 # 已知注意事项：
@@ -154,11 +154,10 @@ jobs:
         run: python scripts/_repo_health.py
 
       # ── 回归测试：失败则中止（不提交），邮件通知人工 ──────────────────
-      # --no-snapshot：跳过 T4.5/T7 数值快照断言（随行情漂移属已知现象，
-      # CI 每次数据更新后快照必过期；结构性断言 63 项全部保留，本地人工全量测试 65 项）
-      - name: 回归测试（65 项断言，CI 跳数值快照）
+      # N3 起：无脆弱数值快照（原 T4.5/T7 已改区间/关系断言）→ CI 与本地口径一致，66 项全部执行
+      - name: 回归测试（66 项断言）
         if: steps.mode.outputs.mode != 'status'
-        run: python scripts/_test_analysis.py --no-snapshot
+        run: python scripts/_test_analysis.py
 
       # ── 无变化检测：节假日/数据源无更新 → 零提交 ─────────────────────
       - name: 检查数据变化

@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """S1-S5 全面测试（回归用）
-用法: python scripts/_test_analysis.py [--no-snapshot]
+用法: python scripts/_test_analysis.py
 覆盖：
   T1 dy 序列正确性（S1）  T2 回测一致性（S2）  T3 因子与打分（S3/S4）
   T4 点位锚（S5）        T5 交叉一致性
-  --no-snapshot：跳过数值快照断言（T4.5/T7）——GitHub Actions 自动更新场景用，
-  快照随行情漂移属已知现象（AGENTS.md），CI 每次更新后快照必过期，
-  结构性断言全部保留；本地人工全量测试保持开启（漂移时同步刷新快照并注释）
+  N3 起：无「数值快照」断言——原 T4.5/T7 的精确快照已改为区间/关系断言，
+  CI 与本地口径一致（65 项全部执行，无需 --no-snapshot）
 """
 import sys, os, json, argparse
 
@@ -16,9 +15,10 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 from _common import decode_rows, decode_indicator   # T17/T18：列式 + 稀疏列解码
 
 _ap = argparse.ArgumentParser()
-_ap.add_argument("--no-snapshot", action="store_true", help="跳过数值快照断言（CI 自动更新用；本地全量测试保持开启）")
+_ap.add_argument("--no-snapshot", action="store_true",
+                 help="（已废弃·兼容保留）原用于跳过数值快照断言；N3 起快照已改为区间/关系断言，本开关不再影响任何断言")
 _args = _ap.parse_args()
-NO_SNAPSHOT = _args.no_snapshot
+NO_SNAPSHOT = _args.no_snapshot   # 兼容旧调用；不再有断言受其控制
 
 PASS = FAIL = 0
 RESULTS = []
@@ -223,11 +223,9 @@ low24 = min(r["close"] for r in rows if "2024-01-01" <= r["date"] <= "2024-12-31
 an = by_code["000922"]["anchors"]; cur = rows[-1]["close"]
 check("000922 买入锚在[2024低点,现价]", low24 * 0.95 <= an["buy"] <= cur,
       f"低点{low24:.0f} 锚{an['buy']:.0f} 现价{cur:.0f}")
-# 4.5 逻辑一致：dy 分位低(贵)→卖出锚近/负（数值快照：随行情漂移，CI 用 --no-snapshot 跳过）
-if not NO_SNAPSHOT:
-    v = by_code["000922"]
-    check("000922 dy贵→卖出锚仅+3%", abs(v["anchors"]["dist_sell"] - 2.3) < 1.0,
-          f"dist_sell={v['anchors']['dist_sell']}%（快照 2.3，2026-08-12 刷新）")
+# 4.5 逻辑一致：dy 分位低(贵) → 卖出锚贴近现价（N3：改区间断言，原精确快照 2.3±1.0 随行情漂移即红）
+_ds = by_code["000922"]["anchors"]["dist_sell"]
+check("000922 卖出锚距现价 ∈[-10%, +20%]", -10 <= _ds <= 20, f"dist_sell={_ds}%")
 
 # ── T5 交叉一致性 ──────────────────────────────────────────────
 print("\n── T5 交叉一致性 ──")
@@ -279,23 +277,36 @@ exp = {"稳健": {"dy": 40, "price": 30, "trend": 20, "sent": 10},
 bad = [p for p, w in analysis["presets"].items() if w["A"] != exp[p]]
 check("三档权重A==设计文档", not bad, f"异常: {bad}")
 
-# ── T7 数值快照与重算一致性 ──────────────────────────────────────
-print("\n── T7 数值快照与重算 ──")
-# 000922 三档分数快照（与后端控制台/前端实测一致；行情更新致因子漂移时需同步刷新，
-# 2026-08-11 刷新：000922 近期上涨致 dy/price 分位走高，分数整体抬升；CI 用 --no-snapshot 跳过）
-if not NO_SNAPSHOT:
-    snap = {"稳健": 62.9, "均衡": 57.7, "进取": 55.6}
-    ok = True
-    for pname, expect in snap.items():
-        w = analysis["presets"][pname]["A"]
-        v = by_code["000922"]
-        s = sum(f["pct"] * wgt for k, (wgt, f) in ((k, (wgt, v["factors"][k])) for k, wgt in w.items()) if f["pct"] is not None) / sum(w.values())
-        if abs(s - expect) > 0.2:
-            ok = False
-            print(f"    000922 {pname}: 重算 {s:.1f} vs 快照 {expect}")
-    check("000922 三档分数快照", ok)
-else:
-    print("  （--no-snapshot：跳过数值快照断言）")
+# ── T7 数值稳定性与同源一致性（N3：原「三档分数精确快照」→ 关系断言，避免行情漂移误报）──
+print("\n── T7 数值稳定性与同源一致性 ──")
+
+
+def recalc_score(v, pname):
+    """按 analysis.presets 权重从 factors 分位重算（与前端 analysis.js scoreOf 同口径）"""
+    w = analysis["presets"][pname]["B" if v["type"] == "股票" else "A"]
+    present = [(k, wgt) for k, wgt in w.items() if v["factors"].get(k) and v["factors"][k]["pct"] is not None]
+    if not present:
+        return None
+    return sum(v["factors"][k]["pct"] * wgt for k, wgt in present) / sum(wgt for _, wgt in present)
+
+
+# 7.1 三档分数必须有限且落在 [0,100]（公式/权重被改坏会立刻暴露）
+bad = []
+for c in ("000922", "515180", "600036"):
+    v = by_code.get(c)
+    if not v:
+        continue
+    for pname in analysis["presets"]:
+        s = recalc_score(v, pname)
+        if s is None or not (0 <= s <= 100):
+            bad.append((c, pname, None if s is None else round(s, 1)))
+check("三档分数∈[0,100]（抽 3 标的）", not bad, f"异常: {bad[:3]}")
+# 7.2 同源一致性：000922 与跟踪 ETF 515180 因子同源（仅 sent 不同）→ 同档分数差 ≤ 8pp
+_diff = {p: round(abs(recalc_score(by_code["000922"], p) - recalc_score(by_code["515180"], p)), 1)
+         for p in analysis["presets"]}
+check("000922 vs 515180 同档分数差≤8pp", all(d <= 8 for d in _diff.values()), f"差异 {_diff}")
+print("  （留痕：000922 三档分数 " + "，".join(f"{p} {recalc_score(by_code['000922'], p):.1f}"
+      for p in analysis["presets"]) + "）")
 # 锚重算（新口径）：买入锚 == 近5年价格10分位，卖出锚 == 近5年价格90分位（反推口径，与主图统一；
 # 反推 dy_t=D/close_t 的分位 ⇔ 价格分位，锚天然落在历史价格区间内）
 import numpy as _np
