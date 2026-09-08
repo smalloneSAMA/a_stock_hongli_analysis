@@ -25,7 +25,7 @@ import _fetch_history as fh
 import _fetch_stock_data as fsd
 from _common import (market_prefix, tencent_quotes, atomic_dump, atomic_load,
                      find_stale, update_stale_report, STALE_GAP_DAYS,   # T1 陈旧检测
-                     is_bj, save_workbook_if_changed)   # T6 北交所剔除 + T20 Excel 去噪
+                     is_bj, save_workbook_if_changed, em_secid)   # T6 北交所剔除 + T20 Excel 去噪 + T23 secid
 from _classify import map_ind
 
 XLSX = os.path.join(BASE, "excel", "自选股清单.xlsx")   # 自选股清单（唯一事实来源）
@@ -98,9 +98,8 @@ def refresh_watch_meta(rows):
     print(f"── 补行业（东财，{len(todo)} 只）──")
     fail = 0
     for i, r in enumerate(todo, 1):
-        market = "1" if r["code"].startswith("6") else "0"
         url = ("https://push2delay.eastmoney.com/api/qt/stock/get?fltt=2&invt=2"
-               f"&fields=f57,f58,f43,f127&secid={market}.{r['code']}")
+               f"&fields=f57,f58,f43,f127&secid={em_secid(r['code'])}")   # T23：secid 唯一实现
         try:
             d = json.loads(fsd.em_get(url)).get("data") or {}
             ind3 = d.get("f127") or ""

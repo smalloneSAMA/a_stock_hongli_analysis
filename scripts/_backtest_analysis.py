@@ -20,9 +20,8 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import atomic_dump, decode_indicator   # 原子写 + 指标文件解码（T17/T18/T19）
+from _common import atomic_dump, decode_indicator, WINDOW   # 原子写 + 指标解码 + 窗口（T23）
 
-WINDOW = 1250                       # 5年交易日滚动窗口
 HORIZONS = (21, 63, 126, 252)       # 1/3/6/12 个月（交易日）
 H_LABEL = ("1M", "3M", "6M", "12M")
 MIN_LEN = 300                       # 序列不足则跳过（信号样本太少无意义）

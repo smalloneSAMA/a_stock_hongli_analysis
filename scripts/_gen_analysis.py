@@ -19,9 +19,9 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
 import _fetch_stock_data as fsd
 from _common import (atomic_dump, is_bj, decode_rows, decode_indicator,   # 原子写 + 北交所剔除 + 列式/稀疏解码
-                     pct_rank)   # T22：分位唯一实现（统一 <）
+                     pct_rank, WINDOW, ETF_TRACK)   # T22 分位 + T23 常量/ETF 元数据唯一来源
 
-WINDOW = 1250   # 近5年交易日
+
 
 # ── S3/S4 因子打分 ─────────────────────────────────────────────
 # 三档权重（S2 回测调整：个股 dy 降权、估值升权）；A=指数/ETF 体系，B=股票体系
@@ -239,15 +239,6 @@ def build_factors():
             a = "—"
         print(f"{code:<8}{name:<14}{typ:<4}{scores['稳健']:>7.1f}{scores['均衡']:>7.1f}{scores['进取']:>7.1f}  {band:<7}  {a}")
     print(f"\n✅ web/data/analysis.json 已生成（{len(out['by_code'])} 标的，三档权重已内嵌）")
-
-
-# ETF → 跟踪指数映射（dy0 加权结果自洽验证：ETF 加权dy == 跟踪指数加权dy）
-ETF_TRACK = {
-    "512890": "H30269", "563020": "H30269", "159549": "930955",
-    "515180": "000922", "515080": "000922", "561580": "000825",
-    "510720": "000151", "159209": "932315", "159758": "931468",
-    "563700": "H30270", "159201": "980092", "510880": "000015",
-}
 
 
 def load_cache(typ, code):

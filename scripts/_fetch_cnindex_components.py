@@ -10,14 +10,13 @@
 用法: python scripts/_fetch_cnindex_components.py [indexcode ...]
 """
 import io, json, os, sys, time, urllib.request
-from _common import atomic_dump
+from _common import atomic_dump, UA   # T23：UA 唯一来源
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 URL = "https://www.cnindex.com.cn/sample-detail/detail"
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 
 # 默认清单：980092 国证自由现金流；可用命令行参数追加/覆盖
 INDICES = [("980092", "国证自由现金流")]

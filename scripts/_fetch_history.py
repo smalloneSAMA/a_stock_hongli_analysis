@@ -8,7 +8,8 @@
 """
 import sys, io, os, json, time, argparse, urllib.request, requests, datetime
 import pandas as pd
-from _common import atomic_dump, export_workbook, encode_rows, decode_rows   # 原子写/Excel + 列式编码（T17）
+from _common import (atomic_dump, export_workbook, encode_rows, decode_rows,   # 原子写/Excel + 列式编码（T17）
+                     UA, IDX_DIV)   # T23：UA / 指数单位除数唯一来源
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -18,7 +19,6 @@ EXCEL_DIR = os.path.join(BASE, "excel")
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(EXCEL_DIR, exist_ok=True)
 
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 S = requests.Session()
 S.headers.update({"User-Agent": UA})
 
@@ -347,7 +347,7 @@ def main():
         "volume": "成交量(万手)", "amount": "成交额(亿元)",
         "chg30": "30日涨跌(%)", "chg60": "60日涨跌(%)", "chg90": "90日涨跌(%)",
     }
-    IDX_DIV = {"tencent": (1e4, 1e8), "csindex": (1e6, 1), "cnindex": (1, 1)}  # (成交量除数, 成交额除数)
+    
     ETF_COL_CN = {
         "open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
         "volume": "成交量(万手)", "amount": "成交额(亿元)",

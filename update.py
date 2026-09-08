@@ -19,7 +19,8 @@ sys.path.insert(0, SCRIPTS)
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import STALE_LAG_DAYS as LAG_DAYS, find_stale, update_stale_report, STALE_GAP_DAYS   # 陈旧阈值单一来源（T2/T3 共用）
+from _common import (STALE_LAG_DAYS as LAG_DAYS, find_stale, update_stale_report, STALE_GAP_DAYS,   # 陈旧阈值（T2/T3）
+                     IDX_DIV)   # T23：指数单位除数唯一来源
 
 # import后包装stdout（fh的包装对象仍被其模块引用，底层buffer不会被关闭）
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -349,7 +350,7 @@ def export_excel():
         "volume": "成交量(万手)", "amount": "成交额(亿元)",
         "chg30": "30日涨跌(%)", "chg60": "60日涨跌(%)", "chg90": "90日涨跌(%)",
     }
-    IDX_DIV = {"tencent": (1e4, 1e8), "csindex": (1e6, 1), "cnindex": (1, 1)}  # (成交量除数, 成交额除数)
+    
     ETF_COL_CN = {
         "open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
         "volume": "成交量(万手)", "amount": "成交额(亿元)",

@@ -13,7 +13,7 @@
 """
 import sys, io, os, json, re, time, datetime
 import requests
-from _common import atomic_load, atomic_dump   # 原子读写（损坏自愈，P2）
+from _common import atomic_load, atomic_dump, em_secid   # 原子读写 + 东财 secid（T23）
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -75,7 +75,7 @@ def fetch_dividends(code):
 def fetch_price(code):
     """东财现价（元）"""
     try:
-        secid = ("1." if code.startswith(("6", "9")) else "0.") + code
+        secid = em_secid(code)   # T23：东财 secid 唯一实现
         r = S.get("https://push2.eastmoney.com/api/qt/stock/get",
                   params={"secid": secid, "fields": "f43"}, timeout=10)
         v = (r.json().get("data") or {}).get("f43")

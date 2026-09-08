@@ -21,10 +21,9 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _recommend_stocks as rs   # 复用硬过滤/因子映射/约束（仅借用 QUADRANT/WEIGHTS 常量）
 import _fetch_stock_data as fsd
-from _common import atomic_dump, decode_indicator, pct_rank   # 原子写 + 列式/稀疏解码 + 分位（T22）
+from _common import atomic_dump, decode_indicator, pct_rank, WINDOW   # 原子写 + 解码 + 分位 + 窗口（T22/T23）
 import _fetch_history as fh   # 统一缓存读取（T17：load_cache 内部已解码）
 
-WINDOW = 1250          # dy 滚动分位窗口（5年交易日）
 DY_MIN = 3.0           # 与推荐评分一致
 AMT_MIN = 3e7          # 60日均额（元）
 AMT_DAYS = 60          # 流动性窗口

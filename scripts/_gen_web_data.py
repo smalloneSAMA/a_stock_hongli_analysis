@@ -23,14 +23,15 @@ import _fetch_history as fh
 import _fetch_stock_data as fsd
 import _fetch_watchlist as watchlist
 from _common import (atomic_dump, STALE_LAG_DAYS, is_bj,   # T3 陈旧标记 + T6 北交所剔除
-                     encode_rows, decode_indicator, encode_sparse)   # T17 列式编码 + T18 稀疏列
+                     encode_rows, decode_indicator, encode_sparse,   # T17 列式编码 + T18 稀疏列
+                     IDX_DIV)   # T23：指数单位除数唯一来源
 
 WEB_DATA = os.path.join(BASE, "web", "data")
 os.makedirs(os.path.join(WEB_DATA, "stocks"), exist_ok=True)
 
 # 指数单位换算（与 update.py export_excel 同口径）：
 # 原始单位：腾讯 volume=手/amount=元(估算)；中证官网 tradingVol=股/tradingValue=亿元；国证 volume=万手/amount=亿元
-IDX_DIV = {"tencent": (1e4, 1e8), "csindex": (1e6, 1), "cnindex": (1, 1)}
+
 
 
 def last_date(rows):

@@ -26,6 +26,39 @@ def is_bj(code):
     """是否北交所个股（920599/430047/830799→True）"""
     return code.startswith(("43", "83", "87", "88", "92"))
 
+
+# ── 东财接口标识（T23：市场标识唯一实现，勿再本地拼 "1." / ".SH"）──
+def market_of(code):
+    """市场标识：sh / sz / bj（= market_prefix 去掉代码部分）"""
+    return market_prefix(code)[:2]
+
+
+def em_secid(code):
+    """东财 secid：1.600036（沪）/ 0.000858（深）/ 0.920599（北）"""
+    return ("1." if market_of(code) == "sh" else "0.") + code
+
+
+def em_secucode(code):
+    """东财 secucode：600036.SH / 000858.SZ / 920599.BJ"""
+    return code + {"sh": ".SH", "sz": ".SZ", "bj": ".BJ"}[market_of(code)]
+
+
+def em_market(code):
+    """东财 market 参数：SH / SZ / BJ"""
+    return {"sh": "SH", "sz": "SZ", "bj": "BJ"}[market_of(code)]
+
+
+# ── 常量单一来源（T23：原分散在 3-4 个脚本各一份）──
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+WINDOW = 1250            # 近5年交易日（滚动分位窗口）
+IDX_DIV = {"tencent": (1e4, 1e8), "csindex": (1e6, 1), "cnindex": (1, 1)}   # 指数单位除数 (成交量, 成交额)
+ETF_TRACK = {            # ETF → 跟踪指数（dy 加权自洽验证 + 前端 track 字段）
+    "512890": "H30269", "563020": "H30269", "159549": "930955",
+    "515180": "000922", "515080": "000922", "561580": "000825",
+    "510720": "000151", "159209": "932315", "159758": "931468",
+    "563700": "H30270", "159201": "980092", "510880": "000015",
+}
+
 # ── 腾讯批量行情 ──
 TENCENT_URL = "https://qt.gtimg.cn/q="
 TENCENT_BATCH = 50      # AGENTS.md：50只/批防封（曾用 60 的副本已统一）
@@ -81,7 +114,7 @@ def parse_quote(v):
 
 
 # ── 东财接口限流请求（1s/请求防封，全局限流）──
-EM_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
+EM_UA = UA   # 东财请求头（T23：与 UA 统一，勿再各写一份）
 _last_em = [0.0]
 
 def em_get(url, timeout=12):
@@ -448,5 +481,15 @@ if __name__ == "__main__":
     chk("pct_rank 最小/最大", pct_rank(1, [1, 2, 3]) == 0.0 and pct_rank(3, [1, 2, 3]) == 100.0 * 2 / 3)
     chk("pct_rank None/空", pct_rank(None, [1]) is None and pct_rank(1, []) is None)
     chk("pct_rank 支持 numpy 数组", pct_rank(3, __import__("numpy").array([1.0, 2.0, 3.0])) == 100.0 * 2 / 3)
+    # ── 东财标识（T23）──
+    chk("em_secid 沪/深/北", em_secid("600036") == "1.600036" and em_secid("000858") == "0.000858"
+        and em_secid("920599") == "0.920599")
+    chk("em_secucode 沪/深/北", em_secucode("600036") == "600036.SH" and em_secucode("000858") == "000858.SZ"
+        and em_secucode("920599") == "920599.BJ")
+    chk("em_market 沪/深/北", (em_market("600036"), em_market("000858"), em_market("920599")) == ("SH", "SZ", "BJ"))
+    # ── 常量（T23）──
+    chk("WINDOW/IDX_DIV/ETF_TRACK 常量就位",
+        WINDOW == 1250 and IDX_DIV["csindex"] == (1e6, 1) and ETF_TRACK["515180"] == "000922"
+        and len(ETF_TRACK) == 12 and UA.startswith("Mozilla/5.0"))
     print("═══ 汇总：%s ═══" % ("PASS" if fails == 0 else "FAIL %d" % fails))
     raise SystemExit(1 if fails else 0)

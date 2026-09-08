@@ -27,7 +27,8 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
 from _common import (em_get,   # 东财限流请求（1s/请求防封，全局限流）
                      find_stale, update_stale_report, STALE_GAP_DAYS,   # T1 陈旧检测
-                     is_bj)   # T6 北交所剔除（R2）
+                     is_bj,   # T6 北交所剔除（R2）
+                     market_prefix, em_secucode, em_market, UA)   # T23：前缀/东财标识/UA 唯一来源
 
 STALE_PATH = os.path.join(BASE, "cache", "_stale.json")   # 陈旧检测报告（T1，各池分段合并）
 
@@ -70,7 +71,7 @@ def _rec_stocks():
                 code = r.get("code")
                 if not code or is_bj(code):
                     continue   # 北交所不进个股池（R2）；同时规避下方 9x→sh/sz 前缀误判
-                tcode = ("sh" if code.startswith(("6", "9")) else "sz") + code
+                tcode = market_prefix(code)   # T23：前缀唯一实现
                 out.append((code, r.get("name", code), tcode))
             if out:
                 return out
@@ -89,7 +90,6 @@ def refresh_stocks():
 
 
 START = "2004-01-01"  # 最早时间上限
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
 
 # 东财限流请求统一走 _common.em_get（1s/请求防封，全局限流）
 
@@ -137,7 +137,7 @@ def fetch_financials(code):
     EPSJB=基本每股收益(累计)，PARENTNETPROFIT=归母净利润(元,累计)，
     TOTAL_SHARE=总股本(股)——注意该字段全历史回填当前值，仅作股本缓存缺失时的回退；
     BPS=每股净资产，ROEJQ=加权净资产收益率(%)，ZZCJLL=总资产净利率(%)（ROA口径）"""
-    secucode = code + (".SH" if code.startswith("6") else ".SZ")
+    secucode = em_secucode(code)   # T23：东财标识唯一实现
     url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?"
            "reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
            f"&filter=(SECUCODE%3D%22{secucode}%22)&pageNumber=1&pageSize=200"
@@ -168,7 +168,7 @@ def fetch_share_history(code):
     """返回 [{date, total_share}]（按生效日升序，总股本=股）。
     END_DATE=股本变动生效日，TOTAL_SHARES=当日总股本；接口失败回退 F10 股本结构页 lngbbd
     注意：送转/回购频繁的股票记录可达上千条（如美的每笔回购一条），需翻页拉全"""
-    secucode = code + (".SH" if code.startswith("6") else ".SZ")
+    secucode = em_secucode(code)   # T23：东财标识唯一实现
     out, seen = [], set()
     try:
         for page in range(1, 21):   # 最多 20页×500=1万条，足够覆盖全部股本变动
@@ -195,7 +195,7 @@ def fetch_share_history(code):
         pass
     # 回退：F10 股本结构页（lngbbd 可能只回最近约20条）
     try:
-        market = "SH" if code.startswith("6") else "SZ"
+        market = em_market(code)   # T23
         url2 = (f"https://emweb.securities.eastmoney.com/PC_HSF10/CapitalStockStructure/"
                 f"PageAjax?code={market}{code}")
         req = urllib.request.Request(url2, headers={

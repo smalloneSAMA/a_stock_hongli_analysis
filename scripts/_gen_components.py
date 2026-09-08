@@ -7,7 +7,7 @@
 用法: python _gen_components.py [--force]
 """
 import sys, io, os, json, re, time, glob, datetime, requests, pandas as pd, urllib.request
-from _common import tencent_quotes, atomic_load   # 腾讯批量行情（批 50）+ 原子读（损坏兜底）
+from _common import tencent_quotes, atomic_load, UA   # 腾讯批量行情（批 50）+ 原子读 + UA（T23）
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -16,7 +16,6 @@ TMP = os.path.join(BASE, "_cons_tmp")
 os.makedirs(TMP, exist_ok=True)
 MD = os.path.join(BASE, "红利指数与ETF成分股.md")
 
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 S = requests.Session()
 S.headers.update({"User-Agent": UA, "Referer": "https://www.csindex.com.cn/"})
 

@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 """抓取候选红利ETF的规模/成交额/收益率(腾讯源,不封IP)"""
 import json, urllib.request, time, re
-from _common import tencent_quotes   # 腾讯批量行情（prefix 内部统一）
-
-UA = {"User-Agent": "Mozilla/5.0"}
+from _common import tencent_quotes, market_prefix, UA   # 腾讯批量行情 + 前缀/UA（T23）
 
 # 候选ETF: 代码 -> (名称, 类别)
 ETFS = {
@@ -51,10 +49,10 @@ def tencent_quote(codes):
 
 def tencent_kline(code, days=800):
     """腾讯前复权日K, 返回 [(date, close), ...]"""
-    sym = ("sh" if code.startswith(("5","6","9")) else "sz") + code
+    sym = market_prefix(code)   # T23：前缀唯一实现
     url = (f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?"
            f"param={sym},day,,,{days},qfq")
-    req = urllib.request.Request(url, headers=UA)
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
     d = json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8"))
     node = d["data"][sym]
     k = node.get("qfqday") or node.get("day") or []

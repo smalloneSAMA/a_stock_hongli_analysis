@@ -13,7 +13,7 @@
 """
 import json, os, sys, re, time, random, datetime, urllib.request
 from _common import (market_prefix, em_get, tencent_quotes, atomic_load, atomic_dump, is_bj,   # 前缀路由 + 东财限流 + 腾讯批量 + 原子读 + 北交所判定
-                     save_workbook_if_changed)   # T20：Excel 内容未变不写盘
+                     save_workbook_if_changed, em_secid)   # T20 Excel 去噪 + T23 东财 secid
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(BASE, "cache")
@@ -67,9 +67,8 @@ def fetch_industry(codes):
     print(f"  [行业] 待补 {len(todo)} 只（缓存已有 {len(codes) - len(todo)}）")
     fail = 0
     for i, c in enumerate(todo):
-        market = "1" if c.startswith("6") else "0"
         url = ("https://push2delay.eastmoney.com/api/qt/stock/get?fltt=2&invt=2"
-               f"&fields=f57,f58,f43,f127&secid={market}.{c}")
+               f"&fields=f57,f58,f43,f127&secid={em_secid(c)}")   # T23：secid 唯一实现
         try:
             d = json.loads(em_get(url)).get("data") or {}
             if d.get("f127"):
