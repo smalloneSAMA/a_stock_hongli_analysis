@@ -463,7 +463,13 @@ export function buildHistoryView(container, cfg) {
     /* 均线开关：走主图图例点击（默认全关，图例灰色，点击即显隐） */
     const head = el('div', { class: 'chart-head' },
       el('div', {},
-        el('h2', { class: 'chart-title' }, item.name, el('span', { class: 'code' }, item.code)),
+        el('h2', { class: 'chart-title' }, item.name, el('span', { class: 'code' }, item.code),
+          /* T4：数据陈旧角标（manifest.stale / ind_last，由 _gen_web_data 标记；无字段则不出角标） */
+          m.stale ? el('span', {
+            class: 'stale-badge',
+            title: '该标的指标数据截至 ' + (m.ind_last || '—') + '，落后最新数据日期（≥3 自然日）：'
+              + '股息率分位、区间分析、推荐评分均基于陈旧数据，请先补拉该标的',
+          }, '数据滞后 ' + (m.ind_last || '—')) : null),
         cfg.quoteExtra ? el('div', { class: 'txt-3', style: 'font-size:11.5px;margin-top:2px' }, cfg.quoteExtra(obj, rows)) : null),
       el('div', { class: 'chart-quote' },
         el('span', { class: 'price txt-' + dir }, fmt2(last.close)),

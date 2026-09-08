@@ -342,6 +342,10 @@ button { font-family: inherit; }
 .chart-head { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; padding: var(--space-4) var(--space-5) 0; }
 .chart-title { font-size: 17px; font-weight: 700; letter-spacing: 0.3px; margin: 0; }
 .chart-title .code { font-family: var(--font-num); font-size: 12.5px; color: var(--text-3); font-weight: 500; margin-left: 6px; }
+/* T4：数据陈旧角标（manifest.stale）——与 .ticker-scale 同款 chip，琥珀警示色不参与红涨绿跌语义 */
+.chart-title .stale-badge { display: inline-block; margin-left: 8px; vertical-align: middle; cursor: help;
+  font-size: 10.5px; font-weight: 600; line-height: 1.6; padding: 0 5px; border-radius: 4px;
+  color: var(--warn); background: var(--brand-dim); border: 1px solid var(--brand-line); }
 .chart-quote { display: flex; align-items: baseline; gap: 10px; }
 .chart-quote .price { font-family: var(--font-num); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .chart-quote .chg { font-family: var(--font-num); font-size: 13px; font-weight: 600; }

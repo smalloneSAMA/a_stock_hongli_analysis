@@ -70,6 +70,8 @@ export default {
       ],
       chartUnit: '元',
       subControl: 'none',
+      /* T4：把 manifest 股票条目按 code 传给 historyLayout（标题陈旧角标读 m.stale/m.ind_last） */
+      manifestMap: new Map(m.stocks.map(s => [s.code, s])),
       compView: false,            // 股票：去掉 图表/成分股 切换
       showMA: true,               // 股票：MA5/20/60/250 均线可用（工具栏 checkbox 控制显隐，默认关）
       showOHLC: false,            // 股票：浮动面板去掉 开盘/最高/最低 字段
