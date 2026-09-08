@@ -219,6 +219,16 @@ def build_factors():
     path = os.path.join(BASE, "web", "data", "analysis.json")
     atomic_dump(path, out, indent=None)
 
+    # T11：指数/ETF 的 dy 全量序列单独成文件 —— 对比分析页画 dy 曲线只需这 1.6MB，
+    # 不必再拉 30.7MB 的 cache/analysis_dy.json（股票曲线仍走指标文件 dy 列，故不纳入）
+    dy_series_out = {"date": out["date"],
+                     "by_code": {c: i["series"] for c, i in dy_data.items()
+                                 if i.get("type") in ("指数", "ETF") and i.get("series")}}
+    sp = os.path.join(BASE, "web", "data", "dy_series.json")
+    atomic_dump(sp, dy_series_out, indent=None)
+    print(f"  ✅ dy_series.json：{len(dy_series_out['by_code'])} 标的（指数+ETF），"
+          f"{os.path.getsize(sp) / 1024 / 1024:.2f} MB")
+
     # 控制台表：三档分数 + 均衡档区间 + 点位锚
     print(f"\n═══ S4/S5 因子打分 + 点位锚（数据日期 {out['date']}）═══")
     print(f"{'代码':<8}{'名称':<14}{'类型':<4}{'稳健':>7}{'均衡':>7}{'进取':>7}  区间(均衡)  买入锚(距%)  卖出锚(距%)")
