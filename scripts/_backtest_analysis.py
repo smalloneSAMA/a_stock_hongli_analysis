@@ -55,8 +55,9 @@ def merge_close(typ, code, info):
     return [(d, v, cmap[d]) for d, v in series if d in cmap]
 
 
-def run_backtest(code, info, p_buy=90):
-    """单标的回测：返回统计 dict 或 None（数据不足/无信号）"""
+def run_backtest(code, info, p_buy=90, exec_offset=1):
+    """单标的回测：返回统计 dict 或 None（数据不足/无信号）。
+    exec_offset：信号 t 日收盘确认后，第几个交易日收盘执行（默认 1=次一交易日，T30 可设 2 做口径对比）"""
     rows = merge_close(info["type"], code, info)
     n = len(rows)
     if n < MIN_LEN:
@@ -69,11 +70,14 @@ def run_backtest(code, info, p_buy=90):
     # 滚动分位（raw 加速）：窗口内比当前 dy 小的占比×100
     pct = pd.Series(dy).rolling(w).apply(lambda x: 100.0 * np.mean(x < x[-1]), raw=True).values
 
-    # 信号（t 日收盘确认，t+1 执行）→ 执行日索引
-    buy_ex = np.where((pct[1:] >= p_buy) & (pct[:-1] < p_buy))[0] + 1
-    sell_ex = np.where((pct[1:] <= 100 - p_buy) & (pct[:-1] > 100 - p_buy))[0] + 1
+    # 信号（t 日收盘确认，t+exec_offset 收盘执行）→ 执行日索引
+    buy_ex = np.where((pct[1:] >= p_buy) & (pct[:-1] < p_buy))[0] + exec_offset
+    sell_ex = np.where((pct[1:] <= 100 - p_buy) & (pct[:-1] > 100 - p_buy))[0] + exec_offset
     buy_ex = buy_ex[buy_ex >= w]   # 窗口冷启动之后
     sell_ex = sell_ex[sell_ex >= w]
+    # T30：执行日可能越过序列末尾（信号落在最后几天）→ 丢弃（无未来收益可测）
+    buy_ex = buy_ex[buy_ex <= n - 1]
+    sell_ex = sell_ex[sell_ex <= n - 1]
 
     # 信号预测力：执行日起 N 交易日收益
     sig = {h: [] for h in HORIZONS}
@@ -228,7 +232,32 @@ def build_report(results_by_p, order=(85, 90, 95)):
     return "\n".join(lines) + "\n"
 
 
-def main(only=None, p_buy=None):
+def collect_results(order, data, group_of, only=None, exec_offset=1, verbose=True):
+    """全量回测 → {p: [结果…]}（T30：exec_offset 控制执行日；不写任何产物，供对比脚本复用）"""
+    results_by_p = {}
+    for p in order:
+        if verbose:
+            print(f"\n═══ 股息率分位信号回测（p_buy={p}，窗口{WINDOW}日，执行 t+{exec_offset}，"
+                  f"全量 {len(data)} 标的）═══")
+        results = []
+        for code, info in data.items():
+            if info.get("dy0") is None:
+                continue
+            if only and code != only:
+                continue
+            r = run_backtest(code, info, p_buy=p, exec_offset=exec_offset)
+            r["group"] = group_of(code, info["type"])
+            results.append(r)
+            if verbose and "skip" in r:
+                print(f"  {code} {info['name']}: {r['skip']}")
+            elif verbose:
+                print(f"  {code} {info['name']:<12} 信号{r['n_buy']:>3}个 交易{r['n_trades']:>2}对 "
+                      f"胜率6M {r['win_rate']['6M']}% 超额6M {r['excess']['6M']:+.2f}% 超额12M {r['excess']['12M']:+.2f}%")
+        results_by_p[p] = results
+    return results_by_p
+
+
+def main(only=None, p_buy=None, exec_offset=1):
     data = load_analysis()
     order = (p_buy,) if p_buy else (85, 90, 95)
     # 分组口径：推荐20 优先于自选（重叠时归推荐）；其余股票 = 其他成份股
@@ -250,24 +279,11 @@ def main(only=None, p_buy=None):
             return "自选股"
         return "其他成份股"
 
-    results_by_p = {}
-    for p in order:
-        print(f"\n═══ 股息率分位信号回测（p_buy={p}，窗口{WINDOW}日，全量 {len(data)} 标的）═══")
-        results = []
-        for code, info in data.items():
-            if info.get("dy0") is None:
-                continue
-            if only and code != only:
-                continue
-            r = run_backtest(code, info, p_buy=p)
-            r["group"] = group_of(code, info["type"])
-            results.append(r)
-            if "skip" in r:
-                print(f"  {code} {info['name']}: {r['skip']}")
-            else:
-                print(f"  {code} {info['name']:<12} 信号{r['n_buy']:>3}个 交易{r['n_trades']:>2}对 "
-                      f"胜率6M {r['win_rate']['6M']}% 超额6M {r['excess']['6M']:+.2f}% 超额12M {r['excess']['12M']:+.2f}%")
-        results_by_p[p] = results
+    results_by_p = collect_results(order, data, group_of, only=only, exec_offset=exec_offset)
+    if exec_offset != 1:
+        # T30：非默认口径只做研究，不覆盖默认产物（docs/回测报告.md、web/data/backtest.json）
+        print(f"\n⚠️ exec_offset={exec_offset}（研究口径）→ 不写默认产物；如需对比报告见 scripts/_backtest_exec_compare.py")
+        return results_by_p
     report = build_report(results_by_p, order)
     os.makedirs(os.path.join(BASE, "docs"), exist_ok=True)
     path = os.path.join(BASE, "docs", "回测报告.md")
@@ -339,5 +355,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="只回测单个代码")
     ap.add_argument("--p", type=int, default=None, help="单档回测（默认三档 p85/90/95）")
+    ap.add_argument("--exec-offset", type=int, default=1, choices=(1, 2),
+                    help="执行日：信号 t 日收盘确认后第 N 个交易日收盘执行（默认 1=次一交易日；2 为研究口径，不写默认产物）")
     args = ap.parse_args()
-    main(only=args.only, p_buy=args.p)
+    main(only=args.only, p_buy=args.p, exec_offset=args.exec_offset)
