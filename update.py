@@ -134,6 +134,8 @@ def _d(s):
     except Exception:
         return None
 
+LAG_DAYS = 3   # 滞后阈值（自然日，≈2 交易日；T2 陈旧清单口径）
+
 def _failed_map():
     m = {}
     for p in ("cache/_pool_failed.json", "cache/_watchlist_failed.json"):
@@ -142,36 +144,84 @@ def _failed_map():
     return m
 
 def scan_status():
-    """只读扫描各类数据新鲜度（不写任何文件），输出状态面板"""
+    """只读扫描各类数据新鲜度（不写任何文件），输出状态面板。
+    T2：每组输出 min~max + 中位数，并列出落后全局最新交易日 >2 交易日的标的清单
+    （旧版每组只抽查 1 只，单只滞后完全不可见——920599 曾冻结 10 个交易日而 status 全绿）。"""
     m = load_json(os.path.join(WEB_DATA, "manifest.json")) or {}
     stocks = m.get("stocks", [])
-    def pick(pred):
-        s = next((s for s in stocks if pred(s) and s.get("ready")), None)
-        return s and s.get("last")
-    st = {
-        "指数":      next((i.get("last") for i in m.get("indices", []) if i.get("last")), None),
-        "ETF":       next((e.get("last") for e in m.get("etfs", []) if e.get("last")), None),
-        "推荐20":    pick(lambda s: s.get("rec")),
-        "其他成份":  pick(lambda s: not s.get("rec") and not s.get("watch")),
-        "自选":      pick(lambda s: s.get("watch")),
+
+    def rows_of(items, pred=None):
+        """→ [(code, name, last)]；跳过未就绪与无日期项"""
+        out = []
+        for s in items:
+            if pred and not pred(s):
+                continue
+            if s.get("ready") is False:
+                continue
+            v = s.get("last")
+            if v:
+                out.append((s.get("code", ""), s.get("name", ""), v))
+        return out
+
+    groups = {
+        "指数":     rows_of(m.get("indices", [])),
+        "ETF":      rows_of(m.get("etfs", [])),
+        "推荐20":   rows_of(stocks, lambda s: s.get("rec")),
+        "其他成份": rows_of(stocks, lambda s: not s.get("rec") and not s.get("watch")),
+        "自选":     rows_of(stocks, lambda s: s.get("watch")),
     }
     cc = load_json(os.path.join(BASE, "cache", "成分_980092.json"))
-    st["成分样本"] = cc and cc.get("sample_date")
-    dates = [_d(v) for v in st.values() if v]
-    base = max(dates) if dates else None
+    sample = cc and cc.get("sample_date")
+
+    all_d = [x for x in (_d(v) for g in groups.values() for _, _, v in g) if x]
+    base = max(all_d) if all_d else None
+
     print("\n═══ 数据状态 ═══")
+    lagged = []      # [(gap_days, code, name, last, group)]
     if base:
-        for k, v in st.items():
-            d = _d(v)
-            if not d:
+        for k, g in groups.items():
+            if not g:
                 print(f"  {k}: 无数据")
-            elif d == base:
-                print(f"  {k}: {v} ✓")
+                continue
+            ds = sorted([x for x in (_d(v) for _, _, v in g) if x])
+            lo, hi, mid = ds[0], ds[-1], ds[len(ds) // 2]
+            bad = []
+            for c, n, v in g:
+                dv = _d(v)
+                if dv and (base - dv).days >= LAG_DAYS:
+                    bad.append((c, n, v, (base - dv).days))
+                    lagged.append(((base - dv).days, c, n, v, k))
+            tag = f" ⚠️ 滞后 {len(bad)} 只" if bad else " ✓"
+            if lo == hi:
+                print(f"  {k}: {hi}（{len(g)} 只）{tag}")
             else:
-                print(f"  {k}: {v} ⚠️ 滞后 {(base-d).days} 天")
+                print(f"  {k}: {lo} ~ {hi}（中位 {mid}，{len(g)} 只）{tag}")
     else:
-        for k in st:
+        for k in groups:
             print(f"  {k}: 无数据")
+
+    if lagged:
+        lagged.sort(key=lambda x: -x[0])
+        print(f"  滞后清单（落后 {base} ≥{LAG_DAYS} 自然日≈2 交易日）：{len(lagged)} 只")
+        for gap, c, n, v, k in lagged[:10]:
+            print(f"    · {c} {n}（{k}） 截至 {v}，落后 {gap} 天")
+        if len(lagged) > 10:
+            print(f"    … 其余 {len(lagged) - 10} 只")
+
+    if sample:
+        sd = _d(sample)
+        warn = f" ⚠️ 滞后 {(base - sd).days} 天" if base and sd and (base - sd).days >= LAG_DAYS else " ✓"
+        print(f"  成分样本: {sample}{warn}")
+    else:
+        print("  成分样本: 无数据")
+
+    # 抓取时陈旧报告（T1）：与 manifest 快照口径互补（含当轮基准，仅在有陈旧项时提示）
+    sp = load_json(os.path.join(BASE, "cache", "_stale.json"))
+    if sp and isinstance(sp.get("pools"), dict):
+        tot = sum(len(v.get("items") or []) for v in sp["pools"].values())
+        if tot:
+            detail = "、".join(f"{p} {len(v.get('items') or [])} 只" for p, v in sp["pools"].items() if v.get("items"))
+            print(f"  抓取陈旧（{sp.get('checked_at', '?')}）: {tot} 只（{detail}）")
     # 回测过期判定：backtest.date < analysis.date
     bt = load_json(os.path.join(WEB_DATA, "backtest.json"))
     an = load_json(os.path.join(WEB_DATA, "analysis.json"))
