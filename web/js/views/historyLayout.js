@@ -4,7 +4,7 @@
          内存缓存保证切换秒开 */
 
 import { el, renderTickerList, renderTable, skeleton, errorBox, emptyState, fmt2, fmtPct, dirOf, dailyChg, attachDatePicker, openTicker } from './common.js';
-import { loadJSON, klineUrl, indiUrl, COMPONENTS_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
+import { loadJSON, klineUrl, indiUrl, decodeRows, COMPONENTS_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
 import { createKlineChart, createDonut, disposeChart } from '../charts.js';
 import { scoreOf as anaScoreOf, bandOf, bandCls } from './analysis.js';   // 区间分析公共计算（P4.3 三合一）
 import { cssVar } from '../theme.js';
@@ -28,7 +28,7 @@ async function loadBacktest() {
 async function loadTickerObj(kind, code) {
   const obj = await loadJSON(klineUrl(kind, code));
   if (!obj || !Array.isArray(obj.rows) || !obj.rows.length) throw new Error('缓存无数据行');
-  return obj;
+  return { ...obj, rows: decodeRows(obj) };   // T17：列式行 → 对象行
 }
 
 function prepareKline(rows, { vdiv = D.volume, adiv = D.amount } = {}) {
@@ -374,11 +374,11 @@ export function buildHistoryView(container, cfg) {
       if (cfg.subControl === 'indicator' || cfg.withIndicator) {
         try {
           const indFile = await loadJSON(indiUrl(item.code));
-          /* T16(5a)：指标文件结构 {last, rows}，逐行日期已去掉 → 只取 rows，按索引与 K 线对齐 */
-          ind = (indFile && indFile.rows) || null;
+          /* T16/T17：指标文件 {last, cols, rows}，逐行日期已去掉 → 解码后按索引与 K 线对齐 */
+          ind = decodeRows(indFile);
         } catch { ind = null; }
         if (state.code !== item.code) return;
-        if (!ind || ind.length !== rows.length) ind = null;
+        if (!ind || !ind.length || ind.length !== rows.length) ind = null;
         if (ind && cfg.subControl === 'indicator') {
           const opt = cfg.indicatorOptions[0];
           subDefs = [{ name: opt.label, data: ind.map(x => x[opt.key] ?? null), color: opt.color, unit: opt.unit }];

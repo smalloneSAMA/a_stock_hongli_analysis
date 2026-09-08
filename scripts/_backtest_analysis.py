@@ -37,11 +37,10 @@ def merge_close(typ, code, info):
     ETF 用跟踪指数的完整行情（自身上市短、rolling 窗口失效；ETF 区间=跟踪指数区间）"""
     if typ == "ETF":
         code = info.get("track") or code
-    p = fh.cache_path(typ if typ != "ETF" else "指数", code)
-    if not os.path.exists(p):
+    c = fh.load_cache(typ if typ != "ETF" else "指数", code)   # T17：内部解码列式行
+    if not c:
         return []
-    c = json.load(open(p, encoding="utf-8"))
-    cmap = {r["date"]: r["close"] for r in c.get("rows", []) if "close" in r}
+    cmap = {r["date"]: r["close"] for r in c.get("rows", []) if r.get("close") is not None}
     return [(d, v, cmap[d]) for d, v in info["series"] if d in cmap]
 
 

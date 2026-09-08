@@ -5,7 +5,7 @@
    决策：与智能推荐同口径（reco.js 推荐分三档）+ 分红异常检查 + 卖出区检查；无回测覆盖标的回退 dy+贵贱度双条件
    动作映射：强烈推荐→加仓 / 推荐→持有偏加 / 关注→持有 / 回避→减仓；dy分位≤10→卖出（持仓亏损则减仓观察） */
 
-import { loadJSON, MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
+import { loadJSON, decodeRows, MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
 import { el, fmt2, fmt0, dirOf, skeleton, errorBox, emptyState, renderTable, openTicker, attachDatePicker, favStar,
   loadHoldings, saveHoldings, normalizeHoldings, replayTrades, allPositions, accruedDiv, refreshHoldMeta } from './common.js';
 import { buildRecoPool, recoScoreOf, recoBandOf, recoBandCls, RECO_PRESET_DESC } from './reco.js';
@@ -53,7 +53,7 @@ export default {
           if (divCache.has(code)) return;
           try {
             const d = await loadJSON(DIV_PREFIX + code + '.json');
-            divCache.set(code, (d.rows || []).map((r) => ({ date: r.ex_date, ps: (r.bonus10 || 0) / 10 }))
+            divCache.set(code, decodeRows(d).map((r) => ({ date: r.ex_date, ps: (r.bonus10 || 0) / 10 }))
               .filter((e) => e.ps > 0).sort((a, b) => (a.date < b.date ? -1 : 1)));
           } catch { divCache.set(code, null); }
         }));

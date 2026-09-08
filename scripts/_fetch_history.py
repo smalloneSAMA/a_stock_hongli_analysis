@@ -8,7 +8,7 @@
 """
 import sys, io, os, json, time, argparse, urllib.request, requests, datetime
 import pandas as pd
-from _common import atomic_dump, export_workbook   # 统一原子写 + Excel 导出（万手/亿元口径）
+from _common import atomic_dump, export_workbook, encode_rows, decode_rows   # 原子写/Excel + 列式编码（T17）
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -56,15 +56,23 @@ def cache_path(typ, code):
     return os.path.join(CACHE_DIR, f"{typ}_{code}.json")
 
 def load_cache(typ, code):
-    """读缓存 JSON；不存在/损坏（JSONDecodeError）返回 None → 调用方触发全量重拉（损坏自愈，P2）"""
+    """读缓存 JSON；不存在/损坏（JSONDecodeError）返回 None → 调用方触发全量重拉（损坏自愈，P2）。
+    T17：行数据统一在此解码（列式 {cols,rows} 与旧 dict 行都支持）"""
     p = cache_path(typ, code)
     try:
         with open(p, encoding="utf-8") as f:
-            return json.load(f)
+            obj = json.load(f)
     except (OSError, ValueError):
         return None
+    if isinstance(obj, dict) and "rows" in obj:
+        obj["rows"] = decode_rows(obj)
+    return obj
 
 def save_cache(typ, code, obj):
+    """T17：行数据列式编码落盘（键名只存一次）；其余字段原样"""
+    obj = dict(obj)
+    if isinstance(obj.get("rows"), list):
+        obj.update(encode_rows(obj.pop("rows")))
     atomic_dump(cache_path(typ, code), obj, indent=None)   # 保持原紧凑格式（与旧 json.dump 默认分隔符一致）
 
 # ── 1. 腾讯K线（全历史或增量，翻页）────────────────────────────

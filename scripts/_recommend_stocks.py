@@ -27,7 +27,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_stock_data as fsd
-from _common import atomic_dump, is_bj   # is_bj：北交所剔除（R2/T6）
+from _common import atomic_dump, is_bj, decode_rows   # is_bj：北交所剔除（R2/T6）+ 列式解码（T17）
 
 OUT = os.path.join(BASE, "cache", "_推荐20.json")
 DY_MIN = 3.0          # 股息率门槛（%）；dy∈[3.0,3.5) 为临界纳入（标记 near）
@@ -138,12 +138,14 @@ def build_factors(codes, meta):
     raw = {}
     for code in codes:
         m = meta[code]
-        ind = (load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json")) or {}).get("rows") or []   # T16：{last, rows}
+        ind = decode_rows(load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json")))   # T16/T17：{last, cols, rows}
         last = ind[-1] if ind else {}
         kline = load_json(os.path.join(BASE, "cache", f"股票_{code}.json"))
-        rows = (kline or {}).get("rows", [])
+        rows = decode_rows(kline)   # T17：列式行解码
         dc = load_json(os.path.join(BASE, "cache", f"分红_{code}.json"))
         fc = load_json(os.path.join(BASE, "cache", f"财报_{code}.json"))
+        dc = {"rows": decode_rows(dc)} if isinstance(dc, dict) else dc   # T17
+        fc = {"rows": decode_rows(fc)} if isinstance(fc, dict) else fc   # T17
         f = (by_an.get(code) or {}).get("factors", {})
         # 波动率/动量/流动性（K线本地算）
         vol = mom = amt = None

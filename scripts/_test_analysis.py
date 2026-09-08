@@ -15,6 +15,7 @@ sys.stdout.reconfigure(encoding="utf-8")   # 不换对象，避免与 import 模
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
+from _common import decode_rows   # T17：cache/指标文件行数据统一解码（列式 {cols,rows}）
 
 _ap = argparse.ArgumentParser()
 _ap.add_argument("--no-snapshot", action="store_true", help="跳过数值快照断言（CI 自动更新用；本地全量测试保持开启）")
@@ -37,6 +38,11 @@ def check(name, cond, detail=""):
 
 def load(p):
     return json.load(open(os.path.join(BASE, p), encoding="utf-8"))
+
+
+def rows_of_cache(typ, code):
+    """T17：cache 行数据统一解码（列式 {cols,rows} 与旧 dict 行都支持）"""
+    return decode_rows(load(f"cache/{typ}_{code}.json"))
 
 
 print("═══ S1-S5 全面测试 ═══\n")
@@ -88,8 +94,7 @@ for c, v in dy_data.items():
     typ, code = v["type"], c
     if typ == "ETF":
         code = v["track"]; typ = "指数"
-    cc = load(f"cache/{typ}_{code}.json")
-    rows = [r for r in cc["rows"] if "close" in r]
+    rows = [r for r in rows_of_cache(typ, code) if r.get("close") is not None]
     if v["close_now"] is not None and rows and abs(v["close_now"] - rows[-1]["close"]) > 1e-6:
         bad.append((c, v["close_now"], rows[-1]["close"]))
 check("close_now==缓存末行", not bad, f"异常: {bad}")
@@ -98,7 +103,7 @@ bad = []
 for c, v in dy_data.items():
     if v.get("type") != "股票":
         continue
-    rows = (load(f"web/data/stocks/{c}.json") or {}).get("rows") or []   # T16：{last, rows}
+    rows = decode_rows(load(f"web/data/stocks/{c}.json"))   # T16/T17：{last, cols, rows}
     last = next((r["dy"] for r in reversed(rows) if r.get("dy")), None)
     if last is not None and abs(v["dy_now"] - last) > 1e-6:
         bad.append((c, v["dy_now"], last))
@@ -193,7 +198,7 @@ for c, v in by_code.items():
         bad.append(c)
 check("dist 与锚自洽", not bad, f"异常: {bad}")
 # 4.4 000922 锚 vs 2024 低点
-rows = load("cache/指数_000922.json")["rows"]
+rows = rows_of_cache("指数", "000922")
 low24 = min(r["close"] for r in rows if "2024-01-01" <= r["date"] <= "2024-12-31")
 an = by_code["000922"]["anchors"]; cur = rows[-1]["close"]
 check("000922 买入锚在[2024低点,现价]", low24 * 0.95 <= an["buy"] <= cur,
@@ -206,7 +211,7 @@ if not NO_SNAPSHOT:
 
 # ── T5 交叉一致性 ──────────────────────────────────────────────
 print("\n── T5 交叉一致性 ──")
-rows = load("cache/指数_000922.json")["rows"]
+rows = rows_of_cache("指数", "000922")
 check("date==缓存末行", analysis["date"] == rows[-1]["date"])
 # 5.2 ETF track 字段
 check("ETF track 11只全有", all(v.get("track") for c, v in by_code.items() if v["type"] == "ETF"))
@@ -216,8 +221,7 @@ for c, v in by_code.items():
     typ, code = v["type"], c
     if typ == "ETF":
         code = v["track"]; typ = "指数"
-    cc = load(f"cache/{typ}_{code}.json")
-    last = next((r["close"] for r in reversed(cc["rows"]) if "close" in r), None)
+    last = next((r["close"] for r in reversed(rows_of_cache(typ, code)) if r.get("close") is not None), None)
     if last is not None and abs(v["factors"]["price"]["v"] - last) > 0.01:
         bad.append((c, v["factors"]["price"]["v"], last))
 # 5.4 dy.v == dy_now
@@ -283,8 +287,7 @@ for c, v in by_code.items():
     typ, code = v["type"], c
     if typ == "ETF":
         code = v["track"]; typ = "指数"
-    cc = load(f"cache/{typ}_{code}.json")
-    closes = [r["close"] for r in cc["rows"] if "close" in r]
+    closes = [r["close"] for r in rows_of_cache(typ, code) if r.get("close") is not None]
     win = closes[-1250:]
     if len(win) < 60:
         continue
@@ -349,8 +352,7 @@ for c, v in dy_data.items():
     typ, code = v["type"], c
     if typ == "ETF":
         code, typ = v["track"], "指数"
-    cc = json.load(open(fh.cache_path(typ, code), encoding="utf-8"))
-    nclose = sum(1 for r in cc["rows"] if "close" in r)
+    nclose = sum(1 for r in rows_of_cache(typ, code) if r.get("close") is not None)
     if len(v["series"]) != nclose:
         bad.append((c, len(v["series"]), nclose))
 check("series长度==缓存close行数", not bad, f"异常: {bad[:3]}")
@@ -359,7 +361,7 @@ bad = []
 for c, v in dy_data.items():
     if v.get("type") != "股票":
         continue
-    rows = (json.load(open(os.path.join(BASE, "web", "data", "stocks", f"{c}.json"), encoding="utf-8")) or {}).get("rows") or []   # T16
+    rows = decode_rows(json.load(open(os.path.join(BASE, "web", "data", "stocks", f"{c}.json"), encoding="utf-8")))   # T16/T17
     n = sum(1 for r in rows if r.get("dy") is not None and r["dy"] > 0)
     if len(v["series"]) != n:
         bad.append((c, len(v["series"]), n))

@@ -156,6 +156,33 @@ def atomic_load(path, default=None):
         return default
 
 
+# ── 行数据列式编码（T17/5b：键名只存一次，行体积约减半）──
+def encode_rows(rows):
+    """[{...},…] → {"cols":[…], "rows":[[…],…]}；列序 = 首次出现顺序的并集，缺失位填 None"""
+    cols, seen = [], set()
+    for r in rows:
+        for k in r:
+            if k not in seen:
+                seen.add(k)
+                cols.append(k)
+    return {"cols": cols, "rows": [[r.get(c) for c in cols] for r in rows]}
+
+
+def decode_rows(obj):
+    """列式/旧格式统一解码 → [{...},…]；列式行按 cols **补齐全部键**（缺失位为 None）——
+    必须补齐：下游存在 fins[i]["bps"] 这类直接下标取用（见 _fetch_stock_data.calc_pb），
+    缺键会 KeyError。obj 为 {"cols","rows"} 或 {"rows":[{...}]} 均可，其他一律返回 []"""
+    if not isinstance(obj, dict):
+        return []
+    rows = obj.get("rows")
+    if not isinstance(rows, list):
+        return []
+    cols = obj.get("cols")
+    if cols and rows and isinstance(rows[0], (list, tuple)):
+        return [dict(zip(cols, r)) for r in rows]
+    return rows
+
+
 # ── Excel 导出统一包裹（文件被占用不中断流程；源：update.py:60-67）──
 def safe_export(desc, fn):
     """执行 fn() 导出 Excel；PermissionError（文件被 Excel 占用）时告警并返回 False 不中断"""
@@ -292,5 +319,18 @@ if __name__ == "__main__":
     chk("find_stale 空输入", find_stale([]) == (None, []))
     chk("find_stale 非法/缺失日期跳过", find_stale([("x", None), ("600036", "2026-09-08")])[1] == [])
     chk("find_stale 单标的永不报", find_stale([("600036", "2026-09-08")])[1] == [])
+    # ── encode_rows / decode_rows（T17：列式编码往返 + 缺失键语义）──
+    src = [{"d": "2026-09-08", "close": 10.5, "amount": None},
+           {"d": "2026-09-09", "close": 11.0, "nav": 1.23}]
+    enc = encode_rows(src)
+    chk("encode_rows 列序=首次出现并集", enc["cols"] == ["d", "close", "amount", "nav"])
+    chk("encode_rows 行数一致", len(enc["rows"]) == 2 and len(enc["rows"][0]) == 4)
+    dec = decode_rows(enc)
+    chk("往返：按 cols 补齐全部键（None 位保留）", dec == [{"d": "2026-09-08", "close": 10.5, "amount": None, "nav": None},
+                                                        {"d": "2026-09-09", "close": 11.0, "amount": None, "nav": 1.23}])
+    chk("decode_rows 兼容旧格式", decode_rows({"rows": [{"d": "x"}]}) == [{"d": "x"}])
+    chk("decode_rows 空/异常输入", decode_rows({}) == [] and decode_rows(None) == []
+        and decode_rows({"cols": ["a"], "rows": []}) == [])
+    chk("encode_rows 空输入", encode_rows([]) == {"cols": [], "rows": []})
     print("═══ 汇总：%s ═══" % ("PASS" if fails == 0 else "FAIL %d" % fails))
     raise SystemExit(1 if fails else 0)

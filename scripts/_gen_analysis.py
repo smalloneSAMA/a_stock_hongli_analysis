@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import atomic_dump, is_bj   # 原子写（tmp+replace）+ 北交所剔除（R2/T6）
+from _common import atomic_dump, is_bj, decode_rows   # 原子写 + 北交所剔除（R2/T6）+ 列式解码（T17）
 
 WINDOW = 1250   # 近5年交易日
 
@@ -85,8 +85,8 @@ def build_sent_index(close_arr):
 
 def build_sent_etf(code):
     """ETF情绪：返回 (v, pct) = (折溢价%, 分位)，>+1%→100 过热，<-1%→0 折价机会"""
-    c = json.load(open(fh.cache_path("ETF", code), encoding="utf-8"))
-    rows = [r for r in c.get("rows", []) if r.get("nav") and "close" in r]
+    c = fh.load_cache("ETF", code) or {}   # T17：load_cache 内部解码列式行
+    rows = [r for r in c.get("rows", []) if r.get("nav") and r.get("close") is not None]
     if not rows:
         return 0.0, 50
     r = rows[-1]
@@ -113,7 +113,7 @@ def build_stock_factors(code):
     p = os.path.join(BASE, "web", "data", "stocks", f"{code}.json")
     if not os.path.exists(p):
         return {}
-    rows = (json.load(open(p, encoding="utf-8")) or {}).get("rows") or []   # T16：文件结构 {last, rows}
+    rows = decode_rows(json.load(open(p, encoding="utf-8")))   # T16/T17：{last, cols, rows}
 
     def last_of(key):
         vals = [r[key] for r in rows if r.get(key) is not None]
@@ -140,8 +140,8 @@ def get_close_arr(typ, code, info):
     """分析用 close 序列：ETF 用跟踪指数（S2 确立：ETF 区间=跟踪指数区间）"""
     if typ == "ETF":
         code, typ = info.get("track") or code, "指数"
-    c = json.load(open(fh.cache_path(typ, code), encoding="utf-8"))
-    return np.array([r["close"] for r in c.get("rows", []) if "close" in r], dtype=float)
+    c = fh.load_cache(typ, code) or {}   # T17：内部解码
+    return np.array([r["close"] for r in c.get("rows", []) if r.get("close") is not None], dtype=float)
 
 
 def price_percentile_anchor(info):
@@ -152,8 +152,8 @@ def price_percentile_anchor(info):
     if typ == "ETF":
         code = info.get("track") or code
         typ = "指数"
-    c = json.load(open(fh.cache_path(typ, code), encoding="utf-8"))
-    closes = [r["close"] for r in c.get("rows", []) if "close" in r]
+    c = fh.load_cache(typ, code) or {}   # T17：内部解码
+    closes = [r["close"] for r in c.get("rows", []) if r.get("close") is not None]
     if not closes:
         return None, None
     win = closes[-WINDOW:]
@@ -253,10 +253,8 @@ ETF_TRACK = {
 
 
 def load_cache(typ, code):
-    p = fh.cache_path(typ, code)
-    if not os.path.exists(p):
-        return None
-    return json.load(open(p, encoding="utf-8"))
+    """T17：统一委托 _fetch_history.load_cache（内部已解码列式行），勿再本地 json.load"""
+    return fh.load_cache(typ, code)
 
 
 def weighted_dy(stocks):
@@ -357,7 +355,7 @@ def build_stock(code, name):
     p = os.path.join(BASE, "web", "data", "stocks", f"{code}.json")
     if not os.path.exists(p):
         return {"code": code, "name": name, "type": "股票", "dy0": None, "note": "无指标文件"}
-    ind = (json.load(open(p, encoding="utf-8")) or {}).get("rows") or []
+    ind = decode_rows(json.load(open(p, encoding="utf-8")))   # T16/T17：{last, cols, rows}
     c = load_cache("股票", code)
     krows = (c or {}).get("rows", [])
     # T16(5a)：指标文件不再存日期列 → 按索引与 K 线缓存对齐（写入时逐行同源，长度一致）
@@ -392,7 +390,7 @@ def enough_history(info):
         code = info.get("track") or code
         typ = "指数"
     c = load_cache(typ, code)
-    return bool(c and sum(1 for r in c.get("rows", []) if "close" in r) >= 60)
+    return bool(c and sum(1 for r in c.get("rows", []) if r.get("close") is not None) >= 60)
 
 
 def official_check():

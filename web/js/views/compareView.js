@@ -1,7 +1,7 @@
 /* 视图：对比分析（同类对比：指数/ETF/股票各自内部多选，归一化净值同图观察趋势关系）
    数据全部来自现有缓存（klineUrl 直读 /cache/），零后端改动 */
 
-import { loadJSON, klineUrl, indiUrl, MANIFEST_URL, ANALYSIS_URL, DY_SERIES_URL } from '../data.js';
+import { loadJSON, klineUrl, indiUrl, decodeRows, MANIFEST_URL, ANALYSIS_URL, DY_SERIES_URL } from '../data.js';
 import { el, fmt2, fmtSigned, dirOf, fmtScale, skeleton, errorBox, emptyState, attachSearchHistory, favStar, isFav, bindFavDelegation } from './common.js';
 import { scoreOf, bandOf, bandCls } from './analysis.js';   // 区间分析公共计算（P4.3 三合一）
 import { cssVar } from '../theme.js';
@@ -246,7 +246,7 @@ export default {
         const tracks = new Map();          // track -> {rows, name}（ETF 同跟踪指数，参考线用）
         for (const it of items) {
           const obj = await loadJSON(klineUrl(KIND[it.type], it.code));
-          const rows = (obj && obj.rows) || [];
+          const rows = decodeRows(obj);   // T17：列式行 → 对象行
           if (!rows.length) throw new Error(`${it.name}（${it.code}）缓存无数据`);
           /* ETF 跟踪指数：同 track 偏离分析的参考基准（不算对比标的，灰色虚线） */
           const ent = an.by_code[it.code];
@@ -255,7 +255,7 @@ export default {
             try {
               const tobj = await loadJSON(klineUrl('指数', track));
               const idxx = m.indices.find(x => x.code === track);
-              tracks.set(track, { rows: (tobj && tobj.rows) || [], name: (idxx && idxx.name) || track });
+              tracks.set(track, { rows: decodeRows(tobj), name: (idxx && idxx.name) || track });
             } catch { tracks.set(track, { rows: [], name: track }); }
           }
           /* 股票：含分红重建需要分红缓存（ex_date/bonus10），缺失则退化为价格 */
@@ -263,7 +263,7 @@ export default {
           if (it.type === 'stock') {
             try {
               const d = await loadJSON('/cache/分红_' + it.code + '.json');
-              divRows = (d && d.rows) || null;
+              divRows = d ? decodeRows(d) : null;   // T17：列式行 → 对象行
             } catch { divRows = null; }
           }
           /* dy 序列（原始 [date, dy] 对，对齐在下方统一处理） */
@@ -271,9 +271,9 @@ export default {
           if (it.type === 'stock') {
             try {
               const indFile = await loadJSON(indiUrl(it.code));
-              const ind = (indFile && indFile.rows) || null;
+              const ind = decodeRows(indFile);   // T16/T17
               /* T16(5a)：指标文件已无日期列 → 按索引取 K 线日期配对（长度不一致则放弃该序列） */
-              dyPts = (ind && ind.length === rows.length)
+              dyPts = (ind.length === rows.length && rows.length > 0)
                 ? ind.map((r, i) => [rows[i].date, r.dy]).filter((p) => p[1] != null)
                 : null;
             } catch { dyPts = null; }

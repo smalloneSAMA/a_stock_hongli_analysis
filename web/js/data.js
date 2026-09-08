@@ -26,6 +26,21 @@ export function indiUrl(code) {
   return `/web/data/stocks/${code}.json`;
 }
 
+/* T17：行数据列式编码 {cols, rows:[[…]]} → [{…}]（cache/*.json 与 web/data/stocks/*.json 统一格式）；
+   旧格式（rows 为对象数组）原样返回；非行数据返回 []。None 位不落键，与旧格式「键缺失」语义一致 */
+export function decodeRows(obj) {
+  const rows = obj && obj.rows;
+  if (!Array.isArray(rows)) return [];
+  const cols = obj.cols;
+  if (!Array.isArray(cols) || !rows.length || !Array.isArray(rows[0])) return rows;
+  /* 按 cols 补齐全部键（缺失位为 null）——与 Python _common.decode_rows 完全一致 */
+  return rows.map((r) => {
+    const o = {};
+    for (let i = 0; i < cols.length; i++) o[cols[i]] = r[i];
+    return o;
+  });
+}
+
 export const COMPONENTS_URL = '/web/data/components.json';
 export const ANALYSIS_URL = '/web/data/analysis.json';
 

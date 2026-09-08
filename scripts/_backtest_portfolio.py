@@ -21,7 +21,8 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _recommend_stocks as rs   # 复用硬过滤/因子映射/约束（仅借用 QUADRANT/WEIGHTS 常量）
 import _fetch_stock_data as fsd
-from _common import atomic_dump   # 原子写（tmp+replace）
+from _common import atomic_dump, decode_rows   # 原子写 + 列式解码（T17）
+import _fetch_history as fh   # 统一缓存读取（T17：load_cache 内部已解码）
 
 WINDOW = 1250          # dy 滚动分位窗口（5年交易日）
 DY_MIN = 3.0           # 与推荐评分一致
@@ -285,10 +286,10 @@ def main(start=None):
     stocks = [(s["code"], s) for s in m.get("stocks", []) if s.get("ready")]
     data = {}
     for code, sm in stocks:
-        ind = (load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json")) or {}).get("rows") or []   # T16：{last, rows}
-        kc = load_json(os.path.join(BASE, "cache", f"股票_{code}.json"))
-        dc = load_json(os.path.join(BASE, "cache", f"分红_{code}.json"))
-        fc = load_json(os.path.join(BASE, "cache", f"财报_{code}.json"))
+        ind = decode_rows(load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json")))   # T16/T17：{last, cols, rows}
+        kc = fh.load_cache("股票", code)   # T17：load_cache 内部解码列式行
+        dc = fh.load_cache("分红", code)
+        fc = fh.load_cache("财报", code)
         ad = load_json(os.path.join(BASE, "cache", "analysis_dy.json")) or {}
         if not ind or not kc:
             continue
@@ -314,7 +315,7 @@ def main(start=None):
         return
 
     # 基准 000922（价格序列，同期季度收益）
-    idx = load_json(os.path.join(BASE, "cache", "指数_000922.json"))
+    idx = fh.load_cache("指数", "000922")   # T17：内部解码
     idx_px = [(r["date"], r.get("close")) for r in (idx or {}).get("rows", [])]
     fb_close = {}   # 旧人工20只期初/期末价（等权）
     pool_close = {} # 候选池等权

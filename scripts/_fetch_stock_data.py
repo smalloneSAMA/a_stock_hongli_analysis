@@ -243,7 +243,7 @@ def update_financials(refresh=False, codes=None):
         stale = refresh
         if os.path.exists(fh.cache_path("财报", code)) and not refresh:
             try:
-                old = json.load(open(fh.cache_path("财报", code), encoding="utf-8"))
+                old = fh.load_cache("财报", code) or {}   # T17：内部解码列式行
                 if not old.get("rows") or "np" not in (old["rows"][0] or {}):
                     stale = True   # 旧版缓存缺归母净利字段，重拉自愈
             except Exception:
@@ -537,7 +537,7 @@ def check_financials(codes=None):
                 p = fh.cache_path(typ, code)
                 changed = not os.path.exists(p)
                 if not changed:
-                    old = json.load(open(p, encoding="utf-8"))
+                    old = fh.load_cache(typ, code) or {}   # T17：内部解码
                     old_rows = old.get("rows", [])
                     new_v = rows[0].get(key) if rows else None
                     old_v = old_rows[0].get(key) if old_rows else None
