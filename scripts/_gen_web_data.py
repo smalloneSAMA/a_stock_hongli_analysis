@@ -11,6 +11,7 @@
 前置：先运行 update.py 相应选项生成缓存（指数1/ETF2/汇总表4/股票5）
 """
 import sys, io, os, json, time
+from datetime import datetime
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -21,7 +22,7 @@ sys.path.insert(0, SCRIPTS)
 import _fetch_history as fh
 import _fetch_stock_data as fsd
 import _fetch_watchlist as watchlist
-from _common import atomic_dump
+from _common import atomic_dump, STALE_LAG_DAYS   # T3：manifest 陈旧标记阈值
 
 WEB_DATA = os.path.join(BASE, "web", "data")
 os.makedirs(os.path.join(WEB_DATA, "stocks"), exist_ok=True)
@@ -33,6 +34,14 @@ IDX_DIV = {"tencent": (1e4, 1e8), "csindex": (1e6, 1), "cnindex": (1, 1)}
 
 def last_date(rows):
     return rows[-1]["date"] if rows else None
+
+
+def gap_days(a, b):
+    """b − a 的自然日差；任一非法 → 0（T3 陈旧判定用）"""
+    try:
+        return (datetime.strptime(b, "%Y-%m-%d").date() - datetime.strptime(a, "%Y-%m-%d").date()).days
+    except Exception:
+        return 0
 
 
 def ensure_amount_filled(typ, code, obj):
@@ -158,14 +167,17 @@ def build_manifest():
             s["seq"] = watch_seq[code]
         # 最新股息率：有指标文件读末行；否则用汇总表 div_yield 快照（东财近12月口径）
         p = os.path.join(WEB_DATA, "stocks", f"{code}.json")
+        ind_last = None
         if os.path.exists(p):
             try:
                 ind = json.load(open(p, encoding="utf-8"))
                 if ind:
                     s["last_dy"] = ind[-1].get("dy")
                     s["last_pr"] = ind[-1].get("pr")   # 市赚率 PR（PE-TTM ÷ 近5年TTM年化ROE）
+                    ind_last = ind[-1].get("d")        # T3：指标文件末行日期（已在内存，零额外 IO）
             except Exception:
                 pass
+        s["ind_last"] = ind_last
         s.setdefault("last_dy", None)
         if s["last_dy"] is None:
             s["last_dy"] = pool_meta.get(code, {}).get("div_yield")
@@ -175,14 +187,27 @@ def build_manifest():
         s["ind3"] = t.get("ind3", "") or wm.get("ind3", "")
         stocks.append(s)
 
+    data_date = max(dates) if dates else ""
+    # 陈旧标记（T3）：指标末日期落后数据日期 ≥3 自然日（≈2 交易日）→ stale=True
+    # 旧版只有全局 data_date，单只滞后被掩盖（920599 曾冻结 10 个交易日而 manifest 全绿）
+    for s in stocks:
+        s["stale"] = bool(data_date and s.get("ind_last")
+                          and gap_days(s["ind_last"], data_date) >= STALE_LAG_DAYS)
+    stale_list = [s for s in stocks if s.get("stale")]
+
     manifest = {
-        "data_date": max(dates) if dates else "",
+        "data_date": data_date,
+        "stale_n": len(stale_list),
         "indices": indices,
         "etfs": etfs,
         "stocks": stocks,
     }
     atomic_dump(os.path.join(WEB_DATA, "manifest.json"), manifest, indent=None, separators=(",", ":"))
-    print(f"  ✅ manifest.json：指数{len(indices)} / ETF{len(etfs)} / 股票{len(stocks)}，数据日期 {manifest['data_date']}")
+    print(f"  ✅ manifest.json：指数{len(indices)} / ETF{len(etfs)} / 股票{len(stocks)}，数据日期 {data_date}")
+    if stale_list:
+        print(f"  ⚠️ 数据陈旧 {len(stale_list)} 只（指标末日期落后 ≥{STALE_LAG_DAYS} 自然日）："
+              + "、".join(f"{s['code']} {s['name']}（{s['ind_last']}）" for s in stale_list[:8])
+              + ("…" if len(stale_list) > 8 else ""))
 
 
 def calc_roe5y(fin_rows, data_date):

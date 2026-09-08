@@ -91,7 +91,8 @@ def em_get(url, timeout=12):
 # ── 数据陈旧检测（T1：抓取"空返回"不再算成功）────────────────────
 # 背景：920599 因前缀错误每天"成功、新增 0 条"，缓存冻结 10 个交易日而全链路无告警。
 # 口径：基准 = 本轮全池最新行情日（最大 last_date）；落后 >5 自然日（≈3 交易日）判为陈旧。
-STALE_GAP_DAYS = 5
+STALE_GAP_DAYS = 5      # 抓取告警阈值：落后基准 >5 自然日（≈3 交易日）
+STALE_LAG_DAYS = 3      # 展示/标记阈值：落后 ≥3 自然日（≈2 交易日）——status 清单与 manifest.stale 共用
 
 def find_stale(records, max_gap_days=STALE_GAP_DAYS):
     """records=[(code, last_date)] → (baseline, [(code, last_date, gap_days)])

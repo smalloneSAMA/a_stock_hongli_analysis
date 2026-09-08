@@ -19,6 +19,7 @@ sys.path.insert(0, SCRIPTS)
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
+from _common import STALE_LAG_DAYS as LAG_DAYS   # 陈旧阈值单一来源（T2/T3 共用）
 
 # import后包装stdout（fh的包装对象仍被其模块引用，底层buffer不会被关闭）
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -133,8 +134,6 @@ def _d(s):
         return datetime.strptime(s, "%Y-%m-%d").date()
     except Exception:
         return None
-
-LAG_DAYS = 3   # 滞后阈值（自然日，≈2 交易日；T2 陈旧清单口径）
 
 def _failed_map():
     m = {}
