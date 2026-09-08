@@ -34,8 +34,9 @@ export function groupOf(code, type, meta) {
 }
 
 /* 候选池构建：有回测记录且至少触发过一次买入信号（无回测/无信号直接过滤）+ 横截面绝对股息率分位
-   返回 { all, maxDate }；all 行含 code/name/type/group/dy/pct/crossPct/close/...backtest 字段 */
-export function buildRecoPool(dy, bt, an, m) {
+   返回 { all, maxDate }；all 行含 code/name/type/group/dy/pct/crossPct/close/...backtest 字段
+   T12：数据源改为 analysis.json.by_code（原为 30.7MB 的 cache/analysis_dy.json） */
+export function buildRecoPool(an, bt, m) {
   const btMap = new Map((bt.by_p['90'] || []).map((x) => [x.code, x]));
   const byCode = an.by_code || {};
   const meta = {};
@@ -45,15 +46,14 @@ export function buildRecoPool(dy, bt, an, m) {
 
   const all = [];
   let maxDate = '';
-  for (const code in dy) {
-    const d = dy[code];
+  for (const code in byCode) {
+    const d = byCode[code];
     if (d.dy0 == null || d.dy_pct == null) continue;
     const b = btMap.get(code);
     if (!b || b.win12 == null) continue;   // 无回测 或 近5年无买入信号 → 过滤
-    if (d.series && d.series.length) {
-      const last = d.series[d.series.length - 1][0];
-      if (last > maxDate) maxDate = last;
-    }
+    /* 数据日期 = 池内成员的 K 线末日期取最大（原按 series 末日期，口径等价；by_code 不含 series） */
+    const mv = meta[code];
+    if (mv && mv.last && mv.last > maxDate) maxDate = mv.last;
     const type = d.type;
     const ent = byCode[code] || {};
     all.push({ code, name: d.name || code, type, group: groupOf(code, type, meta),

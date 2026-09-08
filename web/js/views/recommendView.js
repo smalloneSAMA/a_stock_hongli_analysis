@@ -4,24 +4,23 @@
    样本可信 20 = 数量 10×min(1,n_buy/20) + 跨年覆盖 10×min(1,有信号年份数/4)（≥4年满分）；时效修正±5
    dy 分位 ≥90（信号触发中，与回测 p90 同口径）→ 推荐分 +5 并标记
    过滤：无回测覆盖（21只）或近5年从未触发买入信号（66只）的标的直接过滤 → 候选池 303
-   数据：cache/analysis_dy.json + web/data/analysis.json + web/data/backtest.json(by_p.90) */
+   数据：web/data/analysis.json + web/data/backtest.json(by_p.90) + manifest
+   T12：不再请求 30.7MB 的 cache/analysis_dy.json */
 
 import { loadJSON, MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
 import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar, openTicker, signalYearsTitle, refreshHoldMeta, holdBadge } from './common.js';
 import { RECO_W, RECO_PRESET_DESC, recoBandOf, recoBandCls, buildRecoPool, recoScoreOf } from './reco.js';   // 智能推荐评分公共模块（与持仓决策同口径）
-
-const DY_URL = '/cache/analysis_dy.json';
 
 export default {
   async mount(root) {
     root.innerHTML = '';
     root.append(skeleton());
     try {
-      const [dy, an, bt, m] = await Promise.all([loadJSON(DY_URL), loadJSON(ANALYSIS_URL), loadJSON(BACKTEST_URL), loadJSON(MANIFEST_URL)]);
+      const [an, bt, m] = await Promise.all([loadJSON(ANALYSIS_URL), loadJSON(BACKTEST_URL), loadJSON(MANIFEST_URL)]);
       await refreshHoldMeta();   // 持仓集合（角标用），失败静默
       root.innerHTML = '';
       const byCode = an.by_code || {};
-      const { all, maxDate } = buildRecoPool(dy, bt, an, m);
+      const { all, maxDate } = buildRecoPool(an, bt, m);
 
       let preset = '均衡';
       let perfect = false;   // 完美模式：三档（稳健/均衡/进取）推荐分均 ≥75 的共识标的
@@ -82,7 +81,7 @@ export default {
           '完美 = 稳健/均衡/进取三档权重下均为强烈推荐（≥75 分），代表估值、股息、回测三个视角的共识；悬停推荐分可见三档明细。'));
 
       /* ── 分数对比快照：相比“上一数据版本”的推荐分变化（localStorage）
-         版本标记 = analysis_dy 序列最新日期（行情/分红更新即变）；
+         版本标记 = analysis.json 数据日期（行情/分红更新即变）；
          版本变化时对比旧快照并刷新；同版本/首次打开无对比 */
       let oldSnap = null;
       try { oldSnap = JSON.parse(localStorage.getItem('pi_rec_scores') || 'null'); } catch { oldSnap = null; }

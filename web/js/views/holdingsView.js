@@ -11,7 +11,6 @@ import { el, fmt2, fmt0, dirOf, skeleton, errorBox, emptyState, renderTable, ope
 import { buildRecoPool, recoScoreOf, recoBandOf, recoBandCls, RECO_PRESET_DESC } from './reco.js';
 import { scoreOf as anaScoreOf } from './analysis.js';
 
-const DY_URL = '/cache/analysis_dy.json';
 const DIV_PREFIX = '/cache/分红_';
 const DRAFT_KEY = 'pi_holdings_draft';
 const ACTIVE_KEY = 'pi_holdings_active';
@@ -21,7 +20,7 @@ export default {
     root.innerHTML = '';
     root.append(skeleton());
     try {
-      const [dy, an, bt, m] = await Promise.all([loadJSON(DY_URL), loadJSON(ANALYSIS_URL), loadJSON(BACKTEST_URL), loadJSON(MANIFEST_URL)]);
+      const [an, bt, m] = await Promise.all([loadJSON(ANALYSIS_URL), loadJSON(BACKTEST_URL), loadJSON(MANIFEST_URL)]);
       let data = await loadHoldings();
       let curId = data.portfolios[0].id;
       try {
@@ -29,7 +28,7 @@ export default {
         if (saved && data.portfolios.some((p) => p.id === saved)) curId = saved;
       } catch { /* 忽略 */ }
       const byCode = an.by_code || {};
-      const { all, maxDate } = buildRecoPool(dy, bt, an, m);
+      const { all, maxDate } = buildRecoPool(an, bt, m);
       const poolByCode = new Map(all.map((r) => [r.code, r]));
       /* 名称元信息（池内标的；池外标的无行情数据，仅记账） */
       const meta = {};
@@ -71,7 +70,7 @@ export default {
         const positions = allPositions(trades);
         const { sells } = replayTrades(trades);
         return positions.map((p) => {
-          const dEnt = dy[p.code];
+          const dEnt = byCode[p.code];
           const r = poolByCode.get(p.code) || null;
           /* 现价优先 manifest last_close（真实交易价格；ETF 的 dy.close_now 是跟踪指数点位） */
           const close = (meta[p.code] && meta[p.code].last_close != null) ? meta[p.code].last_close : (dEnt ? dEnt.close_now : null);
@@ -270,7 +269,7 @@ export default {
           }
           const sel = el('select', { class: 'hld-input', 'aria-label': '持仓选择' },
             ...positions.map((p) => {
-              const nm = (dy[p.code] && dy[p.code].name) || (meta[p.code] && meta[p.code].name) || '';
+              const nm = (byCode[p.code] && byCode[p.code].name) || (meta[p.code] && meta[p.code].name) || '';
               return el('option', { value: p.code },
                 (nm ? nm + ' ' : '') + p.code + '（可卖 ' + fmt0(p.qty) + ' 股 · 成本 ' + fmt2(p.avg) + '）');
             }));
@@ -464,7 +463,7 @@ export default {
           const { sells } = replayTrades(trades);
           const lrows = trades.map((t) => ({
             ...t,
-            name: (dy[t.code] && dy[t.code].name) || (meta[t.code] && meta[t.code].name) || '—',
+            name: (byCode[t.code] && byCode[t.code].name) || (meta[t.code] && meta[t.code].name) || '—',
             sells,
           }));
           renderTable(ledgerBox.querySelector('.table-wrap'), { columns: lcols, rows: lrows, pageSize: 20 });

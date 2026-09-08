@@ -2,37 +2,32 @@
    指数/ETF：dy 分位 ≥90 买入区 / ≤10 卖出区（回测验证有效：12M 超额 +24%）
    股票：触发模式可选——仅dy（≥90/≤10）/ 仅区间分数（均衡分 ≤25 买 / ≥80 卖）/ dy+分数 双条件（AND）
    观察区：dy 分位 85~90（买入侧）/ 10~15（卖出侧），方案A：仅按 dy，不受个股模式影响
-   数据：cache/analysis_dy.json（dy_pct=股息率分位，高=便宜）+ analysis.json（均衡分）+ manifest（分组） */
+   数据：web/data/analysis.json（dy0/dy_now/dy_pct/dy_p50/close_now + 均衡分）+ manifest（分组）
+   T12：不再请求 30.7MB 的 cache/analysis_dy.json（标量字段已由 _gen_analysis 写入 analysis.json） */
 
 import { loadJSON, MANIFEST_URL, ANALYSIS_URL } from '../data.js';
 import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar, openTicker, refreshHoldMeta, holdBadge, isHold } from './common.js';
 import { scoreOf } from './analysis.js';   // 贵贱度加权分（P4.3 三合一）
 import { groupOf } from './reco.js';   // 分组判定（与回测/智能推荐单一来源）
 
-const DY_URL = '/cache/analysis_dy.json';
-
 export default {
   async mount(root) {
     root.innerHTML = '';
     root.append(skeleton());
     try {
-      const [dy, an, m] = await Promise.all([loadJSON(DY_URL), loadJSON(ANALYSIS_URL), loadJSON(MANIFEST_URL)]);
+      const [an, m] = await Promise.all([loadJSON(ANALYSIS_URL), loadJSON(MANIFEST_URL)]);
       await refreshHoldMeta();   // 持仓集合（角标/提示用），失败静默
       root.innerHTML = '';
       const byCode = an.by_code || {};
       const meta = {};
       for (const s of (m.stocks || [])) meta[s.code] = s;
 
-      /* 构建全池行（跳过无股息率标的） */
+      /* 构建全池行（跳过无股息率标的）；数据源 = analysis.json.by_code（T12） */
       const all = [];
-      let maxDate = '';
-      for (const code in dy) {
-        const d = dy[code];
+      const maxDate = an.date || '';   // 原为各标的 series 末日期取最大 —— 与 analysis.date 口径一致
+      for (const code in byCode) {
+        const d = byCode[code];
         if (d.dy0 == null || d.dy_pct == null) continue;
-        if (d.series && d.series.length) {
-          const last = d.series[d.series.length - 1][0];
-          if (last > maxDate) maxDate = last;
-        }
         const type = d.type;
         all.push({ code, name: d.name || code, type, group: groupOf(code, type, meta),
           dy: d.dy_now, pct: d.dy_pct, score: scoreOf(byCode[code], '均衡', type, an.presets) });
