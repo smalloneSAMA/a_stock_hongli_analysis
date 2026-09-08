@@ -341,7 +341,7 @@ def export_excel():
     print("\n═══ 重新生成 Excel ═══")
     # 指数
     idx_sheets = {}
-    for code, name, src, tcode in INDICES:
+    for code, name, src, _tcode in INDICES:
         c = load_cache("指数", code)
         if c:
             fh.fill_chg_n(c["rows"])   # 30/60/90 交易日涨跌幅（交易日口径）
@@ -366,7 +366,7 @@ def export_excel():
         safe_export("指数历史Excel", lambda: export_workbook(os.path.join(BASE, "excel", "指数历史.xlsx"), idx_sheets))
     # ETF（先估算成交额并写回缓存）
     etf_sheets = {}
-    for code, name, tcode in ETFS:
+    for code, name, _tcode in ETFS:
         c = load_cache("ETF", code)
         if c:
             fh.fill_etf_amount(c["rows"])
@@ -571,7 +571,7 @@ def clear_cache():
     hit = []
     for c in codes:
         c = c.strip().upper()
-        for typ, pat in (("指数", f"指数_{c}.json"), ("ETF", f"ETF_{c}.json")):
+        for _typ, pat in (("指数", f"指数_{c}.json"), ("ETF", f"ETF_{c}.json")):
             p = os.path.join(BASE, "cache", pat)
             if os.path.exists(p):
                 os.remove(p)

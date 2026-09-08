@@ -84,7 +84,7 @@ def build_manifest():
             return None, None, None
         return round((closes[-1][1] / hi_p - 1) * 100, 2), hi_p, hi_d
 
-    for code, name, src, tcode in fh.INDICES:
+    for code, name, src, _tcode in fh.INDICES:
         c = fh.load_cache("指数", code)
         rows = (c or {}).get("rows", [])
         vdiv, adiv = IDX_DIV[src]
@@ -107,7 +107,7 @@ def build_manifest():
         scale_map = {c: v.get("scale_yi") for c, v in sm.items() if v.get("scale_yi")}
     except Exception:
         pass
-    for code, name, tcode in fh.ETFS:
+    for code, name, _tcode in fh.ETFS:
         c = fh.load_cache("ETF", code)
         rows = (c or {}).get("rows", [])
         if rows:
@@ -296,7 +296,7 @@ def build_stock_indicators():
         roa = fsd.calc_ratio(rows, fin, "roa")
         roe5y = calc_roe5y(fin, rows[-1]["date"])   # 近5年 TTM 年化 ROE 均值（市赚率分母）
         out = []
-        for i, r in enumerate(rows):
+        for i, _r in enumerate(rows):
             pr = round(pe_ttm[i] / roe5y, 2) if (roe5y and pe_ttm[i] is not None) else None
             out.append({"dy": dy[i], "pe_ttm": pe_ttm[i],
                         "pe_dyn": pe_dyn[i], "pb": pb[i], "peg": peg[i],
@@ -372,7 +372,7 @@ def build_components():
             print(f"  ⚠️ {code} 成分缓存读取失败: {e}")
     # ETF 跟踪国证指数（如 159201→980092）：md 解析仅部分收录，直接复用指数国证源（完整成分 + 股息率）
     import _gen_analysis as ga
-    for code, name, _t in fh.ETFS:
+    for code, _name, _t in fh.ETFS:
         track = ga.ETF_TRACK.get(code)
         src = out["by_index"].get(track)
         if track and src and src.get("n") and (src.get("note") or "").startswith("国证官网"):

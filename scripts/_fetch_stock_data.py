@@ -423,7 +423,7 @@ def fetch_kline(tcode, code, full=True):
     """不复权日K。full=True: 翻页全量+过滤<2004-01-01；full=False: 仅最近800条（增量用）"""
     all_rows = []
     end = ""
-    for page in range(30):
+    for _page in range(30):
         # 最后参数空=不复权；start 参数腾讯忽略，故翻页一律用 end（向前翻）
         param = f"{tcode},day,,{end},800," if end else f"{tcode},day,,,800,"
         url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={param}"

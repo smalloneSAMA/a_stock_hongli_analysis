@@ -99,7 +99,7 @@ def fetch_em_members(index_code):
     u = "https://datacenter-web.eastmoney.com/api/data/v1/get"
     p = {"reportName": "RPT_INDEX_COMPONENT", "columns": "ALL", "pageNumber": "1", "pageSize": "500",
          "filter": f'(INDEX_CODE="{index_code}")', "source": "WEB", "client": "WEB"}
-    for attempt in range(3):
+    for _attempt in range(3):
         try:
             d = S.get(u, params=p, timeout=15).json()
             if d.get("result") and d["result"].get("data"):
@@ -310,7 +310,7 @@ def build():
     out.append("")
     out.append("| ETF | 代码 | 跟踪指数 | 持仓构成来源 |")
     out.append("| :-- | :-- | :-- | :-- |")
-    for code, name, track, pool, scale in ETF_META:
+    for code, name, track, _pool, _scale in ETF_META:
         out.append(f"| {name} | {code} | {TRACK_NAME[track]}（{track}） | 跟踪指数成分股（同指数章节来源），跟踪标的经天天基金档案核实 |")
     out.append("")
     out.append("**说明**：ETF为指数基金，基金合同/招募说明书约定跟踪标的指数，实际股票持仓与指数成分股一致（仅存在极小跟踪误差），故以跟踪指数成分股作为ETF持仓构成列示；跟踪标的字段来自天天基金网基金档案（`fundf10.eastmoney.com/jbgk_{code}.html`）。")

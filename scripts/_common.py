@@ -234,7 +234,7 @@ def decode_rows(obj):
         return []
     cols = obj.get("cols")
     if cols and rows and isinstance(rows[0], (list, tuple)):
-        return [dict(zip(cols, r)) for r in rows]
+        return [dict(zip(cols, r, strict=False)) for r in rows]
     return rows
 
 

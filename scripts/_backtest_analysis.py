@@ -174,7 +174,7 @@ def build_report(results_by_p, order=(85, 90, 95)):
     lines.append(f"| 分组 | {head} |")
     lines.append("|" + "---|" * (1 + len(order) * 2))
     for g in GROUPS:
-        def cell(p, key):
+        def cell(p, key, g=g):   # B023：显式绑定循环变量，避免闭包捕获后期值
             sub = [r for r in results_by_p[p] if r.get("group") == g and "skip" not in r]
             if key == "n":
                 return str(len(sub))
@@ -295,7 +295,7 @@ def main(only=None, p_buy=None, exec_offset=1):
     os.makedirs(os.path.join(BASE, "docs"), exist_ok=True)
     path = os.path.join(BASE, "docs", "回测报告.md")
     open(path, "w", encoding="utf-8").write(report)
-    print(f"\n✅ docs/回测报告.md 已生成")
+    print("\n✅ docs/回测报告.md 已生成")
 
     # S8：结构化输出 → web/data/backtest.json（前端回测报告页）
     def slim(r):

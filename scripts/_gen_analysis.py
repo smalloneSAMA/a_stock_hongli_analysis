@@ -424,14 +424,14 @@ def main(only=None):
     print("═══ 股息率反推序列 + 分位（S1）═══")
     print(f"{'代码':<8}{'名称':<14}{'类型':<4}{'dy0':>7}{'分位':>7}{'p10':>7}{'p50':>7}{'p90':>7}{'窗口':>8}")
     idx_info = {}
-    for code, name, src, tcode in fh.INDICES:
+    for code, name, _src, _tcode in fh.INDICES:
         if only and code != only:
             continue
         stocks = comp["by_index"].get(code, {}).get("stocks", [])
         r = build_index_etf("指数", code, name, stocks)
         idx_info[code] = r
         emit(r)
-    for code, name, tcode in fh.ETFS:
+    for code, name, _tcode in fh.ETFS:
         if only and code != only:
             continue
         stocks = comp["by_etf"].get(code, {}).get("stocks", [])

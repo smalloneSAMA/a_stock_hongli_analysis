@@ -131,7 +131,6 @@ def build_factors(codes, meta):
     by_an = an.get("by_code", {})
     raw = {}
     for code in codes:
-        m = meta[code]
         ind = decode_indicator(load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json")))   # T16/T17/T18
         last = ind[-1] if ind else {}
         kline = load_json(os.path.join(BASE, "cache", f"股票_{code}.json"))
@@ -338,7 +337,7 @@ def main(top=20, write=True):
     print(f"\n{'排名':<4}{'代码':<8}{'名称':<8}{'行业':<6}{'象限':<4}{'均衡分':<7}{'稳健':<7}{'进取':<7}{'现推荐':<5}")
     print("-" * 66)
     in_rank = {}
-    for i, (c, scores, grp, fac, sm) in enumerate(picked, 1):
+    for i, (c, scores, _grp, _fac, sm) in enumerate(picked, 1):
         tag = "●" if c in rec_now else ""
         in_rank[c] = i
         dy = sm.get('last_dy')
@@ -351,7 +350,7 @@ def main(top=20, write=True):
     if near_list:
         print()
         print("── 临界备选（dy 3.0~3.5%，⚠️ 放宽门槛可入榜）──")
-        for i, (c, scores, grp, fac, sm) in enumerate(near_list[:12], 1):
+        for i, (c, scores, _grp, _fac, sm) in enumerate(near_list[:12], 1):
             print(f"  ⚠️ {i:<3}{c:<9}{sm['name']:<9}{sm.get('ind','?'):<7}dy={sm.get('last_dy')}% 均衡{scores['均衡']}")
 
     # ── 现人工 20 只对比 ──

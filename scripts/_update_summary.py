@@ -84,7 +84,7 @@ def fetch_industry(codes):
                 print("    !!! 连续失败过多，疑似被封，行业补齐中止")
                 break
     atomic_dump(SUMMARY_JSON, stock)
-    print(f"  [行业] 完成")
+    print("  [行业] 完成")
 
 # ── 3. 行情（腾讯批量，全量刷新，不封IP）───────────────────────────────
 def fetch_quotes(codes):
@@ -308,7 +308,7 @@ def run(force=False):
         if removed:
             if len(removed) > len(old) // 2:
                 print(f"  ⚠️ 预警：md 解析出 {len(parsed)} 只，但旧缓存有 {len(old)} 只，其中 {len(removed)} 只不在新解析结果中")
-                print(f"     （疑似 md 损坏或解析异常），跳过删除同步，仅保留新增；请人工核对 md 后再更新")
+                print("     （疑似 md 损坏或解析异常），跳过删除同步，仅保留新增；请人工核对 md 后再更新")
             else:
                 print(f"  md 已移除 {len(removed)} 只：{removed}，从缓存删除")
                 for c in removed:

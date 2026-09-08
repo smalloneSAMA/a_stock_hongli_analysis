@@ -91,7 +91,7 @@ def fetch_tencent_kline(tcode, code, start=None):
     """tcode: sh000922; start=起始日期(YYYY-MM-DD,含), 默认全量; 返回 [{date, open, close, high, low, volume, amount}]"""
     all_rows = []
     end = ""
-    for page in range(30):
+    for _page in range(30):
         if start and not end:
             param = f"{tcode},day,{start},,800,qfq"
         else:
@@ -175,7 +175,7 @@ def fetch_cnindex_kline(code, start=None):
         except Exception:
             data = []
         for row in data:
-            rec = dict(zip(item, row))
+            rec = dict(zip(item, row, strict=False))
             all_rows.append({"date": rec["timestamp"][:10], "open": rec.get("open"),
                              "high": rec.get("high"), "low": rec.get("low"),
                              "close": rec.get("close"), "volume": rec.get("volume"),

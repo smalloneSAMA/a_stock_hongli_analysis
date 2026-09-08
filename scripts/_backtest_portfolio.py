@@ -44,7 +44,7 @@ def load_json(p):
 def q_end_dates(rows_by_code):
     """季度末交易日：取各股票交易日并集，每季度最后一个交易日（2019 起）"""
     days = set()
-    for code, rows in rows_by_code.items():
+    for _code, rows in rows_by_code.items():
         days.update(r[0] for r in rows if r[0] >= Q_START)
     ends = {}
     for d in sorted(days):
@@ -137,7 +137,7 @@ def pick_at(t_date, stocks, data):
         ind = d["ind"]
         kx = d["px"]
         ii = None
-        for i, r in enumerate(ind):
+        for i, _r in enumerate(ind):
             if i >= len(kx) or kx[i][0] > t_date:
                 ii = i
                 break
@@ -278,7 +278,7 @@ def main(start=None):
     m = load_json(os.path.join(BASE, "web", "data", "manifest.json")) or {}
     stocks = [(s["code"], s) for s in m.get("stocks", []) if s.get("ready")]
     data = {}
-    for code, sm in stocks:
+    for code, _sm in stocks:
         ind = decode_indicator(load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json")))   # T16/T17/T18
         kc = fh.load_cache("股票", code)   # T17：load_cache 内部解码列式行
         dc = fh.load_cache("分红", code)
@@ -292,7 +292,7 @@ def main(start=None):
                 if i < len(px) and r.get("dy") is not None and r["dy"] > 0]
         data[code] = {"px": px, "ind": ind, "dc": dc, "fc": fc, "dy_ser": dser}
     # 分红并入 K线（除权日对齐）——period_return 用 r[3]
-    for code, d in data.items():
+    for _code, d in data.items():
         if not d["dc"]:
             continue
         dmap = {}
@@ -312,15 +312,12 @@ def main(start=None):
     # 基准 000922（价格序列，同期季度收益）
     idx = fh.load_cache("指数", "000922")   # T17：内部解码
     idx_px = [(r["date"], r.get("close")) for r in (idx or {}).get("rows", [])]
-    fb_close = {}   # 旧人工20只期初/期末价（等权）
-    pool_close = {} # 候选池等权
 
     print(f"═══ 组合回测（{start} ~ {q_dates[-1]}，{len(q_dates)} 个季度调仓点，候选池 {len(data)} 只）═══")
     rows_out = []
     nav_q, nav_idx, nav_fb, nav_pool = 1.0, 1.0, 1.0, 1.0
     navs_q, navs_idx, navs_fb, navs_pool = [], [], [], []
     wins, n_periods = 0, 0
-    prev_pick = None
     for k in range(len(q_dates) - 1):
         t0, t1 = q_dates[k], q_dates[k + 1]
         picked, scored = pick_at(t0, stocks, data)
