@@ -17,7 +17,14 @@
 - Excel：excel/股票历史.xlsx（每只一个sheet，含股息率(%)列）
 用法: python scripts/_fetch_stock_data.py [--refresh]
 """
-import sys, io, os, json, time, argparse, urllib.request
+import argparse
+import io
+import json
+import os
+import sys
+import time
+import urllib.request
+
 import pandas as pd
 
 if __name__ == "__main__":
@@ -25,12 +32,25 @@ if __name__ == "__main__":
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 项目根
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
-from _common import (em_get,   # 东财限流请求（1s/请求防封，全局限流）
-                     find_stale, update_stale_report, STALE_GAP_DAYS,   # T1 陈旧检测
-                     is_bj,   # T6 北交所剔除（R2）
-                     market_prefix, em_secucode, em_market, UA)   # T23：前缀/东财标识/UA 唯一来源
+from _common import (  # 东财限流请求（1s/请求防封，全局限流）
+    STALE_GAP_DAYS,
+    UA,
+    RateGate,  # N9 并发抓取（腾讯源线程池 + 全局限速）
+    em_get,
+    em_market,
+    em_secucode,
+    find_stale,  # T1 陈旧检测
+    is_bj,  # T6 北交所剔除（R2）
+    market_prefix,  # T23：前缀/东财标识/UA 唯一来源
+    parallel_map,
+    update_stale_report,
+)
 
 STALE_PATH = os.path.join(BASE, "cache", "_stale.json")   # 陈旧检测报告（T1，各池分段合并）
+CONCURRENCY = 3        # N9：腾讯 K 线并发（东财由 em_get 全局 1s 限流天然串行）
+GATE = RateGate(interval=0.8, max_interval=3.0)   # 全局限速 0.8s/请求（=原串行口径，防封）
+MELT_LIMIT = 5         # 连续失败熔断阈值
+MELT_PAUSE = 60        # 熔断暂停（秒）
 
 # ── 推荐股清单（动态：读 cache/_推荐20.json 评分产物；缺失时回退硬编码清单）──
 # 推荐清单由 scripts/_recommend_stocks.py 生成（量化评分）；此清单同时驱动 manifest rec 标记、
@@ -398,7 +418,7 @@ def calc_dividend_yield(rows, div_rows):
     （精确自然日窗口，同东财口径；避免旧"年月差<=12"把12个月+数天的分红多留一个月造成
     股息率在窗口边缘一天腰斩的悬崖效应）；窗口内无分红记 0.00"""
     from datetime import date
-    events = sorted(((date(*map(int, r["ex_date"].split("-"))), r["bonus10"] / 10.0) for r in div_rows))
+    events = sorted((date(*map(int, r["ex_date"].split("-"))), r["bonus10"] / 10.0) for r in div_rows)
     out = []
     for r in rows:
         d = date(*map(int, r["date"].split("-")))
@@ -472,8 +492,8 @@ def make_fetcher(tcode, code):
 
 # ── Excel ───────────────────────────────────────────────────────
 def export_excel():
-    from _fetch_history import load_cache
     from _common import export_workbook, safe_export
+    from _fetch_history import load_cache
     # 展示口径：价格(元)、成交量(万手)、成交额(亿元)；腾讯原始 volume=手、amount=元(估算)
     COL_CN = {"open": "开盘(元)", "close": "收盘(元)", "high": "最高(元)", "low": "最低(元)",
               "volume": "成交量(万手)", "amount": "成交额(亿元)",
@@ -565,8 +585,9 @@ def update_all(refresh=False, refresh_fin=False):
     update_dividends(refresh=refresh)   # 分红缓存缺失才拉（秒级），删除自愈；refresh 强制重拉
     update_financials(refresh=refresh)  # 财报缓存缺失才拉，删除自愈
     records = []          # [(code, last_date)] —— 陈旧检测（T1）
-    for code, name, tcode in STOCKS:
-        if refresh:
+    if refresh:
+        # 全量重拉（手动、低频）：保持串行，避免对腾讯放大压力
+        for code, name, tcode in STOCKS:
             rows = fetch_kline(tcode, code, full=True)
             obj = {"code": code, "name": name, "fetched_at": time.strftime("%Y-%m-%d"), "rows": rows}
             # T20：重拉结果与缓存一致 → 不写盘
@@ -575,13 +596,18 @@ def update_all(refresh=False, refresh_fin=False):
             else:
                 print(f"  [{code} {name}] 全量刷新结果与缓存一致，跳过写盘（{len(rows)}条）")
             records.append((code, rows[-1]["date"] if rows else None))
-        else:
-            try:
-                _, _, last = fh.update_incremental("股票", code, name, make_fetcher(tcode, code))
-                records.append((code, last))
-            except Exception as e:
-                print(f"  ❌ [{code} {name}] 失败: {repr(e)[:80]}")
-        time.sleep(0.3)
+            time.sleep(0.3)
+    else:
+        # N9：增量更新并发（腾讯源 4 并发 + 全局限速；单只失败只记录，不影响其余）
+        res = parallel_map(list(STOCKS),
+                           lambda s: fh.update_incremental("股票", s[0], s[1], make_fetcher(s[2], s[0])),
+                           workers=CONCURRENCY, gate=GATE,
+                           melt_limit=MELT_LIMIT, melt_pause=MELT_PAUSE)
+        for (code, name, _t), ok, out in res:
+            if ok:
+                records.append((code, out[2] if isinstance(out, tuple) else None))
+            else:
+                print(f"  ❌ [{code} {name}] 失败: {repr(out)[:80]}")
     export_excel()
     # ── 陈旧检测（T1）：抓取"成功"但数据没跟上的标的必须可见，不再静默 ──
     base, stale = find_stale(records)

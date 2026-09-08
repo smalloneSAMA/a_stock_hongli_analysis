@@ -15,7 +15,12 @@
   python scripts/_fetch_watchlist.py --retry-failed # 只重试失败清单
   python scripts/_fetch_watchlist.py --check-fin   # 季度分红/财报/股本检测（约 2s/只）
 """
-import sys, os, json, time, argparse
+import argparse
+import json
+import os
+import sys
+import threading
+import time
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -23,17 +28,29 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import (market_prefix, tencent_quotes, atomic_dump, atomic_load,
-                     find_stale, update_stale_report, STALE_GAP_DAYS,   # T1 陈旧检测
-                     is_bj, save_workbook_if_changed, em_secid)   # T6 北交所剔除 + T20 Excel 去噪 + T23 secid
 from _classify import map_ind
+from _common import (
+    STALE_GAP_DAYS,
+    RateGate,  # N9 并发抓取（腾讯源线程池 + 全局限速）
+    atomic_dump,
+    atomic_load,
+    em_secid,
+    find_stale,  # T1 陈旧检测
+    is_bj,  # T6 北交所剔除 + T20 Excel 去噪 + T23 secid
+    market_prefix,
+    parallel_map,
+    save_workbook_if_changed,
+    tencent_quotes,
+    update_stale_report,
+)
 
 XLSX = os.path.join(BASE, "excel", "自选股清单.xlsx")   # 自选股清单（唯一事实来源）
 META_PATH = os.path.join(BASE, "cache", "_自选股清单.json")   # 仅行业等增强信息
 METRICS_PATH = os.path.join(BASE, "cache", "_自选股指标.json")  # 指标缓存（总市值/PE-TTM/PB + 数据日期）
 FAIL_PATH = os.path.join(BASE, "cache", "_watchlist_failed.json")
 STALE_PATH = os.path.join(BASE, "cache", "_stale.json")   # 陈旧检测报告（T1，各池分段合并）
-SLEEP_KLINE = 0.8      # 腾讯 K 线节流（秒）
+CONCURRENCY = 3        # N9：腾讯 K 线并发（东财由 em_get 全局 1s 限流天然串行）
+GATE = RateGate(interval=0.8, max_interval=3.0)   # 全局限速 0.8s/请求（=原串行口径，防封）
 MELT_LIMIT = 5         # 连续失败熔断阈值
 MELT_PAUSE = 60        # 熔断暂停（秒）
 
@@ -258,30 +275,34 @@ def main(retry_failed=False, check_fin=False):
     # 行业增强信息（仅新股票，失败不影响行情主流程）
     refresh_watch_meta(rows)
 
-    new_failed = {k: v for k, v in failed.items()}
-    consec = 0
-    ok = 0
+    new_failed = dict(failed)
     records = []          # [(code, last_date)] —— 陈旧检测（T1）
     t0 = time.time()
-    for i, r in enumerate(todo, 1):
-        try:
-            _, _, last = fetch_one(r["code"], r["name"], r["tcode"])
-            records.append((r["code"], last))
+    plock = threading.Lock()
+    done = {"n": 0, "ok": 0}
+
+    def on_done(_idx, r, ok_i, res):
+        with plock:
+            done["n"] += 1
+            if ok_i:
+                done["ok"] += 1
+            n, ok_n = done["n"], done["ok"]
+        if not ok_i:
+            print(f"  ❌ [{n}/{len(todo)}] {r['code']} {r['name']} 拉取失败: {repr(res)[:80]}")
+        if n % 10 == 0 or n == len(todo):
+            print(f"  进度 {n}/{len(todo)}（成功 {ok_n}） 已用 {time.time() - t0:.0f}s")
+
+    results = parallel_map(todo, lambda r: fetch_one(r["code"], r["name"], r["tcode"]),
+                           workers=CONCURRENCY, gate=GATE,
+                           melt_limit=MELT_LIMIT, melt_pause=MELT_PAUSE, on_done=on_done)
+    for r, ok_i, res in results:
+        if ok_i:
+            records.append((r["code"], res[2] if isinstance(res, tuple) else None))
             new_failed.pop(r["code"], None)
-            consec = 0
-            ok += 1
-            if i % 10 == 0 or i == len(todo):
-                print(f"  进度 {i}/{len(todo)}（成功 {ok}） 已用 {time.time() - t0:.0f}s")
-        except Exception as e:
-            consec += 1
-            new_failed[r["code"]] = {"name": r["name"], "err": f"{type(e).__name__}: {str(e)[:70]}"}
-            print(f"  ❌ [{i}/{len(todo)}] {r['code']} {r['name']} 拉取失败: {repr(e)[:80]}")
-            if consec >= MELT_LIMIT:
-                print(f"  ⏸ 连续 {MELT_LIMIT} 次失败，熔断暂停 {MELT_PAUSE}s 防封…")
-                time.sleep(MELT_PAUSE)
-                consec = 0
-        time.sleep(SLEEP_KLINE)
+        else:
+            new_failed[r["code"]] = {"name": r["name"], "err": f"{type(res).__name__}: {str(res)[:70]}"}
     save_failed(new_failed)
+    ok = sum(1 for _r, ok_i, _res in results if ok_i)
     fail_n = len(todo) - ok
     print(f"✅ 完成：成功 {ok} / 失败 {fail_n}（失败明细 → cache/_watchlist_failed.json）")
     if fail_n:

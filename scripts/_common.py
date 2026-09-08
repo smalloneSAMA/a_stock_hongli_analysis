@@ -4,7 +4,14 @@
 新脚本必须从此 import，禁止本地复制（AGENTS.md 约束）。
 用法: python scripts/_common.py   # 冒烟自测（不触网）
 """
-import json, os, random, time, urllib.request
+import json
+import os
+import random
+import threading
+import time
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 # ── 市场前缀路由（唯一正确版本；源：_fetch_watchlist.py:132-136）──
 # 顺序有依赖勿调整：92(北交所)必须早于 9(沪B)；4/8(北交所旧号段)
@@ -116,17 +123,103 @@ def parse_quote(v):
 # ── 东财接口限流请求（1s/请求防封，全局限流）──
 EM_UA = UA   # 东财请求头（T23：与 UA 统一，勿再各写一份）
 _last_em = [0.0]
+_em_lock = threading.Lock()   # N9：并发抓取时仍严格串行（东财保持 1s/请求）
 
 def em_get(url, timeout=12):
-    """东财接口 GET → str（utf-8）。全局限流 1s/请求 + 0.1~0.4s 抖动（源：_fetch_stock_data.py:91-100）"""
-    wait = 1.0 - (time.time() - _last_em[0])
-    if wait > 0:
-        time.sleep(wait + random.uniform(0.1, 0.4))
-    req = urllib.request.Request(url, headers={"User-Agent": EM_UA, "Referer": "https://quote.eastmoney.com/"})
-    try:
-        return urllib.request.urlopen(req, timeout=timeout).read().decode()
-    finally:
-        _last_em[0] = time.time()
+    """东财接口 GET → str（utf-8）。全局限流 1s/请求 + 0.1~0.4s 抖动（源：_fetch_stock_data.py:91-100）
+
+    N9：加锁串行化——多线程抓取（腾讯源并发）时东财请求仍保持全局 1s 间隔，不放大被封风险"""
+    with _em_lock:
+        wait = 1.0 - (time.time() - _last_em[0])
+        if wait > 0:
+            time.sleep(wait + random.uniform(0.1, 0.4))
+        req = urllib.request.Request(url, headers={"User-Agent": EM_UA, "Referer": "https://quote.eastmoney.com/"})
+        try:
+            return urllib.request.urlopen(req, timeout=timeout).read().decode()
+        finally:
+            _last_em[0] = time.time()
+
+
+# ── 并发抓取（N9：腾讯源线程池 + 自适应全局限速）──────────────────
+class RateGate:
+    """全局限速闸门：保证任意两次请求间隔 ≥ interval 秒（线程安全）。
+
+    失败时 penalize() 加长间隔（×1.5，上限 max_interval），成功时 relax() 缓慢回落——
+    并发抓取下的自适应防封（宁可慢一点，也不要把源封掉）。"""
+
+    def __init__(self, interval=0.25, max_interval=2.0):
+        self.interval = interval
+        self.min_interval = interval
+        self.max_interval = max_interval
+        self._lock = threading.Lock()
+        self._next_at = 0.0
+
+    def wait(self):
+        with self._lock:
+            now = time.time()
+            delay = self._next_at - now
+            self._next_at = max(now, self._next_at) + self.interval
+        if delay > 0:
+            time.sleep(delay)
+
+    def penalize(self):
+        with self._lock:
+            self.interval = min(self.max_interval, self.interval * 1.5)
+
+    def relax(self):
+        with self._lock:
+            self.interval = max(self.min_interval, self.interval * 0.9)
+
+
+def parallel_map(items, fn, workers=4, gate=None, melt_limit=5, melt_pause=60, on_done=None):
+    """线程池并发执行 fn(item) → 返回 [(item, ok, 结果或异常)]（顺序与输入一致）。
+
+    · 失败隔离：单个 item 抛异常只记录，不影响其余（调用方按 ok 汇总失败清单）
+    · 熔断：连续失败达 melt_limit → 所有 worker 暂停 melt_pause 秒（语义同串行版）
+    · gate：RateGate 实例（腾讯源全局限速）；失败 penalize、成功 relax
+    · on_done(idx, item, ok, result)：每完成一项回调（调用方自行加锁打印进度）
+    """
+    results = [None] * len(items)
+    lock = threading.Lock()
+    state = {"consec": 0, "pause_until": 0.0}
+
+    def run(idx, item):
+        with lock:
+            wait = state["pause_until"] - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        if gate is not None:
+            gate.wait()
+        try:
+            out = fn(item)
+        except Exception as e:
+            if gate is not None:
+                gate.penalize()
+            with lock:
+                state["consec"] += 1
+                tripped = state["consec"] >= melt_limit
+                if tripped:
+                    state["consec"] = 0
+                    state["pause_until"] = time.time() + melt_pause
+            if tripped:
+                print(f"  ⏸ 连续 {melt_limit} 次失败，熔断暂停 {melt_pause}s 防封…")
+            results[idx] = (item, False, e)
+        else:
+            if gate is not None:
+                gate.relax()
+            with lock:
+                state["consec"] = 0
+            results[idx] = (item, True, out)
+        if on_done is not None:
+            on_done(idx, item, results[idx][1], results[idx][2])
+
+    if not items:
+        return results
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(items)))) as ex:
+        futs = [ex.submit(run, i, it) for i, it in enumerate(items)]
+        for _ in as_completed(futs):
+            pass
+    return results
 
 
 # ── 数据陈旧检测（T1：抓取"空返回"不再算成功）────────────────────
@@ -307,9 +400,10 @@ def safe_export(desc, fn):
 def beautify_sheet(ws):
     """单个sheet：列宽按内容显示宽度自适应、冻结首行、开启筛选、全表水平垂直居中，表头加粗浅蓝底。
     幂等，可重复执行"""
+    import datetime as _dt
+
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
-    import datetime as _dt
     if ws.max_row < 1 or ws.max_column < 1:
         return
     nrow, ncol = ws.max_row, ws.max_column
@@ -348,19 +442,18 @@ def beautify_sheet(ws):
                 cell.fill = hfill
 
 
-def beautify_workbook(path):
-    """导出后处理：日期列显示为年月日 + 逐sheet美化（列宽/冻结/筛选/居中）。
-    幂等；导出后独立执行，避免 pandas 保存覆盖格式（源：update.py post_process_file）"""
+def beautify_workbook(wb):
+    """日期列显示为年月日 + 逐sheet美化（列宽/冻结/筛选/居中）。
+
+    N11：参数由「文件路径」改为「已加载的 openpyxl 工作簿」——导出时在 pandas 的
+    ExcelWriter 内存工作簿上直接美化，只落盘一次（原实现 load→save 再走一遍 IO）"""
     from datetime import datetime as _dt
-    from openpyxl import load_workbook
-    wb = load_workbook(path)
     for ws in wb.worksheets:
         for row in ws.iter_rows(min_row=2, min_col=1, max_col=1):
             for cell in row:
                 if isinstance(cell.value, _dt):
                     cell.number_format = "yyyy-mm-dd"
         beautify_sheet(ws)
-    wb.save(path)
 
 
 # ── Excel 写盘去噪（T20：内容未变则不覆盖文件）──
@@ -407,8 +500,8 @@ def export_workbook(path, sheets, post=True):
     with pd.ExcelWriter(tmp, engine="openpyxl") as w:
         for name, df in sheets.items():
             df.to_excel(w, sheet_name=name[:31])
-    if post:
-        beautify_workbook(tmp)
+        if post:
+            beautify_workbook(w.book)   # N11：在内存工作簿上美化，随 ExcelWriter 一次落盘
     return replace_if_changed(tmp, path)
 
 
@@ -506,5 +599,34 @@ if __name__ == "__main__":
     chk("WINDOW/IDX_DIV/ETF_TRACK 常量就位",
         WINDOW == 1250 and IDX_DIV["csindex"] == (1e6, 1) and ETF_TRACK["515180"] == "000922"
         and len(ETF_TRACK) == 12 and UA.startswith("Mozilla/5.0"))
-    print("═══ 汇总：%s ═══" % ("PASS" if fails == 0 else "FAIL %d" % fails))
+    # ── N9 并发抓取工具（不触网）──
+    items = list(range(8))
+    seen = []
+    res = parallel_map(items, lambda x: x * x, workers=4, on_done=lambda i, it, ok, r: seen.append(i))
+    chk("parallel_map 结果按输入顺序", [r[0] for r in res] == items and all(r[1] for r in res))
+    chk("parallel_map 结果值正确", [r[2] for r in res] == [x * x for x in items])
+    chk("parallel_map on_done 每项一次", sorted(seen) == items)
+    chk("parallel_map 空输入", parallel_map([], lambda x: x) == [])
+
+    def _boom(x):
+        if x % 2:
+            raise ValueError(f"bad {x}")
+        return x
+    res2 = parallel_map(items[:4], _boom, workers=2)
+    chk("parallel_map 失败隔离（异常只影响该项）",
+        [r[1] for r in res2] == [True, False, True, False] and isinstance(res2[1][2], ValueError))
+    gate = RateGate(interval=0.05)
+    t0 = time.time()
+    parallel_map([1, 2, 3, 4], lambda x: gate.wait() or x, workers=4)
+    chk("RateGate 全局限速（4 请求 ≥3 个间隔）", time.time() - t0 >= 0.15)
+    gate.penalize(); gate.penalize()
+    chk("RateGate penalize 加长间隔", gate.interval > 0.05)
+    for _ in range(30):
+        gate.relax()
+    chk("RateGate relax 回落但不低于下限", gate.interval == gate.min_interval)
+    gate2 = RateGate(interval=1.0, max_interval=1.5)
+    for _ in range(5):
+        gate2.penalize()
+    chk("RateGate 上限封顶", gate2.interval == 1.5)
+    print(f"═══ 汇总：{'PASS' if fails == 0 else f'FAIL {fails}'} ═══")
     raise SystemExit(1 if fails else 0)

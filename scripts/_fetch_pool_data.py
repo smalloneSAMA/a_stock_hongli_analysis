@@ -2,7 +2,9 @@
 """其他成份股（精选池 289 − 推荐 20）历史数据拉取 / 增量更新
 
 数据：K线（腾讯，2004 起，未上市自然从上市日起）+ 分红/财报/股本（东财）
-防封：节流 0.8s/只（东财由 _fetch_stock_data 内置 0.3s）、指数退避重试、连续 5 次失败熔断暂停 60s、
+防封（N9 起）：腾讯源线程池 3 并发 + 全局限速 0.8s/请求（=原串行口径，并发只隐藏 RTT；
+      失败 ×1.5 加长、成功缓慢回落，连续失败熔断），
+      东财仍由 em_get 全局 1s/请求串行；指数退避重试、连续 5 次失败熔断暂停 60s、
       断点续拉（缓存存在跳过）、失败清单 cache/_pool_failed.json（--retry-failed 只补失败）
 成分股变动：每次运行自动 diff（目标 = 最新汇总表 − 推荐20），新调入的股票自动全量拉取
 
@@ -12,7 +14,12 @@
   python scripts/_fetch_pool_data.py --retry-failed # 只重试失败清单
   python scripts/_fetch_pool_data.py --check-fin   # 季度分红/财报/股本检测（约 15 分钟）
 """
-import sys, os, json, time, argparse
+import argparse
+import json
+import os
+import sys
+import threading
+import time
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -23,14 +30,26 @@ import _fetch_stock_data as fsd
 
 FAIL_PATH = os.path.join(BASE, "cache", "_pool_failed.json")
 STALE_PATH = os.path.join(BASE, "cache", "_stale.json")   # 陈旧检测报告（T1，各池分段合并）
-SLEEP_KLINE = 0.8      # 腾讯 K 线节流（秒）
+CONCURRENCY = 3        # N9：腾讯 K 线并发（东财由 em_get 全局 1s 限流天然串行）
+GATE = None            # 全局限速闸门（在 import _common 之后初始化）
 MELT_LIMIT = 5         # 连续失败熔断阈值
 MELT_PAUSE = 60        # 熔断暂停（秒）
 
 
-from _common import (market_prefix, atomic_dump,   # 唯一正确版本（92→bj 先于 9x；全名语义）
-                     find_stale, update_stale_report, STALE_GAP_DAYS,   # T1 陈旧检测
-                     is_bj)   # T6 北交所剔除（R2）
+from _common import (  # 唯一正确版本（92→bj 先于 9x；全名语义）
+    STALE_GAP_DAYS,
+    RateGate,  # N9 并发抓取（腾讯源线程池 + 全局限速）
+    atomic_dump,
+    find_stale,  # T1 陈旧检测
+    is_bj,  # T6 北交所剔除（R2）
+    market_prefix,
+    parallel_map,
+    update_stale_report,
+)
+
+# 腾讯 K 线全局限速：0.8s/请求 = 原串行口径（实测超过该速率会触发 501 临时封禁，见困难总结 155）；
+# 并发只用于隐藏 RTT（腾讯 RTT 与东财请求重叠），不提高对腾讯的请求速率
+GATE = RateGate(interval=0.8, max_interval=3.0)
 
 
 def pool_codes():
@@ -99,30 +118,33 @@ def main(batch=0, retry_failed=False, check_fin=False):
     else:
         print(f"═══ 其他成份股增量更新（{len(pool)} 只）═══")
 
-    new_failed = {k: v for k, v in failed.items()}
-    consec = 0
-    ok = 0
+    new_failed = dict(failed)
     records = []          # [(code, last_date)] —— 陈旧检测（T1）
     t0 = time.time()
-    for i, (code, name, tcode) in enumerate(todo, 1):
-        try:
-            _, _, last = fetch_one(code, name, tcode)
-            records.append((code, last))
+    plock = threading.Lock()
+    done = {"n": 0, "ok": 0}
+
+    def on_done(_idx, item, ok_i, res):
+        with plock:
+            done["n"] += 1
+            if ok_i:
+                done["ok"] += 1
+            n, ok_n = done["n"], done["ok"]
+        if not ok_i:
+            print(f"  ❌ [{n}/{len(todo)}] {item[0]} {item[1]} 拉取失败: {repr(res)[:80]}")
+        if n % 10 == 0 or n == len(todo):
+            print(f"  进度 {n}/{len(todo)}（成功 {ok_n}） 已用 {time.time() - t0:.0f}s")
+
+    results = parallel_map(todo, lambda it: fetch_one(*it), workers=CONCURRENCY, gate=GATE,
+                           melt_limit=MELT_LIMIT, melt_pause=MELT_PAUSE, on_done=on_done)
+    for (code, name, _), ok_i, res in results:
+        if ok_i:
+            records.append((code, res[2] if isinstance(res, tuple) else None))
             new_failed.pop(code, None)
-            consec = 0
-            ok += 1
-            if i % 10 == 0 or i == len(todo):
-                print(f"  进度 {i}/{len(todo)}（成功 {ok}） 已用 {time.time() - t0:.0f}s")
-        except Exception as e:
-            consec += 1
-            new_failed[code] = {"name": name, "err": f"{type(e).__name__}: {str(e)[:70]}"}
-            print(f"  ❌ [{i}/{len(todo)}] {code} {name} 拉取失败: {repr(e)[:80]}")
-            if consec >= MELT_LIMIT:
-                print(f"  ⏸ 连续 {MELT_LIMIT} 次失败，熔断暂停 {MELT_PAUSE}s 防封…")
-                time.sleep(MELT_PAUSE)
-                consec = 0
-        time.sleep(SLEEP_KLINE)
+        else:
+            new_failed[code] = {"name": name, "err": f"{type(res).__name__}: {str(res)[:70]}"}
     save_failed(new_failed)
+    ok = sum(1 for _it, ok_i, _r in results if ok_i)
     fail_n = len(todo) - ok
     print(f"✅ 完成：成功 {ok} / 失败 {fail_n}（失败明细 → cache/_pool_failed.json）")
     if fail_n:
