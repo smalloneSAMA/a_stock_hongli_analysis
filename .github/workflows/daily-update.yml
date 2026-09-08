@@ -67,6 +67,11 @@ jobs:
       - name: 安装依赖
         run: pip install -r requirements.txt
 
+      # ── 公共模块冒烟自测（T26）：离线 <1s，覆盖前缀顺序事故点（92 必须先于 9x）、
+      #    列式/稀疏解码、分位口径、东财 secid、陈旧检测阈值等 —— 失败即中止，不进入数据更新
+      - name: _common 冒烟自测
+        run: python scripts/_common.py
+
       # ── 模式判定（auto：季度日 > 周一 > 日常）────────────────────────
       - name: 判定更新模式
         id: mode
