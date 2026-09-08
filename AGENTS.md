@@ -66,8 +66,9 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 | _recommend_stocks.py                                                      | ★ 推荐20量化评分（硬过滤+三组10因子+三档权重+组合约束→cache/_推荐20.json）                         |
 | _gen_analysis.py / _gen_web_data.py                                       | 逐日指标预计算 / 前端数据包生成                                                                      |
 | _backtest_analysis.py / _backtest_portfolio.py                            | 回测分析（含基准6M/12M）/ 组合回测                                                                   |
-| _update_summary.py / _gen_summary_excel.py                                | 成分股汇总 / 汇总 Excel                                                                              |
-| _classify.py / _candidate_dy.py / _find_index_code.py / _full_backfill.py | 行业分类 / 股息率候选 / 指数代码查找 / 全量回填                                                      |
+| _update_summary.py                                                        | 成分股汇总 / 汇总 Excel                                                                              |
+| _classify.py                                                              | 行业分类                                                                                             |
+| scripts/_archive/*.py                                                     | 无引用脚本归档（6 个，勿在链路中引用；见 `scripts/_archive/README.md`）                              |
 | web/js/views/*.js                                                         | 各视图（indexView/etfView/stockView/summaryView/backtestView/portfolioView/compareView/scanView）    |
 | web/js/charts.js                                                          | ECharts 工厂（K线/折线/环形/条形，图表重建逻辑）                                                     |
 | web/js/views/common.js                                                    | 通用：收藏(localStorage)、renderTable、列表渲染                                                      |

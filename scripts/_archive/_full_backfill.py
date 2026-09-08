@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""修复腾讯prefix路由bug(92开头北交所) + 全量289只拉分红历史算股息率 + 写回缓存"""
+"""【已归档·一次性脚本】修复腾讯prefix路由bug(92开头) + 全量拉分红历史算股息率 + 写回缓存
+
+归档说明见 scripts/_archive/README.md。北交所标的已于 2026-09-08 从个股池剔除（R2），
+故本脚本的北交所补估值分支已删除（原 backfill_bj(["920599","920509"])）。"""
 import json, sys, time, random, urllib.request, datetime
 from _common import market_prefix, em_get, tencent_quotes, atomic_dump   # 前缀路由 + 东财限流 + 腾讯批量 + 原子写
 
@@ -19,24 +22,6 @@ def tencent_batch(codes):
             got += 1
     atomic_dump("cache/_成分股汇总.json", stock, indent=None)
     print(f"腾讯行情更新完成，命中 {got}/{len(codes)}")
-
-def backfill_bj(codes):
-    """北交所(920xxx)用 push2delay 补 PE(动)/PB/市值（f162/f167/f116）"""
-    stock = json.load(open("cache/_成分股汇总.json", encoding="utf-8"))
-    for c in codes:
-        url = ("https://push2delay.eastmoney.com/api/qt/stock/get?fltt=2&invt=2"
-               f"&fields=f57,f58,f43,f116,f162,f167&secid=0.{c}")
-        try:
-            d = json.loads(em_get(url)).get("data") or {}
-            stock[c]["t_pe"] = d.get("f162")
-            stock[c]["t_pb"] = d.get("f167")
-            stock[c]["t_mcap"] = round((d.get("f116") or 0) / 1e8, 1) if d.get("f116") else 0
-            stock[c]["t_price"] = d.get("f43")
-            print(f"  北交所 {c} {stock[c]['name']}: PE={d.get('f162')} PB={d.get('f167')} 市值={stock[c]['t_mcap']}亿")
-        except Exception as e:
-            print(f"  北交所 {c} 补数失败: {e}")
-        time.sleep(0.5)
-    atomic_dump("cache/_成分股汇总.json", stock, indent=None)
 
 def fetch_all_dividend(codes):
     """全量 289 只分红历史 → 近12个月股息率，写回缓存"""
@@ -82,7 +67,5 @@ if __name__ == "__main__":
     codes = list(stock.keys())
     # 1) 修复腾讯路由后重拉行情
     tencent_batch(codes)
-    # 2) 北交所补估值
-    backfill_bj(["920599", "920509"])
-    # 3) 全量分红
+    # 2) 全量分红（原「北交所补估值」步骤已随 R2 剔除北交所删除）
     fetch_all_dividend(codes)

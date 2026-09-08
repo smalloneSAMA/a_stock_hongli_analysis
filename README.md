@@ -24,9 +24,8 @@ a_stock_hongli_analysis/
 │   ├── _gen_analysis.py     # ★ 买卖区间分析：股息率反推序列/三档因子打分/点位锚（S1-S5）
 │   ├── _backtest_analysis.py# ★ 股息率分位信号回测（p85/90/95 敏感性 → md报告+前端json）
 │   ├── _test_analysis.py    # ★ S1-S8 回归测试（62项）
-│   ├── _fetch_index_data.py # （原研究）候选指数行情/估值
 │   ├── _fetch_etf_data.py   # （原研究）候选ETF规模/业绩
-│   └── _find_index_code.py  # （原研究）指数代码查询
+│   └── _archive/            # 无引用脚本归档（6 个，见 _archive/README.md）
 ├── cache/                   # 历史行情缓存（JSON，指数11+ETF11+股票335）+ analysis_dy.json（反推股息率序列）+ _推荐20.json（评分产物）+ 持仓.json（我的持仓台账，唯一事实来源）
 ├── excel/                   # 历史行情Excel（指数/ETF/股票历史.xlsx + 国证指数成分.xlsx）+ 自选股清单.xlsx（观察池清单，非持仓）
 ├── web/                     # 纯 ES Module 前端（10 视图，hash 路由：charts.js + views/*）
