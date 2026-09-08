@@ -27,7 +27,8 @@ sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_stock_data as fsd
-from _common import atomic_dump, is_bj, decode_rows, decode_indicator   # 北交所剔除（R2/T6）+ 列式/稀疏解码（T17/T18）
+from _common import (atomic_dump, is_bj, decode_rows, decode_indicator,   # 北交所剔除 + 列式/稀疏解码
+                     pct_rank)   # T22：分位唯一实现（统一 <）
 
 OUT = os.path.join(BASE, "cache", "_推荐20.json")
 DY_MIN = 3.0          # 股息率门槛（%）；dy∈[3.0,3.5) 为临界纳入（标记 near）
@@ -65,13 +66,6 @@ def load_json(p):
             return json.load(f)
     except Exception:
         return None
-
-
-def pct_rank(v, arr):
-    """v 在 arr 中的百分位 0-100（v 越小分越低）"""
-    if v is None or not arr:
-        return None
-    return sum(1 for x in arr if x <= v) / len(arr) * 100
 
 
 

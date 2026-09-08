@@ -169,6 +169,15 @@ def atomic_load(path, default=None):
         return default
 
 
+# ── 分位（T22/B6-2：全项目唯一实现，口径统一为严格小于）──
+def pct_rank(v, arr):
+    """v 在 arr 中的百分位 0-100：严格小于 v 的元素占比（0=最小，100=接近最大）。
+    口径统一见 docs/20260908需求设计方案.md D3；股息率类调用处自行取 100-… 反向"""
+    if v is None or arr is None or len(arr) == 0:   # 注意用 len()：arr 可能是 numpy 数组（not arr 会报歧义）
+        return None
+    return 100.0 * sum(1 for x in arr if x < v) / len(arr)
+
+
 # ── 行数据列式编码（T17/5b：键名只存一次，行体积约减半）──
 def encode_rows(rows):
     """[{...},…] → {"cols":[…], "rows":[[…],…]}；列序 = 首次出现顺序的并集，缺失位填 None"""
@@ -433,5 +442,11 @@ if __name__ == "__main__":
         == [{"a": 1, "roe": 7.0}, {"a": 2, "roe": 7.0}])
     chk("decode_indicator 无 sparse 时等同 decode_rows",
         decode_indicator({"cols": ["a"], "rows": [[1]]}) == [{"a": 1}])
+    # ── pct_rank（T22：统一严格小于）──
+    chk("pct_rank 严格小于", pct_rank(3, [1, 2, 3, 4]) == 50.0)
+    chk("pct_rank 重复值不自我计数", pct_rank(2, [2, 2, 2]) == 0.0)
+    chk("pct_rank 最小/最大", pct_rank(1, [1, 2, 3]) == 0.0 and pct_rank(3, [1, 2, 3]) == 100.0 * 2 / 3)
+    chk("pct_rank None/空", pct_rank(None, [1]) is None and pct_rank(1, []) is None)
+    chk("pct_rank 支持 numpy 数组", pct_rank(3, __import__("numpy").array([1.0, 2.0, 3.0])) == 100.0 * 2 / 3)
     print("═══ 汇总：%s ═══" % ("PASS" if fails == 0 else "FAIL %d" % fails))
     raise SystemExit(1 if fails else 0)

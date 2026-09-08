@@ -18,7 +18,8 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import atomic_dump, is_bj, decode_rows, decode_indicator   # 原子写 + 北交所剔除（R2/T6）+ 列式/稀疏解码（T17/T18）
+from _common import (atomic_dump, is_bj, decode_rows, decode_indicator,   # 原子写 + 北交所剔除 + 列式/稀疏解码
+                     pct_rank)   # T22：分位唯一实现（统一 <）
 
 WINDOW = 1250   # 近5年交易日
 
@@ -44,11 +45,6 @@ def band_of(score):
     if score <= 65: return "持有"
     if score <= 80: return "逐步卖出"
     return "卖出区间"
-
-
-def pct_rank(v, arr):
-    """v 在 arr 中的百分位：比 v 小的元素占比×100（0=最便宜，100=最贵）"""
-    return 100.0 * sum(1 for x in arr if x < v) / len(arr) if len(arr) else None
 
 
 def build_price_pct(close_arr):
