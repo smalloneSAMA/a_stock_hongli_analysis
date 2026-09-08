@@ -4,6 +4,7 @@
 
 const cache = new Map();     // url -> json（插入序即 LRU 序，命中时移到末尾）
 const sizes = new Map();     // url -> 近似字节（响应 Content-Length，缺失记 0）
+const inflight = new Map();  // url -> Promise（N6：并发加载去重，同一文件同一时刻只发一次请求）
 let cacheBytes = 0;          // 非白名单条目合计字节
 const FETCH_TIMEOUT = 15000;
 
@@ -13,19 +14,29 @@ export async function loadJSON(url) {
     if (!PINNED.has(url)) { cache.delete(url); cache.set(url, v); }   // LRU touch
     return v;
   }
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
+  const pending = inflight.get(url);
+  if (pending) return pending;   // N6：并行调用同一文件（如 ETF 同跟踪指数）复用同一请求
+  const task = (async () => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status} ${url}`);
+      const j = await r.json();
+      const bytes = Number(r.headers.get('content-length')) || 0;
+      cache.set(url, j);
+      sizes.set(url, bytes);
+      if (!PINNED.has(url)) { cacheBytes += bytes; evictOldest(); }
+      return j;
+    } finally {
+      clearTimeout(timer);
+    }
+  })();
+  inflight.set(url, task);
   try {
-    const r = await fetch(url, { signal: ctrl.signal });
-    if (!r.ok) throw new Error(`HTTP ${r.status} ${url}`);
-    const j = await r.json();
-    const bytes = Number(r.headers.get('content-length')) || 0;
-    cache.set(url, j);
-    sizes.set(url, bytes);
-    if (!PINNED.has(url)) { cacheBytes += bytes; evictOldest(); }
-    return j;
+    return await task;
   } finally {
-    clearTimeout(timer);
+    inflight.delete(url);   // 失败同样清理，后续可重试
   }
 }
 

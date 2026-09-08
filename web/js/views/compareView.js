@@ -238,13 +238,17 @@ export default {
       mainEl.innerHTML = '';
       mainEl.append(skeleton());      try {
         const items = order.map(code => selected.get(code));
-        const series = [];
         /* 股息率序列：指数/ETF 读 web/data/dy_series.json（T11 产出的 1.8MB，替代 30.7MB 的 analysis_dy.json），
            股票读指标文件 dy 列 */
         const dySeries = items.some(it => it.type !== 'stock') ? await loadJSON(DY_SERIES_URL) : null;
         const an = await loadAnalysis();   // 拿 ETF track（同跟踪偏离用）
         const tracks = new Map();          // track -> {rows, name}（ETF 同跟踪指数，参考线用）
-        for (const it of items) {
+        /* N6：原实现逐只串行 await（每只最多 4 个文件 → 8 只最多 24 次 RTT），改为限并发 6 并行加载；
+           单只 K线缺失只剔除该标的（记入 skipped 并在图上提示），不再整页报错 */
+        const CONC = 6;   // 与浏览器同源并发连接上限一致（serve.py 为 ThreadingHTTPServer）
+        const loaded = new Array(items.length).fill(null);
+        const skipped = [];
+        const loadOne = async (it) => {
           const obj = await loadJSON(klineUrl(KIND[it.type], it.code));
           const rows = decodeRows(obj);   // T17：列式行 → 对象行
           if (!rows.length) throw new Error(`${it.name}（${it.code}）缓存无数据`);
@@ -281,8 +285,18 @@ export default {
             /* dy_series.json 的 by_code[code] 本身就是 [date, dy] 数组（原 analysis_dy 需再取 .series） */
             dyPts = (dySeries && dySeries.by_code && dySeries.by_code[it.code]) || null;
           }
-          series.push({ it, rows, divRows, dyPts, track });
-        }
+          return { it, rows, divRows, dyPts, track };
+        };
+        let nextItem = 0;
+        await Promise.all(Array.from({ length: Math.min(CONC, items.length) }, async () => {
+          while (nextItem < items.length) {
+            const i = nextItem++;
+            try { loaded[i] = await loadOne(items[i]); }
+            catch (err) { skipped.push(`${items[i].name}（${err.message}）`); }
+          }
+        }));
+        const series = loaded.filter(Boolean);
+        if (series.length < 2) throw new Error(`可用标的不足 2 只：${skipped.join('；') || '数据缺失'}`);
         /* 共同起点 = 各序列起始日期的最大值（保证窗口内全部有数据） */
         const start = series.reduce((mx, s) => (mx < s.rows[0].date ? s.rows[0].date : mx), '');
         const aligned = series.map(s => {
@@ -348,6 +362,8 @@ export default {
         }
         cmp = { dates, aligned: rows2, tracks };
         buildMain();
+        /* N6：被跳过的标的就地提示（不影响其余序列与图表） */
+        if (skipped.length) mainEl.prepend(el('div', { class: 'cmp-warn' }, `⚠ 已跳过 ${skipped.length} 只（数据缺失）：${skipped.join('；')}`));
       } catch (err) {
         mainEl.innerHTML = '';
         mainEl.append(errorBox(`对比加载失败：${err.message}`, () => renderCompare()));
@@ -356,10 +372,16 @@ export default {
 
     /* ═══ 主区构建：图 tab + 工具条 + 各图分发 ═══ */
     const CHART_TABS = [['nav', '净值'], ['px', '股价'], ['dy', '股息率'], ['dd', '回撤'], ['bars', '涨跌幅'], ['rs', '相对强弱'], ['corr', '相关性'], ['trk', '跟踪偏离']];
+    /* 相对强弱基准 = 首个选中标的；若其被 N6 隔离跳过则退化为首个可用标的 */
+    const baseItem = () => {
+      if (!cmp || !cmp.aligned.length) return null;
+      const b = cmp.aligned.find(r => r.it.code === order[0]) || cmp.aligned[0];
+      return b ? b.it : null;
+    };
     const tabTitle = () => ({ nav: divMode && curType !== 'index' ? '归一化含分红净值（起点=100）' : '归一化净值（起点=100）',
       px: '实际股价对比（原始价格 · 单轴线性）',
       dy: '股息率对比（%）', dd: '水下回撤对比（%）', bars: '区间涨跌幅对比',
-      rs: `相对强弱（基准：${order[0] ? selected.get(order[0]).name : ''}，>100=跑赢基准）`,
+      rs: `相对强弱（基准：${baseItem() ? baseItem().name : ''}，>100=跑赢基准）`,
       corr: '日收益相关性矩阵（全窗口）', trk: '同跟踪 ETF 偏离（vs 跟踪指数）' }[chartTab]);
 
     /* 净值图 tooltip：显示当日涨跌（红涨绿跌，口径与当前显示序列一致：含分红/净值切换跟随；股价 tab 用原始价） */
@@ -744,9 +766,9 @@ export default {
 
     /* 相对强弱：各标的 ÷ 基准标的（第一个选中）归一化比值，>100=跑赢 */
     function buildRsChart(chartApi, base) {
-      const baseCode = order[0];
-      const b = cmp.aligned.find(r => r.it.code === baseCode);
+      const b = cmp.aligned.find(r => r.it.code === order[0]) || cmp.aligned[0];
       if (!b) return;
+      const baseCode = b.it.code;
       chartApi.setOption({
         ...base,
         yAxis: { ...base.yAxis, scale: false, min: 0 },

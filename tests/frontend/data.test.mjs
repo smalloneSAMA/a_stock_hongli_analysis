@@ -45,6 +45,31 @@ test('loadJSON：非白名单超字节预算 → 按 LRU 淘汰最久未用', as
   assert.equal(calls(), before2, '最近条目应命中缓存');
 });
 
+test('loadJSON：并发请求同一 URL 只发一次（N6 去重）', async () => {
+  const calls = mockFetch();
+  const [a, b, c] = await Promise.all([
+    loadJSON('/cache/并发_000001.json'),
+    loadJSON('/cache/并发_000001.json'),
+    loadJSON('/cache/并发_000001.json'),
+  ]);
+  assert.equal(calls(), 1, '并发同文件应只请求一次');
+  assert.equal(a, b, '应返回同一对象');
+  assert.equal(b, c);
+});
+
+test('loadJSON：请求失败后清理 in-flight，可重试', async () => {
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls === 1) throw new Error('网络中断');
+    return { ok: true, status: 200, headers: { get: () => '16' }, json: async () => ({ ok: 1 }) };
+  };
+  await assert.rejects(() => loadJSON('/cache/重试_000001.json'), /网络中断/);
+  const v = await loadJSON('/cache/重试_000001.json');
+  assert.equal(v.ok, 1);
+  assert.equal(calls, 2, '失败后应能重新请求');
+});
+
 test('白名单常驻：大量 K线 之后 manifest 仍命中缓存', async () => {
   const calls = mockFetch();
   await loadJSON(MANIFEST_URL);
