@@ -388,6 +388,25 @@ for c, v in dy_data.items():
     if len(series_of(c, v)) != n:
         bad.append((c, len(series_of(c, v)), n))
 check("股票series==指标文件dy>0数", not bad, f"异常: {bad}")
+# ── T10 关系断言（T27：池 / 产物 / 文件三者一致）────────────────────
+print("\n── T10 关系断言（T27）──")
+rec_json = load("cache/_推荐20.json")
+rec_list = [x["code"] for x in rec_json["list"]]
+# 10.1 回测「推荐20」分组成员 == 评分产物 list
+#      （注意：summary 里的分组 n 是「有信号样本的标的数」，与 list 长度不等，故断言比对成员而非计数）
+rec_group = {r["code"] for r in bt["by_p"]["90"] if r.get("group") == "推荐20"}
+check("回测推荐20 成员==评分产物 list", rec_group == set(rec_list),
+      f"差异: {sorted(rec_group ^ set(rec_list))[:5]}")
+# 10.2 TOP20 因子覆盖率 ≥7/10（防"只有一两个因子的标的"进榜；旧 920599 仅 2/10）
+cov = {x["code"]: sum(1 for v in x["factors"].values() if v is not None) for x in rec_json["list"]}
+bad = [(c, n) for c, n in cov.items() if n < 7]
+check("TOP20 因子覆盖率≥7/10", not bad, f"异常: {bad[:5]}")
+# 10.3 manifest.stocks 与 cache/股票_*.json 一一对应（孤儿缓存 / 缺失缓存都算回归）
+import glob as _glob
+mset = {s["code"] for s in load("web/data/manifest.json")["stocks"]}
+cset = {os.path.basename(p)[len("股票_"):-5] for p in _glob.glob(os.path.join(BASE, "cache", "股票_*.json"))}
+check("manifest.stocks==cache/股票_*", mset == cset, f"差异: {sorted(mset ^ cset)[:5]}")
+
 print("\n" + "\n".join(RESULTS))
 print(f"\n═══ 测试汇总：PASS {PASS} / FAIL {FAIL} ═══")
 sys.exit(1 if FAIL else 0)
