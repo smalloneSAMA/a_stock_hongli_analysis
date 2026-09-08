@@ -336,6 +336,9 @@ def main(top=20, write=True):
     # ── 评分 ──
     ranked = score_all(cands, meta, raw)
     picked, backup = apply_constraints(ranked, top)
+    if len(picked) < top:
+        print(f"⚠️ 候选不足：仅选出 {len(picked)} 只（目标 {top}）——象限保底 3/行业≤4 约束下无更多可用标的")
+
     print(f"\n{'排名':<4}{'代码':<8}{'名称':<8}{'行业':<6}{'象限':<4}{'均衡分':<7}{'稳健':<7}{'进取':<7}{'现推荐':<5}")
     print("-" * 66)
     in_rank = {}
@@ -391,7 +394,7 @@ def main(top=20, write=True):
             "excluded": excluded,
         }
         atomic_dump(OUT, obj)
-        print(f"\n✅ 产物已写入 {OUT}（TOP{top} + 备选10 + 排除{len(excluded)}）")
+        print(f"\n✅ 产物已写入 {OUT}（TOP{len(picked)} + 备选{len(obj['backup'])} + 排除{len(excluded)}）")
 
 
 if __name__ == "__main__":
