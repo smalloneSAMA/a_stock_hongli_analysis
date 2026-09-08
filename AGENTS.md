@@ -35,6 +35,7 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 - **公共模块单一来源**：`scripts/_common.py` 是 行情批量(tencent_quotes)/前缀路由(market_prefix)/东财限流(em_get)/原子读写(atomic_dump|atomic_load)/Excel导出(export_workbook) 的唯一实现；**新脚本必须 `from _common import`，禁止本地复制**（曾 6 份 prefix 拷贝 3 种顺序致北交所 92 号段失效、两套 Excel 单位口径，困难总结143）
 - **写用户维护的 Excel**（excel/ 自选股清单.xlsx 等）：先探测第1行表头→同名列原位覆盖（幂等）→否则**追加末尾新列**；**绝不用固定列号覆盖**（曾覆盖用户 E/F/G 列事故，困难总结133）
 - 回测口径：超额 = 信号组均值 − 同区间每日买入基准均值（百分点差）；基准可为负，超额正=少亏也赢；报告含 基准6M/基准12M 列与分组基准12M
+- 回测执行日：**t+1 收盘执行**（默认，`--exec-offset 1`）；2026-09-09 与 t+2 对比审计：关键分组 12M 超额差 <0.5pp 且无符号反转 → **维持 t+1**（对比见 `docs/回测执行日对比.md`，复跑用 `python scripts/_backtest_exec_compare.py`）
 - 均线系统：**默认全关**，开关=主图图例点击（无按钮）；四色 金MA5/青MA20/紫MA60/蓝MA250；`maCache` 预计算，tooltip 固定行（null 显示 —）
 - 收藏：localStorage key `pi_favs`，写后派发 `fav-change` 自定义事件（detail.code）驱动跨视图同步；星标按钮必须 `stopPropagation` 防触发行选中
 - 自选股清单 xlsx 10 列（序号/名称/代码/展示/上市板块/一级行业/二级行业/总市值(亿)/PE(TTM)/PB），缓存 `cache/_自选股指标.json`（先落盘缓存再写文件，文件被占用时可重跑不重拉）
