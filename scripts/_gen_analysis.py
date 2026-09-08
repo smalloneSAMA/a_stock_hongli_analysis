@@ -204,8 +204,13 @@ def build_factors():
         dy_series = None
         if typ == "ETF" and info.get("series"):
             dy_series = [[d, v] for d, v in info["series"][-WINDOW:]]
+        # T10：补标量字段，供三主视图（扫描/推荐/持仓）直读 analysis.json，
+        # 免去 30.7MB 的 analysis_dy.json 首屏请求；dy0 一并带上——前端多处以 d.dy0==null 作无数据判据
         out["by_code"][code] = {"name": info["name"], "type": typ, "track": info.get("track"),
                                 "factors": factors, "anchors": anchors,
+                                "dy0": info.get("dy0"), "dy_now": info.get("dy_now"),
+                                "dy_pct": info.get("dy_pct"), "dy_p50": info.get("dy_p50"),
+                                "close_now": info.get("close_now"),
                                 "dy_p10": info.get("dy_p10"), "dy_p90": info.get("dy_p90"),
                                 "win_start": info.get("window_start"), "n_days": info.get("n_days"),
                                 "dy_series": dy_series}
