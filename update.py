@@ -19,7 +19,7 @@ sys.path.insert(0, SCRIPTS)
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import STALE_LAG_DAYS as LAG_DAYS   # 陈旧阈值单一来源（T2/T3 共用）
+from _common import STALE_LAG_DAYS as LAG_DAYS, find_stale, update_stale_report, STALE_GAP_DAYS   # 陈旧阈值单一来源（T2/T3 共用）
 
 # import后包装stdout（fh的包装对象仍被其模块引用，底层buffer不会被关闭）
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -310,12 +310,22 @@ def update_stocks():
     print("\n═══ 股票历史行情更新（20只，不复权，2004-01-01起）═══")
     fsd.update_dividends()   # 分红缓存缺失才拉（20只约1分钟），删除自愈
     fsd.update_financials()  # 财报缓存缺失才拉，删除自愈
+    records = []             # [(code, last_date)] —— 陈旧检测（T1；本函数自带循环，勿漏）
     for code, name, tcode in fsd.STOCKS:
         try:
-            fh.update_incremental("股票", code, name, fsd.make_fetcher(tcode, code))
+            _, _, last = fh.update_incremental("股票", code, name, fsd.make_fetcher(tcode, code))
+            records.append((code, last))
         except Exception as e:
             print(f"  ❌ [{code} {name}] 失败: {repr(e)[:80]}")
     safe_export("推荐股指标Excel", fsd.export_excel)
+    # ── 陈旧检测（T1）：本函数未走 _fetch_stock_data.update_all()，此处必须自检 ──
+    base, stale = find_stale(records)
+    if base:
+        update_stale_report(fsd.STALE_PATH, "推荐20", base, stale)
+    if stale:
+        print(f"  ⚠️ 数据陈旧 {len(stale)} 只（落后基准 {base} >{STALE_GAP_DAYS} 自然日）："
+              + "、".join(f"{c}({l}, {g}天)" for c, l, g in stale[:8])
+              + ("…" if len(stale) > 8 else ""))
     print("\n✅ 股票历史更新完成")
 
 def export_excel():
