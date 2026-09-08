@@ -38,7 +38,7 @@ export default {
       const head = el('div', { class: 'bt-head' },
         el('h2', { class: 'chart-title' }, '组合回测 · 推荐20量化选股历史验证'),
         el('div', { class: 'txt-3', style: 'font-size:11.5px;line-height:1.8;margin-top:4px' },
-          `生成日期 ${pb.date} · 区间 ${pb.start} ~ ${pb.end}（${periods.length} 期季度调仓）· TOP20 等权；选股与线上推荐评分同构（硬过滤 + 三组10因子 + 行业≤4/四象限≥3），因子均取调仓日及以前数据（无未来函数）`),
+          `数据日期 ${pb.date} · 区间 ${pb.start} ~ ${pb.end}（${periods.length} 期季度调仓）· TOP20 等权；选股与线上推荐评分同构（硬过滤 + 三组10因子 + 行业≤4/四象限≥3），因子均取调仓日及以前数据（无未来函数）`),
         el('div', { class: 'txt-3', style: 'font-size:11.5px;line-height:1.8' },
           '收益为价格口径（主）；含分红 = 期内除权派息计入（不复投）；基准 000922 为价格指数；局限：成分股幸存者偏差、交易成本约 1pp 未计入'),
       );

@@ -21,7 +21,8 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _recommend_stocks as rs   # 复用硬过滤/因子映射/约束（仅借用 QUADRANT/WEIGHTS 常量）
 import _fetch_stock_data as fsd
-from _common import atomic_dump, decode_indicator, pct_rank, WINDOW   # 原子写 + 解码 + 分位 + 窗口（T22/T23）
+from _common import (atomic_dump_if_changed, write_text_if_changed,   # N1：无变化不写盘
+                     decode_indicator, pct_rank, WINDOW)   # 解码 + 分位 + 窗口（T22/T23）
 import _fetch_history as fh   # 统一缓存读取（T17：load_cache 内部已解码）
 
 DY_MIN = 3.0           # 与推荐评分一致
@@ -407,10 +408,12 @@ def main(start=None):
     print(f"  季度胜率(组合vs基准): {wins}/{n_periods} = {100*wins/n_periods:.0f}%")
 
     # ── 报告与产物 ──
+    # N1：写「数据日期」（manifest.data_date）而非运行日期，避免无数据变化时跨日产生 diff
+    data_date = (m or {}).get("data_date") or str(datetime.date.today())
     lines = []
     lines.append("# 组合回测报告：推荐20量化选股（历史验证）")
     lines.append("")
-    lines.append(f"> 生成日期：{datetime.date.today()} ｜ 区间：{q_dates[0]} ~ {q_dates[-1]}（{len(q_dates)-1} 期）｜ 调仓：季度末｜ 持仓：TOP20 等权")
+    lines.append(f"> 数据日期：{data_date} ｜ 区间：{q_dates[0]} ~ {q_dates[-1]}（{len(q_dates)-1} 期）｜ 调仓：季度末｜ 持仓：TOP20 等权")
     lines.append("> 选股：与线上推荐评分同构（硬过滤 dy≥3.0% + 60日均额≥3000万；三组10因子；均衡档权重；行业≤4 + 四象限各≥3），因子均取调仓日及以前数据（无未来函数）")
     lines.append("> 收益口径：价格口径（主）；含现金分红口径（期内除权派息/期初价，不复投，附注）")
     lines.append("> 局限：成分股幸存者偏差（仅回测当前池内股票）；基准为价格口径未含分红；早期部分股票成交额缺失时跳过流动性过滤")
@@ -441,15 +444,16 @@ def main(start=None):
     lines.append("- 本报告验证的是**选股逻辑**（哪些股票入选）而非择时（何时买卖）；择时有效性见《回测报告.md》")
     lines.append("- 历史统计结果，非投资建议")
     lines.append("")
-    with open(os.path.join(BASE, "docs", "组合回测报告.md"), "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+    md_changed = write_text_if_changed(os.path.join(BASE, "docs", "组合回测报告.md"), "\n".join(lines))
     os.makedirs(os.path.join(BASE, "web", "data"), exist_ok=True)
-    out = {"date": str(datetime.date.today()), "start": q_dates[0], "end": q_dates[-1],
+    out = {"date": data_date, "start": q_dates[0], "end": q_dates[-1],   # N1：date = 数据日期
            "periods": rows_out,
            "stats": {"top20": st_q, "idx": st_idx, "fallback": st_fb, "pool": st_pool},
            "wins": wins, "n_periods": n_periods}
-    atomic_dump(os.path.join(BASE, "web", "data", "portfolio_backtest.json"), out)
-    print("\n✅ docs/组合回测报告.md + web/data/portfolio_backtest.json 已生成")
+    json_changed = atomic_dump_if_changed(os.path.join(BASE, "web", "data", "portfolio_backtest.json"), out)
+    print(f"\n✅ docs/组合回测报告.md{' 已生成' if md_changed else ' 内容未变，跳过写盘'}"
+          f" + web/data/portfolio_backtest.json{' 已生成' if json_changed else ' 内容未变，跳过写盘'}"
+          f"（数据日期 {data_date}，运行日期 {datetime.date.today()}）")
 
 
 if __name__ == "__main__":

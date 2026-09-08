@@ -180,6 +180,21 @@ def atomic_dump(path, obj, indent=1, separators=None):
     os.replace(tmp, path)
 
 
+def write_text_if_changed(path, text, encoding="utf-8"):
+    """N1：文本内容与现有文件一致则不写盘（原子写 tmp+replace）；返回是否写盘"""
+    try:
+        with open(path, encoding=encoding) as f:
+            if f.read() == text:
+                return False
+    except OSError:
+        pass
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding=encoding) as f:
+        f.write(text)
+    os.replace(tmp, path)
+    return True
+
+
 def atomic_dump_if_changed(path, obj, ignore=(), indent=1, separators=None):
     """T20：与现有文件比较（顶层 ignore 中的键忽略，如 date/checked_at）→ 一致则不写盘；返回是否写盘"""
     old = atomic_load(path)

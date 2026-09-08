@@ -31,7 +31,7 @@ export default {
       const head = el('div', { class: 'bt-head' },
         el('h2', { class: 'chart-title' }, '股息率分位信号回测报告'),
         el('div', { class: 'txt-3', style: 'font-size:11.5px;line-height:1.8;margin-top:4px' },
-          `生成日期 ${bt.date} · 信号：dy 上穿 p 分位=买、下穿 ${100 - bt.order[0]}~${100 - bt.order[bt.order.length - 1]} 分位=卖（5年滚动窗口），次一交易日收盘执行；ETF 用跟踪指数序列`),
+          `数据日期 ${bt.date} · 信号：dy 上穿 p 分位=买、下穿 ${100 - bt.order[0]}~${100 - bt.order[bt.order.length - 1]} 分位=卖（5年滚动窗口），次一交易日收盘执行；ETF 用跟踪指数序列`),
         el('div', { class: 'txt-3', style: 'font-size:11.5px;line-height:1.8' },
           `范围：全量 ${bt.scope ? bt.scope.n_total : ''} 标的（指数/ETF/推荐20/其他成份股/自选股） · 收益为价格口径（不含分红再投）；基准 = 同区间每日买入的平均收益；超额 = 信号组均值 − 基准`),
       );

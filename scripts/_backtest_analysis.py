@@ -20,7 +20,8 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import atomic_dump, decode_indicator, WINDOW   # 原子写 + 指标解码 + 窗口（T23）
+from _common import (atomic_dump_if_changed, write_text_if_changed,   # N1：无变化不写盘
+                     decode_indicator, WINDOW)   # 指标解码 + 窗口（T23）
 
 HORIZONS = (21, 63, 126, 252)       # 1/3/6/12 个月（交易日）
 H_LABEL = ("1M", "3M", "6M", "12M")
@@ -140,11 +141,24 @@ def md_escape(s):
 GROUPS = ("指数", "ETF", "推荐20", "其他成份股", "自选股")
 
 
-def build_report(results_by_p, order=(85, 90, 95)):
+def pool_data_date(data):
+    """分析池数据日期 = 各标的末行日期最大值（T19 后股票取 last_date、指数/ETF 取 series 末值）"""
+    dates = []
+    for info in data.values():
+        s = info.get("series")
+        if s:
+            dates.append(s[-1][0])
+        elif info.get("last_date"):
+            dates.append(info["last_date"])
+    return max(dates) if dates else ""
+
+
+def build_report(results_by_p, order=(85, 90, 95), data_date=""):
     lines = []
     lines.append("# 股息率分位信号回测报告")
     lines.append("")
-    lines.append(f"> 生成日期：{datetime.date.today()} ｜ 窗口：5年滚动（数据不足用全部）")
+    # N1：写「数据日期」而非「运行日期」——否则无数据变化时跨日也会产生 diff（CI 会提交）
+    lines.append(f"> 数据日期：{data_date or '—'} ｜ 窗口：5年滚动（数据不足用全部）")
     lines.append("> 口径：收益为**价格口径**（不含分红再投）；信号次一交易日收盘执行；基准=同区间每日买入平均收益")
     lines.append("> 执行日口径审计（T32）：t+1 vs t+2 对比见 docs/回测执行日对比.md —— "
                  "关键分组 12M 超额差 < 0.5pp 且无符号反转，**维持 t+1 默认口径**")
@@ -291,11 +305,13 @@ def main(only=None, p_buy=None, exec_offset=1):
         # T30：非默认口径只做研究，不覆盖默认产物（docs/回测报告.md、web/data/backtest.json）
         print(f"\n⚠️ exec_offset={exec_offset}（研究口径）→ 不写默认产物；如需对比报告见 scripts/_backtest_exec_compare.py")
         return results_by_p
-    report = build_report(results_by_p, order)
+    data_date = pool_data_date(data)
+    report = build_report(results_by_p, order, data_date)
     os.makedirs(os.path.join(BASE, "docs"), exist_ok=True)
     path = os.path.join(BASE, "docs", "回测报告.md")
-    open(path, "w", encoding="utf-8").write(report)
-    print("\n✅ docs/回测报告.md 已生成")
+    changed = write_text_if_changed(path, report)   # N1：内容未变不写盘
+    print(("\n✅ docs/回测报告.md 已生成" if changed else "\n✅ docs/回测报告.md 内容未变，跳过写盘")
+          + f"（数据日期 {data_date}，运行日期 {datetime.date.today()}）")
 
     # S8：结构化输出 → web/data/backtest.json（前端回测报告页）
     def slim(r):
@@ -344,11 +360,13 @@ def main(only=None, p_buy=None, exec_offset=1):
             continue
         g = group_of(code, info["type"])
         scope["groups"][g] = scope["groups"].get(g, 0) + 1
-    bt = {"date": str(datetime.date.today()), "order": list(order), "scope": scope,
+    bt = {"date": data_date, "order": list(order), "scope": scope,   # N1：date = 数据日期
           "by_p": by_p, "summary": summary}
     os.makedirs(os.path.join(BASE, "web", "data"), exist_ok=True)
-    atomic_dump(os.path.join(BASE, "web", "data", "backtest.json"), bt, indent=None)
-    print("✅ web/data/backtest.json 已生成（前端回测报告页）")
+    if atomic_dump_if_changed(os.path.join(BASE, "web", "data", "backtest.json"), bt, indent=None):
+        print("✅ web/data/backtest.json 已生成（前端回测报告页）")
+    else:
+        print("✅ web/data/backtest.json 内容未变，跳过写盘")
 
     # 复盘：000922 最近 4 笔交易（p90）
     r = next((r for r in results_by_p.get(90, []) if r.get("code") == "000922"), None)
