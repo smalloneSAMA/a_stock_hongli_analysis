@@ -64,6 +64,10 @@ jobs:
           python-version: '3.12'
           cache: pip
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'      # 前端纯函数单测（T29）：node --test + ESM 语法检测
+
       - name: 安装依赖
         run: pip install -r requirements.txt
 
@@ -78,6 +82,11 @@ jobs:
         run: |
           pip install ruff
           ruff check .
+
+      # ── 前端纯函数单测（T29）：analysis.js / reco.js 的权重、分档、候选池构建、评分公式
+      #    --test-isolation=none：单进程运行（避免每个测试文件各起一个子进程）
+      - name: 前端纯函数单测（node --test）
+        run: node --test --test-isolation=none tests/frontend/analysis.test.mjs tests/frontend/reco.test.mjs
 
       # ── 模式判定（auto：季度日 > 周一 > 日常）────────────────────────
       - name: 判定更新模式
