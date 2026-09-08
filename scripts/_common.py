@@ -18,6 +18,14 @@ def market_prefix(code):
         return "bj" + code
     return "sz" + code
 
+# ── 北交所判定（个股池过滤唯一来源，R2/B2-1）──
+# 号段：43/83/87/88（新三板转板老号段）+ 92（新号段，如 920599/920509）
+# ⚠️ 与 market_prefix 语义不同勿互相替换：market_prefix 是行情路由（400xxx 老三板也走 bj），
+#    is_bj 只回答"是否北交所个股"，用于池过滤；指数成分记录保留、不参与计算（决策 D1）
+def is_bj(code):
+    """是否北交所个股（920599/430047/830799→True）"""
+    return code.startswith(("43", "83", "87", "88", "92"))
+
 # ── 腾讯批量行情 ──
 TENCENT_URL = "https://qt.gtimg.cn/q="
 TENCENT_BATCH = 50      # AGENTS.md：50只/批防封（曾用 60 的副本已统一）
@@ -250,6 +258,11 @@ if __name__ == "__main__":
     chk("830799→bj830799", market_prefix("830799") == "bj830799")
     chk("900901→sh900901（沪B）", market_prefix("900901") == "sh900901")
     chk("510880→sh510880（沪基金）", market_prefix("510880") == "sh510880")
+    # ── is_bj 用例表（T5：北交所唯一判定；92 号段 + 新三板转板老号段）──
+    for c in ("920599", "920509", "430047", "830799", "870436", "889999"):
+        chk(f"is_bj({c})→True", is_bj(c) is True)
+    for c in ("600036", "000858", "300750", "688111", "510880", "159201", "900901", "400123"):
+        chk(f"is_bj({c})→False", is_bj(c) is False)
     # ── parse_quote fixture（腾讯 v 字段样例，关键位对齐）──
     v = [""] * 53
     v[1], v[3], v[39], v[45], v[46] = "招商银行", "33.50", "6.50", "9785.30", "1.05"
