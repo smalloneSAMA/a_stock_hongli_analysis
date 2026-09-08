@@ -98,7 +98,11 @@ export function createKlineChart(el, opts) {
     { type: 'inside', zoomOnMouseWheel: false, moveOnMouseMove: true, moveOnMouseWheel: false, preventDefaultMouseMove: true, minValueSpan: 20 },
   ];
 
+  /* N5：缓存当前 dataZoom 窗口——chart.getOption() 会深拷贝整个 option（含全部序列数据），
+     每帧调用是拖动卡顿主因之一，故改由「派发点 + datazoom 事件」维护 */
+  let zoomState = { start: 0, end: 100 };
   const zoomDispatch = (start, end) => {
+    zoomState = { start, end };
     chart.dispatchAction({ type: 'dataZoom', dataZoomIndex: 0, start, end });
   };
 
@@ -137,10 +141,9 @@ export function createKlineChart(el, opts) {
     zoomDispatch(si / (n - 1) * 100, ei / (n - 1) * 100);
   }
 
-  /* 当前 dataZoom 可见窗口（百分比 0-100） */
+  /* 当前 dataZoom 可见窗口（百分比 0-100）——读缓存，不再调 getOption() */
   function getZoom() {
-    const z = chart.getOption().dataZoom[0] || {};
-    return { start: z.start ?? 0, end: z.end ?? 100 };
+    return { start: zoomState.start, end: zoomState.end };
   }
 
   /* slider 拖动/范围变更回调：cb(startPct, endPct)；返回取消函数
@@ -150,6 +153,7 @@ export function createKlineChart(el, opts) {
     const items = Array.isArray(p.batch) && p.batch.length ? p.batch : [p];
     const it = items.find((x) => x.dataZoomIndex === 0) || items[0];
     if (it && typeof it.start === 'number') {
+      zoomState = { start: it.start, end: it.end };   // N5：同步窗口缓存
       for (const cb of zoomCbs) cb(it.start, it.end);
     }
   };
@@ -423,9 +427,9 @@ export function createKlineChart(el, opts) {
     if (next < 0 || next >= n) return;
     keyIdx = next;
     updateFloating(keyIdx);   // 键盘移动同步左上角累计涨幅
-    const z = chart.getOption().dataZoom[0] || {};
-    const s = Math.round((z.start ?? 0) / 100 * (n - 1));
-    const en = Math.round((z.end ?? 100) / 100 * (n - 1));
+    const z = getZoom();   // N5：读缓存（原 getOption 深拷贝整图）
+    const s = Math.round(z.start / 100 * (n - 1));
+    const en = Math.round(z.end / 100 * (n - 1));
     const span = Math.max(1, en - s);
     let dz = null;
     if (next > en) dz = { startValue: dates[next - span], endValue: dates[next] };
@@ -438,6 +442,17 @@ export function createKlineChart(el, opts) {
   // 兜底：若容器尚未布局（宽高为 0，如隐藏/未挂载），下一帧校准一次，避免空白
   if (!el.clientWidth || !el.clientHeight) {
     requestAnimationFrame(() => { chart.resize(); });
+  }
+
+  /* N5：副图系列结构（数量+名称）不变时按 id 合并更新，避免每帧 replaceMerge 重建全部系列
+     （K线 5000+ 点整图重建是拖动卡顿主因）；结构变化（副图开关/切换）仍走整体重建 */
+  const SUB_ID = (i) => 'sub-' + i;
+  let subMeta = [];   // 当前副图系列 [{id, name}]
+  function mergeSubSeriesIfSameStruct(next) {
+    if (next.length !== subMeta.length || !next.every((s, i) => s.name === subMeta[i].name)) return false;
+    /* lazyUpdate：同一帧内 markPoint/markLine/副图 三次增量合并为一次渲染（实测每帧 setOption 开销 96ms→19ms） */
+    chart.setOption({ series: next.map((s, i) => ({ ...s, id: SUB_ID(i) })) }, { lazyUpdate: true });
+    return true;
   }
 
   /* 副图（指标/净值/股息率）：line 与 candlestick 模式均支持。defs 支持 markLines（分位线） */
@@ -458,6 +473,7 @@ export function createKlineChart(el, opts) {
         },
       } : {}),
     })) : [];
+    if (mergeSubSeriesIfSameStruct(series)) return;   // N5：结构未变 → 按 id 合并，跳过整图重建
     const volSeries = option.series[1];   // 初始 series[1]：candlestick=成交量；line 模式在下方按名字从 cur 找（初始顺序会随 MA 数量变化）
     if (mode === 'line') {
       const cur = chart.getOption();   // 取当前主系列（含 addAnchorLines 合并的 markLine）
@@ -494,8 +510,9 @@ export function createKlineChart(el, opts) {
         ],
         dataZoom: option.dataZoom.map((z) => ({ ...z, xAxisIndex: [0, 1, 2] })),
         legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['收盘', ...(maCount ? ['MA60', 'MA250'] : []), '成交量', ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
-        series: [cur.series[0], ...maSeries, volLine, ...series],
+        series: [cur.series[0], ...maSeries, volLine, ...series.map((s, i) => ({ ...s, id: SUB_ID(i) }))],
       }, { replaceMerge: ['series', 'legend'] });
+      subMeta = series.map((s, i) => ({ id: SUB_ID(i), name: s.name }));
       return;
     }
     if (mode !== 'candlestick') return;
@@ -526,8 +543,9 @@ export function createKlineChart(el, opts) {
         { gridIndex: 2, name: defs && defs[0] ? defs[0].unit || '' : '' },
       ],
       legend: { show: true, top: 2, left: 62, itemWidth: 14, itemHeight: 2, icon: 'rect', textStyle: { color: C.text3, fontSize: 10.5 }, data: ['K线', ...(maCount ? ['MA5', 'MA20', 'MA60', 'MA250'] : []), '成交量', ...(overlay.length ? overlay.map(d => d.name) : []), ...(buyPart.length ? [{ name: BUY_SERIES, icon: 'circle', itemWidth: 8, itemHeight: 8, itemStyle: { color: C.up, borderColor: 'transparent' } }] : []), ...(defs ? defs.map(d => d.name) : [])], ...(cur.legend?.[0]?.selected ? { selected: cur.legend[0].selected } : {}) },
-      series: [mainSeries, ...maSeries, volSeries2, ...overlayPart, ...buyPart, ...series],
+      series: [mainSeries, ...maSeries, volSeries2, ...overlayPart, ...buyPart, ...series.map((s, i) => ({ ...s, id: SUB_ID(i) }))],
     }, { replaceMerge: ['series', 'legend'] });
+    subMeta = series.map((s, i) => ({ id: SUB_ID(i), name: s.name }));
   }
 
   /* 买入信号标记（股票历史视图调用）：idxArr = 信号执行日的行索引数组（升序）
@@ -588,7 +606,7 @@ export function createKlineChart(el, opts) {
           })),
         },
       }],
-    });
+    }, { lazyUpdate: true });
   }
 
   /* 主图窗口最高/最低点标记（markPoint）：merge 到 series[0]，随 dataZoom 窗口由调用方重算
@@ -606,7 +624,7 @@ export function createKlineChart(el, opts) {
           ],
         },
       }],
-    });
+    }, { lazyUpdate: true });
   }
 
   return { chart, setRange, setDateRange, onZoom, getZoom, setSubSeries, addAnchorLines, setExtremes, setBuySignals, setOverlays,

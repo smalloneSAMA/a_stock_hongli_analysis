@@ -446,12 +446,13 @@ export default {
       chartApi = echarts.init(chartEl);
       /* 统计表随 dataZoom 可见窗口动态更新（预设按钮/拖动滑块/键盘平移统一走此事件；rAF 节流） */
       let raf = 0;
-      const onZoom = () => {
+      const onZoom = (p) => {   // N5：直接用事件载荷（原每帧 getOption 深拷贝整图）
+        const items = Array.isArray(p && p.batch) && p.batch.length ? p.batch : [p];
+        const it = (items && items.find((x) => x.dataZoomIndex === 0)) || items[0] || {};
+        const s = typeof it.start === 'number' ? it.start : 0;
+        const e = typeof it.end === 'number' ? it.end : 100;
         cancelAnimationFrame(raf);
-        raf = requestAnimationFrame(() => {
-          const dz = chartApi.getOption().dataZoom[0] || {};
-          renderStatTable(...windowIdx(dz.start ?? 0, dz.end ?? 100));
-        });
+        raf = requestAnimationFrame(() => renderStatTable(...windowIdx(s, e)));
       };
       chartApi.on('datazoom', onZoom);
       zoomOff = () => { chartApi.off('datazoom', onZoom); cancelAnimationFrame(raf); };

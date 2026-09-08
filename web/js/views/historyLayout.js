@@ -797,8 +797,8 @@ export function buildHistoryView(container, cfg) {
       };
       chartApi.onZoom(sync);
       // 初始化：同步当前范围（首次进入默认全部）
-      const z0 = chartApi.chart.getOption().dataZoom[0];
-      sync(z0.start ?? 0, z0.end ?? 100);
+      const z0 = chartApi.getZoom();   // N5：读缓存，避免 getOption 深拷贝整图
+      sync(z0.start, z0.end);
       return { el: box };
     }
 
