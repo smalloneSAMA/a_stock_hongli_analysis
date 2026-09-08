@@ -12,7 +12,7 @@ a_stock_hongli_analysis/
 ├── update.py                # ★ 数据更新入口（交互式菜单）
 ├── serve.py                 # 本地静态服务（no-cache）+ POST /api/holdings 持仓台账落盘（JSON校验+原子写）
 ├── scripts/                 # 全部脚本
-│   ├── _common.py           # ★ 公共工具单一来源：行情批量/前缀路由/东财限流/原子读写/Excel导出
+│   ├── _common.py           # ★ 公共工具单一来源：行情批量/前缀路由/东财限流/原子读写/Excel导出/并发抓取(parallel_map+RateGate)
 │   ├── _fetch_history.py    # 历史行情拉取（指数K线/ETF K线+净值，支持增量）
 │   ├── _fetch_stock_data.py # 推荐20只股票历史日线（不复权，2004-01-01起；推荐清单动态读评分产物）
 │   ├── _fetch_pool_data.py  # 其他成份股（精选池−推荐20）K线增量 + 分红/财报/股本 + check-fin
@@ -26,7 +26,7 @@ a_stock_hongli_analysis/
 │   ├── _test_analysis.py    # ★ S1-S8 回归测试（66 项；无脆弱快照，CI 与本地同口径）
 │   ├── _fetch_etf_data.py   # （原研究）候选ETF规模/业绩
 │   └── _archive/            # 无引用脚本归档（6 个，见 _archive/README.md）
-├── cache/                   # 历史行情缓存（JSON，指数11+ETF11+股票335）+ analysis_dy.json（反推股息率序列）+ _推荐20.json（评分产物）+ 持仓.json（我的持仓台账，唯一事实来源）
+├── cache/                   # 历史行情缓存（JSON，指数11+ETF12+股票362）+ analysis_dy.json（反推股息率序列）+ _推荐20.json（评分产物）+ 持仓.json（我的持仓台账，唯一事实来源）
 ├── excel/                   # 历史行情Excel（指数/ETF/股票历史.xlsx + 国证指数成分.xlsx）+ 自选股清单.xlsx（观察池清单，非持仓）
 ├── web/                     # 纯 ES Module 前端（10 视图，hash 路由：charts.js + views/*）
 └── docs/                    # 参考资料 + 买卖区间分析-设计方案.md + 回测报告.md
@@ -86,9 +86,9 @@ python serve.py
 ### 买卖区间分析（S1-S8）
 
 - **数据**（`_gen_analysis.py`，S1-S5）：TTM 股息率反推历史序列（`cache/analysis_dy.json`）→ 5年滚动分位 → 四/六因子打分（指数：股息率/价格/趋势/情绪；股票：+PE/PB/PEG）→ 三档权重（稳健/均衡/进取）→ 买入/卖出点位锚（股息率90/10分位对应价格）→ `web/data/analysis.json`（只存因子分位，前端本地算分）；**980092/159201 的股息率由 ETF 季报持仓加权估算**（`_fetch_etf_holdings.py`）
-- **回测**（`_backtest_analysis.py`，S2）：dy 上穿90分位=买/下穿10分位=卖，信号后 1/3/6/12 个月收益 vs 每日买入基准；p85/90/95 敏感性（分组粒度）；默认**全量约 360 标的**（11指数+11ETF+335股票，含其他成份股/自选股），按 指数/ETF/推荐20/其他成份股/自选股 五分组统计 → `docs/回测报告.md` + `web/data/backtest.json`；结论：指数层面显著有效（12M 超额 +24%），个股弱正；**量化评分推荐20只 12M 超额 +10.8%**（旧人工池 +0.66%）
+- **回测**（`_backtest_analysis.py`，S2）：dy 上穿90分位=买/下穿10分位=卖，信号后 1/3/6/12 个月收益 vs 每日买入基准；p85/90/95 敏感性（分组粒度）；默认**全量 385 标的**（11 指数 + 12 ETF + 362 股票：推荐20 20 只 + 其他成份股 294 只 + 自选股 48 只），按 指数/ETF/推荐20/其他成份股/自选股 五分组统计 → `docs/回测报告.md` + `web/data/backtest.json`；结论：指数层面显著有效（12M 超额 +24%），个股弱正；**量化评分推荐20只 12M 超额 +10.8%**（旧人工池 +0.66%）
 - **前端**（S6-S8）：指数/ETF/股票详情页「区间分析」tab（分数仪表盘+因子明细+三档切换）；K线主图叠加买入/卖出锚虚线；股息率副图（近5年曲线+90/10分位线）；顶部「回测报告」页（三档切换+汇总卡+五分组卡+明细表，明细含分组列可筛选）
-- **测试**（`_test_analysis.py`）：66 项断言（T1-T9 数据/结构/边界/回测产物 + T10 池/产物/文件一致性关系断言；T4.5/T7 已由精确快照改为区间/关系断言，CI 与本地同口径），`python scripts/_test_analysis.py` 一键回归；前端纯函数 14 项单测（`node --test --test-isolation=none tests/frontend/analysis.test.mjs tests/frontend/reco.test.mjs`，覆盖权重表/分档边界/候选池构建/评分公式）+ 19 项浏览器矩阵（CloakBrowser）
+- **测试**（`_test_analysis.py`）：66 项断言（T1-T9 数据/结构/边界/回测产物 + T10 池/产物/文件一致性关系断言；T4.5/T7 已由精确快照改为区间/关系断言，CI 与本地同口径），`python scripts/_test_analysis.py` 一键回归；前端纯函数 19 项单测（`node --test --test-isolation=none "tests/frontend/*.test.mjs"`：analysis/reco/data，覆盖权重表/分档边界/候选池构建/评分公式/数据层 LRU 与并发去重）+ 浏览器冒烟 15 项（`node tests/browser/smoke.mjs`，playwright-core + 系统 Edge headless；见 `tests/README.md`）
 - **推荐20量化评分**（`_recommend_stocks.py`）：硬过滤（ST/未就绪/dy<3.0%/流动性3000万/分红断档）→ 三组10因子评分（价值：股息率/历史分位/估值；质量：年报ROE/ROE稳定性/分红率/分红趋势；行为：趋势/波动/动量）→ 三档权重（稳健/均衡/进取）→ 组合约束（行业≤4 + 四象限各≥3）→ `cache/_推荐20.json`（TOP20+备选+临界备选⚠️+排除清单）；`fsd.STOCKS` 动态读产物，manifest/回测分组/Excel 全链路自动跟随；dy∈[3.0,3.5) 纳入候选池并标记 ⚠️ 临界备选
 - 增量更新：从缓存最后日期起拉取，无缓存则全量；更新后自动导出Excel
 - 股票历史：腾讯不复权日K（真实价格），2004-01-01 起；成交额按量×100×均价估算（腾讯无成交额字段）；增量=拉最近800条+字段级合并

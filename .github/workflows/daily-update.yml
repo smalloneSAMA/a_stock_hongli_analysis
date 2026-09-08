@@ -11,16 +11,15 @@
 #
 # 提交策略：
 #   · 仅当工作区有实际数据变化才提交（节假日/数据源无更新 → 零提交，正常退出）
-#   · 提交前跑 _common.py 冒烟自测（54 项）+ _test_analysis.py 回归断言（66 项），失败则中止不提交（数据安全第一）
+#   · 提交前跑 _common.py 冒烟自测（65 项）+ _test_analysis.py 回归断言（66 项），失败则中止不提交（数据安全第一）
+#   · 另有独立 job「浏览器冒烟」在 windows-latest 上跑 tests/browser/smoke.mjs（15 项，自带 Edge）
 #   · push 前 pull --rebase + 重试 3 次（防并行会话提交冲突）
 #
 # 已知注意事项：
 #   · runner 为海外 IP，访问腾讯/东财/中证/国证/新浪/天天基金可能限流/超时，
 #     脚本已内置失败清单 + 连续失败熔断，次日增量自愈；连续失败会收到 Actions 邮件
 #   · TZ=Asia/Shanghai 保证 fetched_at/变更摘要日期正确（runner 默认 UTC 会写错日期）
-#   · 测试 T7 数值快照（000922 三档分数）随行情漂移属已知现象（AGENTS.md），
-#     CI 用 --no-snapshot 跳过快照断言（结构性断言 60 项保留）；
-#     快照刷新由本地人工全量测试负责（漂移时同步 _test_analysis.py 并注释）
+#   · 测试已无脆弱数值快照（N3）：T4.5/T7 改区间/关系断言，CI 与本地同口径跑全部 66 项
 
 name: 数据每日更新
 
@@ -80,13 +79,18 @@ jobs:
       #    规则与排除见 pyproject.toml（scripts/_archive 已排除）
       - name: Lint（ruff）
         run: |
-          pip install ruff
+          pip install ruff==0.16.6   # N19：版本固定，避免规则集漂移导致 CI 忽红忽绿
           ruff check .
 
       # ── 前端纯函数单测（T29）：analysis.js / reco.js 的权重、分档、候选池构建、评分公式
       #    --test-isolation=none：单进程运行（避免每个测试文件各起一个子进程）
       - name: 前端纯函数单测（node --test）
         run: node --test --test-isolation=none "tests/frontend/*.test.mjs"
+
+      # ── 后端关键函数单测（N20）：回测执行日索引口径 / 推荐20组合约束 / 组合回测因子取值
+      #    纯函数 + 小型 fixture，不触网不读 cache/，秒级；覆盖脚本改坏时能被拦住
+      - name: 后端单元测试（unittest）
+        run: python -m unittest discover -s tests/python -t . -v
 
       # ── 模式判定（auto：季度日 > 周一 > 日常）────────────────────────
       - name: 判定更新模式
@@ -186,3 +190,40 @@ jobs:
           done
           echo "推送失败：远端有并行提交且 rebase 冲突，请人工处理（数据仍保留在本地产物，下次运行增量自愈）"
           exit 1
+
+  # ── 浏览器冒烟（N18）：windows-latest 自带 Edge + playwright-core（无需下载浏览器）──
+  #    只读仓库（不提交），与 update job 并行；失败即 job 失败（Actions 邮件可见）
+  browser-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 安装 playwright-core（不下载浏览器，用系统 Edge）
+        run: npm install --prefix "${{ runner.temp }}/pw" playwright-core
+        shell: pwsh
+
+      - name: 启动本地静态服务（8125）
+        run: |
+          Start-Process python -ArgumentList "serve.py","8125" -NoNewWindow
+          for ($i = 0; $i -lt 30; $i++) {
+            try { Invoke-WebRequest http://127.0.0.1:8125/web/ -UseBasicParsing -TimeoutSec 2 | Out-Null; Write-Host "服务就绪"; exit 0 } catch { Start-Sleep -Seconds 1 }
+          }
+          Write-Error "静态服务未就绪"; exit 1
+        shell: pwsh
+
+      - name: 浏览器冒烟（15 项断言）
+        env:
+          PW_PATH: ${{ runner.temp }}/pw/node_modules/playwright-core
+          DSH_PORT: '8125'
+        run: node tests/browser/smoke.mjs
+        shell: pwsh

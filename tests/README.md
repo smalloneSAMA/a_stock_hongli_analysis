@@ -2,10 +2,13 @@
 
 | 目录 | 内容 | 运行方式 | 是否进 CI |
 | :--- | :--- | :--- | :--- |
-| `frontend/` | 前端纯函数单测（`analysis.js` / `reco.js` 权重表·分档·候选池·评分公式；`data.js` 内存 LRU） | `node --test --test-isolation=none "tests/frontend/*.test.mjs"` | ✅（CI 前置步骤） |
-| `browser/` | 浏览器端冒烟（陈旧角标渲染、三主视图不请求 `analysis_dy`、对比页改读 `dy_series`） | 见下 | ❌（需 Edge + playwright-core，本地人工） |
+| `frontend/` | 前端纯函数单测（`analysis.js` / `reco.js` 权重表·分档·候选池·评分公式；`data.js` 内存 LRU + 并发去重） | `node --test --test-isolation=none "tests/frontend/*.test.mjs"` | ✅（CI 前置步骤） |
+| `python/` | 后端关键函数单测（回测执行日口径 / 组合约束 / 因子取值，纯函数 + fixture，不触网） | `python -m unittest discover -s tests/python -t . -v` | ✅（CI 前置步骤） |
+| `browser/` | 浏览器端冒烟（陈旧角标渲染、三主视图不请求 `analysis_dy`、对比页改读 `dy_series`） | 见下 | ✅（N18 起：windows-latest 独立 job） |
 
-> Python 侧测试不在此目录：`python scripts/_common.py`（公共模块自测，54 项）、`python scripts/_test_analysis.py`（66 项，CI 与本地同口径）。
+> 端到端测试不在此目录：`python scripts/_common.py`（公共模块自测，65 项）、`python scripts/_test_analysis.py`（66 项，CI 与本地同口径）。
+>
+> `tests/python/` 断言的是**函数级口径**（例如执行日索引 = 分位上穿确认日 + exec_offset − 1）；端到端产物断言在 `_test_analysis.py`，两者互补。
 
 ## 浏览器冒烟 `tests/browser/smoke.mjs`
 

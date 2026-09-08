@@ -15,7 +15,7 @@ A股红利研究终端：红利指数/ETF/股票的行情、成分、股息率�
 - **改抓取脚本**：只影响 cache/ → 需重跑 `update.py web`（或对应生成命令）前端才生效
 - **改预计算脚本**：直接跑该脚本命令 + `update.py web`
 - **改前端**：刷新页面即可（serve.py no-cache），但**数据包未重生成时前端改动无法体现新数据**
-- cache/、web/data/ 共 1700+ 文件被 git 跟踪，产物数据可随功能一并提交；涉及数据漂移的提交需在说明中注明
+- cache/、web/data/ 共 1800+ 文件被 git 跟踪，产物数据可随功能一并提交；涉及数据漂移的提交需在说明中注明
 
 ## 3. 命令速查
 
@@ -45,7 +45,7 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 ## 5. 前端架构约束
 
 - 纯 ES Module + 全局 `echarts`（`vendor/echarts.min.js`，charts.js 直接引用全局，无 import）
-- hash 路由 8 视图：`#/index|etf|stock|summary|backtest|portfolio|compare|scan`；**视图容器常驻不销毁**（切视图保留状态），收藏等跨视图状态靠事件同步
+- hash 路由 10 视图：`#/index|etf|stock|summary|backtest|portfolio|compare|scan|recommend|holdings`；**视图容器常驻不销毁**（切视图保留状态），收藏等跨视图状态靠事件同步
 - **ESM 语法验证必须转 `.mjs`**：`cp f.js /tmp/f.mjs && node --check /tmp/f.mjs`——普通 `.js` 的 `node --check` 按 CJS 解析会漏检（困难总结127）
 - **图表重建陷阱**：`setSubSeries` 用 `replaceMerge: ['series','legend']` 整体替换系列——按名字切片/查找系列（如 `cur.series.find(s => s.name === '成交量')`），**新增/改名系列后重建逻辑必须同步**（曾致指数板块 MA60/MA250 图例丢失，commit c65c520）
 - tooltip 自定义 formatter 逐行拼接 HTML；成交量/成交额单位：万手/亿元
@@ -56,7 +56,7 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 | 文件                                                                      | 职责                                                                                                 |
 | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | update.py                                                                 | 数据更新总入口（交互菜单+快捷命令）                                                                  |
-| _common.py                                                                | ★ 公共工具单一来源：market_prefix(92→bj先于9x)/tencent_quotes(50只批)/em_get(东财限流)/atomic_dump |
+| _common.py                                                                | ★ 公共工具单一来源：market_prefix(92→bj先于9x)/tencent_quotes(50只批)/em_get(东财限流,线程安全)/atomic_dump/parallel_map+RateGate(并发抓取) |
 | serve.py                                                                  | 本地静态服务（项目根启动，no-cache）                                                                 |
 | _fetch_history.py                                                         | 指数/ETF 历史行情（增量拉取，INDICES/ETFS 常量在此）                                                 |
 | _fetch_stock_data.py                                                      | 推荐20股票日线（不复权 2004 起）                                                                     |
@@ -70,7 +70,7 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 | _update_summary.py                                                        | 成分股汇总 / 汇总 Excel                                                                              |
 | _classify.py                                                              | 行业分类                                                                                             |
 | scripts/_archive/*.py                                                     | 无引用脚本归档（6 个，勿在链路中引用；见 `scripts/_archive/README.md`）                              |
-| web/js/views/*.js                                                         | 各视图（indexView/etfView/stockView/summaryView/backtestView/portfolioView/compareView/scanView）    |
+| web/js/views/*.js                                                         | 各视图（indexView/etfView/stockView/summaryView/backtestView/portfolioView/compareView/scanView/recommendView/holdingsView + historyLayout/reco/analysis 公共模块） |
 | web/js/charts.js                                                          | ECharts 工厂（K线/折线/环形/条形，图表重建逻辑）                                                     |
 | web/js/views/common.js                                                    | 通用：收藏(localStorage)、renderTable、列表渲染                                                      |
 
@@ -79,6 +79,7 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 - **Python 脚本**：直接运行对应命令，检查 cache/ 与 web/data/ 产物字段/数值合理性
 - **测试断言关系化**：池规模/标的数类断言一律写关系式（全池有数据、产物池一致、分组对账），**禁止硬编码数字**（380/294 已废除，困难总结 #136/#146）；**禁止精确数值快照**（N3 起：原 T4.5/T7 已改区间/关系断言，CI 与本地同口径跑全部 66 项）
 - **前端语法**：所有改动 JS 转 `.mjs` 后 `node --check`
+- **前端自动化测试**：纯函数 `node --test --test-isolation=none "tests/frontend/*.test.mjs"`；浏览器冒烟 `node tests/browser/smoke.mjs`（需先 `python serve.py 8125` + `PW_PATH`，见 `tests/README.md`）
 - **前端行为**：真实浏览器验证用 **playwright-core + 系统 Edge headless**（`executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'`）打开 `http://localhost:8000/web/#/视图`，用 `echarts.getInstanceByDom(document.querySelector('.chart')).getOption()` 探测 legend/series/selected（模型无法直接查看截图，此路径为唯一可靠验证；CloakBrowser Chromium 下载被网络阻断不可用）
 - 回测数值断言已无快照（N3）：改区间/关系断言后，行情漂移不再误报；新增断言同样遵守「关系化」约定
 
@@ -86,5 +87,5 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 
 - **"先不改代码"模式**：复杂需求（口径设计、方案取舍、UI 交互）先给方案/分析，用户明确确认后才编码
 - git 提交：**中文主题 + 要点分列**（每条含根因/修复/验证），如 `修复指数板块 MA60/MA250 图例丢失：...`
-- **困难总结.md 持续追加编号清单**（当前到 147），新坑必记：现象/根因/修复/教训
+- **困难总结.md 持续追加编号清单**（当前到 157），新坑必记：现象/根因/修复/教训
 - 前端文件用 ESM；Python 用 UTF-8 + `# -*- coding: utf-8 -*-` 头部
