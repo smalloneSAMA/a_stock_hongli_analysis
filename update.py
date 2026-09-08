@@ -20,7 +20,8 @@ sys.path.insert(0, SCRIPTS)
 import _fetch_history as fh
 import _fetch_stock_data as fsd
 from _common import (STALE_LAG_DAYS as LAG_DAYS, find_stale, update_stale_report, STALE_GAP_DAYS,   # 陈旧阈值（T2/T3）
-                     IDX_DIV)   # T23：指数单位除数唯一来源
+                     IDX_DIV,   # T23：指数单位除数唯一来源
+                     atomic_load as load_json, atomic_dump as save_json, safe_export)   # T24：读写/Excel 包裹统一实现
 
 # import后包装stdout（fh的包装对象仍被其模块引用，底层buffer不会被关闭）
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -34,18 +35,7 @@ WEB_DATA = os.path.join(BASE, "web", "data")
 
 # ────────────────────────────── 通用小工具 ──────────────────────────────
 
-def load_json(p, default=None):
-    try:
-        with open(p, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return default
-
-def save_json(p, obj):
-    tmp = p + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, p)
+# load_json/save_json/safe_export 统一由 _common 提供（T24：原为本地复制实现）
 
 def ask(msg, default=True):
     tip = "(y/n) " if default else "(y/N) "
@@ -58,15 +48,6 @@ def ask(msg, default=True):
         if r in ("n", "no"):
             return False
         print("  请输入 y 或 n")
-
-def safe_export(desc, fn):
-    """Excel 导出统一包裹：文件被占用时不中断流程，返回是否成功"""
-    try:
-        fn()
-        return True
-    except PermissionError:
-        print(f"⚠️  {desc} 导出失败：文件被占用（请关闭 Excel 后重试该项）")
-        return False
 
 # ────────────────────────────── 变更摘要（_change_log.json） ──────────────────────────────
 
@@ -431,6 +412,24 @@ def update_summary(force=False):
     _update_summary.run(force=force)
     collect_pool()   # 变更摘要采集
 
+def rebuild_web(with_rec=True):
+    """重算前端数据包（T24：原 5 处复制粘贴统一到此）
+    顺序：股票指标 → manifest → 区间分析（analysis_dy/analysis.json/dy_series.json）
+          → 推荐20评分 → 刷新进程内 STOCKS → manifest v2（rec 标记用本次评分产物）
+    with_rec=False 时只重算指标与分析（不重算评分/manifest v2）"""
+    import _gen_web_data as gwd
+    import _gen_analysis as ga
+    gwd.build_stock_indicators()   # 先指标（manifest 的 last_dy 读指标文件末行）
+    gwd.build_manifest()
+    ga.main()
+    if not with_rec:
+        return
+    import _recommend_stocks as rs
+    rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
+    fsd.refresh_stocks()   # 刷新进程内 STOCKS（模块 import 时仅求值一次）
+    gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
+
+
 def update_web():
     """前端数据包：web/data/ 四件套 + 买卖区间分析（S1反推+S3/S4打分） + 国证指数成分
     轻量事务（P2.4）：每步 try/except 隔离，失败计数并继续，末尾汇总告警；
@@ -479,15 +478,7 @@ def update_pool(rerun_web=True):
     fpd.main()
     if rerun_web:
         print("\n── 重算前端数据包（指标 + 区间分析）──")
-        import _gen_web_data as gwd
-        gwd.build_stock_indicators()   # 先指标（manifest 的 last_dy 读指标文件末行）
-        gwd.build_manifest()
-        import _gen_analysis as ga
-        ga.main()
-        import _recommend_stocks as rs
-        rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
-        fsd.refresh_stocks()   # 刷新进程内 STOCKS
-        gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
+        rebuild_web()
         print("\n⚠️  季度末请执行：python scripts/_fetch_pool_data.py --check-fin（分红/财报/股本检测，约15分钟）")
         print("✅ 其他成份股更新完成（刷新浏览器即可）")
 
@@ -499,15 +490,7 @@ def update_watchlist(rerun_web=True):
     fw.main()
     if rerun_web:
         print("\n── 重算前端数据包（清单 + 指标 + 区间分析）──")
-        import _gen_web_data as gwd
-        gwd.build_stock_indicators()   # 先指标（manifest 的 last_dy 读指标文件末行）
-        gwd.build_manifest()
-        import _gen_analysis as ga
-        ga.main()
-        import _recommend_stocks as rs
-        rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
-        fsd.refresh_stocks()   # 刷新进程内 STOCKS
-        gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
+        rebuild_web()
         print("✅ 自选股更新完成（刷新浏览器即可）")
 
 
@@ -540,15 +523,7 @@ def retry_failed():
     import _fetch_watchlist as fw
     fw.main(retry_failed=True)
     print("\n── 重算前端数据包 ──")
-    import _gen_web_data as gwd
-    gwd.build_stock_indicators()
-    gwd.build_manifest()
-    import _gen_analysis as ga
-    ga.main()
-    import _recommend_stocks as rs
-    rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
-    fsd.refresh_stocks()   # 刷新进程内 STOCKS
-    gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
+    rebuild_web()
     print("✅ 重试完成（刷新浏览器即可）")
 
 def gc_orphans(auto=False):
@@ -653,11 +628,8 @@ def deep_update(auto=False):
         import _fetch_watchlist as fw
         fw.main(check_fin=True)
         save_json(LAST_FIN, {"time": time.strftime("%Y-%m-%d %H:%M")})
-        import _recommend_stocks as rs
-        rs.main()   # check-fin 后质量因子更新，重算推荐评分
-        fsd.refresh_stocks()   # 刷新进程内 STOCKS
-        import _gen_web_data as gwd
-        gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
+        print("\n── 重算前端数据包（check-fin 后分红/财报已变，指标需重算）──")
+        rebuild_web()
     update_pool(rerun_web=False)      # 9 其他成份（含新成分K线）
     update_watchlist(rerun_web=False)  # 10 自选
     update_watchlist_indicators()   # 清单指标（市值/PE/PB → 写回 xlsx）
@@ -733,12 +705,9 @@ def tools_menu():
             import _fetch_watchlist as fw
             fw.main(check_fin=True)
             save_json(LAST_FIN, {"time": time.strftime("%Y-%m-%d %H:%M")})
-            import _recommend_stocks as rs
-            rs.main()   # check-fin 后质量因子更新，重算推荐评分
-            fsd.refresh_stocks()   # 刷新进程内 STOCKS
-            import _gen_web_data as gwd
-            gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
-            print("✅ check-fin 完成（建议随后运行 单项→4 重算指标）")
+            print("\n── 重算前端数据包（check-fin 后分红/财报已变，指标需重算）──")
+            rebuild_web()
+            print("✅ check-fin 完成（指标与分析已一并重算）")
         elif ch == "6":
             update_watchlist_indicators()
         else:
