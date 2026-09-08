@@ -149,6 +149,10 @@ jobs:
       - name: 状态扫描
         run: python update.py status | tee /tmp/status.txt
 
+      # ── 仓库体积监控（N2）：.git 体积 / 垃圾对象 / 工作区数据体积（发现垃圾对象则失败）──
+      - name: 仓库体积监控
+        run: python scripts/_repo_health.py
+
       # ── 回归测试：失败则中止（不提交），邮件通知人工 ──────────────────
       # --no-snapshot：跳过 T4.5/T7 数值快照断言（随行情漂移属已知现象，
       # CI 每次数据更新后快照必过期；结构性断言 63 项全部保留，本地人工全量测试 65 项）
