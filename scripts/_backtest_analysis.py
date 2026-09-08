@@ -257,10 +257,9 @@ def collect_results(order, data, group_of, only=None, exec_offset=1, verbose=Tru
     return results_by_p
 
 
-def main(only=None, p_buy=None, exec_offset=1):
+def load_pool_and_groups():
+    """→ (data, group_of)：全量分析池 + 分组函数（T31：对比脚本复用同一口径，勿另写一份）"""
     data = load_analysis()
-    order = (p_buy,) if p_buy else (85, 90, 95)
-    # 分组口径：推荐20 优先于自选（重叠时归推荐）；其余股票 = 其他成份股
     rec_set = {c for c, _, _ in fsd.STOCKS}
     try:
         import _fetch_watchlist as watchlist
@@ -279,6 +278,12 @@ def main(only=None, p_buy=None, exec_offset=1):
             return "自选股"
         return "其他成份股"
 
+    return data, group_of
+
+
+def main(only=None, p_buy=None, exec_offset=1):
+    order = (p_buy,) if p_buy else (85, 90, 95)
+    data, group_of = load_pool_and_groups()
     results_by_p = collect_results(order, data, group_of, only=only, exec_offset=exec_offset)
     if exec_offset != 1:
         # T30：非默认口径只做研究，不覆盖默认产物（docs/回测报告.md、web/data/backtest.json）
