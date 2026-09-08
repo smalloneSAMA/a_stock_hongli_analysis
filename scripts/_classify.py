@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """东财三级行业 → 一级大类映射 + 输出全部成分股汇总表"""
-import json, os, sys
+import json
+import os
+import sys
 
 # 申万二级/三级行业 → 一级大类（f127 为申万行业分类，带 Ⅱ 罗马数字后缀）
 M = {

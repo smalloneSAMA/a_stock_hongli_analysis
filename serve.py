@@ -13,7 +13,7 @@ import io
 import json
 import os
 import sys
-from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 # 持仓台账（唯一事实来源：cache/持仓.json；前端 POST /api/holdings 落盘）
 # v2 结构 {version:2, portfolios:[{id,name,preset,trades:[...]}]}（多持仓页）；v1 {version:1,trades:[...]} 仍兜底接受
@@ -81,7 +81,7 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         use_gz = (compressible and len(raw) >= self.GZIP_MIN
                   and 'gzip' in (self.headers.get('Accept-Encoding') or ''))
         # ETag 由 mtime+size 派生（重生成即变）；带编码后缀，避免同一 ETag 对应两种表示
-        etag = '"%x-%x%s"' % (int(st.st_mtime), st.st_size, '-gz' if use_gz else '')
+        etag = f'"{int(st.st_mtime):x}-{st.st_size:x}{"-gz" if use_gz else ""}"'
         if is_data:
             inm = (self.headers.get('If-None-Match') or '').strip()
             if inm and inm in (etag, '*'):
@@ -108,7 +108,7 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, fmt, *args):
-        sys.stderr.write("[serve %s] %s\n" % (self.log_date_time_string(), fmt % args))
+        sys.stderr.write(f"[serve {self.log_date_time_string()}] {fmt % args}\n")
 
     def do_POST(self):
         """仅接受 POST /api/holdings：JSON 结构校验 + 大小上限 + 原子写 cache/持仓.json"""

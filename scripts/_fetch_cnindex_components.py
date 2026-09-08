@@ -9,8 +9,14 @@
 
 用法: python scripts/_fetch_cnindex_components.py [indexcode ...]
 """
-import io, json, os, sys, time, urllib.request
-from _common import atomic_dump, UA   # T23：UA 唯一来源
+import io
+import json
+import os
+import sys
+import time
+import urllib.request
+
+from _common import UA, atomic_dump  # T23：UA 唯一来源
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -53,7 +59,7 @@ def fetch(code, name, date_str=None):
 def export_excel(objs):
     """生成 excel/国证指数成分.xlsx：每只国证指数一个 sheet（代码/名称/国证行业/权重），附说明页"""
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
     wb = Workbook()
     wb.remove(wb.active)

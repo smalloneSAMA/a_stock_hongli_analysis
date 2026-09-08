@@ -14,16 +14,26 @@
 含分红口径为近似（现金计入不复投）；③ 基准未含分红（同价格口径可比）。
 用法: python scripts/_backtest_portfolio.py [--start 2019-01-01]
 """
-import sys, os, json, math, datetime, argparse
+import argparse
+import datetime
+import json
+import math
+import os
+import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
-import _recommend_stocks as rs   # 复用硬过滤/因子映射/约束（仅借用 QUADRANT/WEIGHTS 常量）
+import _fetch_history as fh  # 统一缓存读取（T17：load_cache 内部已解码）
 import _fetch_stock_data as fsd
-from _common import (atomic_dump_if_changed, write_text_if_changed,   # N1：无变化不写盘
-                     decode_indicator, pct_rank, WINDOW)   # 解码 + 分位 + 窗口（T22/T23）
-import _fetch_history as fh   # 统一缓存读取（T17：load_cache 内部已解码）
+import _recommend_stocks as rs  # 复用硬过滤/因子映射/约束（仅借用 QUADRANT/WEIGHTS 常量）
+from _common import (  # N1：无变化不写盘
+    WINDOW,
+    atomic_dump_if_changed,
+    decode_indicator,  # 解码 + 分位 + 窗口（T22/T23）
+    pct_rank,
+    write_text_if_changed,
+)
 
 DY_MIN = 3.0           # 与推荐评分一致
 AMT_MIN = 3e7          # 60日均额（元）
@@ -413,6 +423,7 @@ def main(start=None):
     lines = []
     lines.append("# 组合回测报告：推荐20量化选股（历史验证）")
     lines.append("")
+    lines.append("> 🤖 本文件由脚本自动生成，请勿手工编辑（重生成会覆盖改动）。")
     lines.append(f"> 数据日期：{data_date} ｜ 区间：{q_dates[0]} ~ {q_dates[-1]}（{len(q_dates)-1} 期）｜ 调仓：季度末｜ 持仓：TOP20 等权")
     lines.append("> 选股：与线上推荐评分同构（硬过滤 dy≥3.0% + 60日均额≥3000万；三组10因子；均衡档权重；行业≤4 + 四象限各≥3），因子均取调仓日及以前数据（无未来函数）")
     lines.append("> 收益口径：价格口径（主）；含现金分红口径（期内除权派息/期初价，不复投，附注）")

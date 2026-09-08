@@ -9,6 +9,7 @@
   · 工作区数据体积（cache / web/data / excel）
   · 跟踪文件数（git ls-files）
 """
+import contextlib
 import json
 import os
 import subprocess
@@ -22,10 +23,8 @@ def du(path):
     total = 0
     for root, _dirs, files in os.walk(path):
         for f in files:
-            try:
+            with contextlib.suppress(OSError):
                 total += os.path.getsize(os.path.join(root, f))
-            except OSError:
-                pass
     return total
 
 

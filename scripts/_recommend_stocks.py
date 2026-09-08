@@ -21,14 +21,23 @@
 产物：cache/_推荐20.json（单一事实来源，含因子明细/TOP30/排除清单/版本日期）
 用法: python scripts/_recommend_stocks.py [--top 20] [--no-write]
 """
-import sys, os, json, math, argparse, datetime
+import argparse
+import datetime
+import json
+import math
+import os
+import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_stock_data as fsd
-from _common import (is_bj, decode_rows, decode_indicator,   # 北交所剔除 + 列式/稀疏解码
-                     pct_rank)   # T22：分位唯一实现（统一 <）
+from _common import (  # 北交所剔除 + 列式/稀疏解码
+    decode_indicator,
+    decode_rows,
+    is_bj,
+    pct_rank,  # T22：分位唯一实现（统一 <）
+)
 
 OUT = os.path.join(BASE, "cache", "_推荐20.json")
 DY_MIN = 3.0          # 股息率门槛（%）；dy∈[3.0,3.5) 为临界纳入（标记 near）

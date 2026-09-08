@@ -6,10 +6,16 @@
 - 股票：直接取 web/data/stocks 指标文件的逐日 dy 序列
 - 分位：近 5 年（1250 交易日）窗口，不足用全部
 
-产出：cache/analysis_dy.json（每标的 dy0/当前dy/分位/10·50·90分位值/全量序列/点位锚参数 D）
+产出：cache/analysis_dy.json（每标的 dy0/当前dy/分位/10·50·90分位值/全量序列/点位锚参数 D；
+      消费方=回测脚本与回归测试——前端已改读 analysis.json/dy_series.json；N10：本进程内不再写后读回）
 用法: python scripts/_gen_analysis.py [--only 000922]
 """
-import sys, os, json, argparse, re
+import argparse
+import json
+import os
+import re
+import sys
+
 import numpy as np
 
 sys.stdout.reconfigure(encoding="utf-8")   # 不换对象，import 无副作用（避免二次包装关闭 buffer）
@@ -18,10 +24,14 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import (atomic_dump, is_bj, decode_indicator,   # 原子写 + 北交所剔除 + 列式/稀疏解码
-                     pct_rank, WINDOW, ETF_TRACK)   # T22 分位 + T23 常量/ETF 元数据唯一来源
-
-
+from _common import (  # 原子写 + 北交所剔除 + 列式/稀疏解码
+    ETF_TRACK,
+    WINDOW,
+    atomic_dump,
+    decode_indicator,
+    is_bj,
+    pct_rank,  # T22 分位 + T23 常量/ETF 元数据唯一来源
+)
 
 # ── S3/S4 因子打分 ─────────────────────────────────────────────
 # 三档权重（S2 回测调整：个股 dy 降权、估值升权）；A=指数/ETF 体系，B=股票体系
@@ -156,9 +166,13 @@ def price_percentile_anchor(info):
     return float(np.percentile(win, 10)), float(np.percentile(win, 90))
 
 
-def build_factors():
-    """S4：全因子分位 + 三档权重表 → web/data/analysis.json（数据层只存分位，分数前端本地算）"""
-    dy_data = json.load(open(os.path.join(BASE, "cache", "analysis_dy.json"), encoding="utf-8"))
+def build_factors(dy_data=None):
+    """S4：全因子分位 + 三档权重表 → web/data/analysis.json（数据层只存分位，分数前端本地算）
+
+    N10：dy_data 可由调用方内存直传（main 里刚算出来的 out），避免「写 1.9MB → 立刻读回」；
+    省略时仍从 cache/analysis_dy.json 读取（供单独调试/其他入口调用）"""
+    if dy_data is None:
+        dy_data = json.load(open(os.path.join(BASE, "cache", "analysis_dy.json"), encoding="utf-8"))
     out = {"date": "", "presets": PRESETS, "by_code": {}}
     rows_out = []
     for code, info in dy_data.items():
@@ -183,8 +197,15 @@ def build_factors():
         scores = {}
         for pname, pws in PRESETS.items():
             w = pws["A"] if typ != "股票" else pws["B"]
-            s = sum(f[k][1] * wgt for k, wgt in w.items() if f[k][1] is not None)
-            scores[pname] = round(s / sum(w.values()), 1)
+            # N14：权重归一口径与前端 analysis.js#scoreOf、_recommend_stocks 一致——
+            # 只按「存在因子」的权重和归一（因子分位缺失时不惩罚该因子），不再除以全部权重
+            ssum = wsum = 0.0
+            for k, wgt in w.items():
+                pv = f[k][1] if k in f else None
+                if pv is not None:
+                    ssum += pv * wgt
+                    wsum += wgt
+            scores[pname] = round(ssum / wsum, 1) if wsum else None
         factors = {k: {"name": FACTOR_CN[k], "v": f[k][0], "pct": f[k][1]} for k in f}
         # S5 点位锚：近5年反推口径（与主图统一）——反推 dy_t = D/close_t 的分位 ⇔ 价格分位，
         # 买入锚 = 近5年价格10分位（股息率高=便宜），卖出锚 = 近5年价格90分位（贵）；
@@ -233,10 +254,8 @@ def build_factors():
     for code, name, typ, scores in sorted(rows_out, key=lambda x: -x[3]["均衡"]):
         band = band_of(scores["均衡"])
         an = out["by_code"][code].get("anchors")
-        if an:
-            a = f"{an['buy']:.0f}({an['dist_buy']:+.0f}%)  {an['sell']:.0f}({an['dist_sell']:+.0f}%)"
-        else:
-            a = "—"
+        a = (f"{an['buy']:.0f}({an['dist_buy']:+.0f}%)  {an['sell']:.0f}({an['dist_sell']:+.0f}%)"
+             if an else "—")
         print(f"{code:<8}{name:<14}{typ:<4}{scores['稳健']:>7.1f}{scores['均衡']:>7.1f}{scores['进取']:>7.1f}  {band:<7}  {a}")
     print(f"\n✅ web/data/analysis.json 已生成（{len(out['by_code'])} 标的，三档权重已内嵌）")
 
@@ -331,11 +350,9 @@ def build_index_etf(typ, code, name, stocks, index_info=None):
     if dy0 is None:
         return {"code": code, "name": name, "type": typ, "dy0": None, "note": "成分股息率缺失"}
     rows = c["rows"]
-    if typ == "ETF":
-        # 净值优先（贴近指数），缺失日期用场内收盘价兜底
-        px_rows = [(r["date"], r.get("nav") or r["close"]) for r in rows]
-    else:
-        px_rows = [(r["date"], r["close"]) for r in rows]
+    # 净值优先（贴近指数），缺失日期用场内收盘价兜底
+    px_rows = ([(r["date"], r.get("nav") or r["close"]) for r in rows] if typ == "ETF"
+               else [(r["date"], r["close"]) for r in rows])
     return build_from_close(typ, code, name, px_rows, dy0, n_parts)
 
 
@@ -464,8 +481,8 @@ def main(only=None):
     if not only:
         a, b = out.get("000922"), out.get("515180")
         if a and b and a["series"] and b["series"]:
-            ma = {d: v for d, v in a["series"]}
-            mb = {d: v for d, v in b["series"]}
+            ma = dict(a["series"])
+            mb = dict(b["series"])
             common = [(ma[d], mb[d]) for d in ma if d in mb]
             if common:
                 xs = [x for x, _ in common]; ys = [y for _, y in common]
@@ -489,9 +506,9 @@ def main(only=None):
     atomic_dump(os.path.join(BASE, "cache", "analysis_dy.json"), out, indent=None)
     print(f"\n✅ cache/analysis_dy.json 已生成（{len(out)} 标的）")
 
-    # S3：因子打分（全量）
+    # S3：因子打分（全量）——N10：内存直传 out（不再从磁盘读回刚写的 analysis_dy.json）
     if not only:
-        build_factors()
+        build_factors(out)
 
 
 if __name__ == "__main__":

@@ -7,12 +7,15 @@
   N3 起：无「数值快照」断言——原 T4.5/T7 的精确快照已改为区间/关系断言，
   CI 与本地口径一致（65 项全部执行，无需 --no-snapshot）
 """
-import sys, os, json, argparse
+import argparse
+import json
+import os
+import sys
 
 sys.stdout.reconfigure(encoding="utf-8")   # 不换对象，避免与 import 模块的包装冲突
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
-from _common import decode_rows, decode_indicator   # T17/T18：列式 + 稀疏列解码
+from _common import decode_indicator, decode_rows  # T17/T18：列式 + 稀疏列解码
 
 _ap = argparse.ArgumentParser()
 _ap.add_argument("--no-snapshot", action="store_true",
@@ -137,6 +140,7 @@ check("报告含方法/结论", "## 一、" in rep and "## 三、结论" in rep)
 check("报告含 ETF 无信号说明", "无买入信号" in rep)
 # 2.2 ETF 结果==跟踪指数（从报告中敏感性表解析太脆，改为重跑单标的对比）
 import _backtest_analysis as bta
+
 info_etf = dy_data["515180"]
 info_idx = dy_data["000922"]
 r_etf = bta.run_backtest("515180", info_etf, p_buy=90)
@@ -173,9 +177,8 @@ check("因子pct∈[0,100]", not bad, f"异常: {bad}")
 bad = []
 for c, v in by_code.items():
     d = dy_data[c]
-    if d.get("dy0"):
-        if abs(v["factors"]["dy"]["pct"] - (100 - d["dy_pct"])) > 0.01:
-            bad.append((c, v["factors"]["dy"]["pct"], d["dy_pct"]))
+    if d.get("dy0") and abs(v["factors"]["dy"]["pct"] - (100 - d["dy_pct"])) > 0.01:
+        bad.append((c, v["factors"]["dy"]["pct"], d["dy_pct"]))
 check("dy分位已反向(100-dy_pct)", not bad, f"异常: {bad}")
 # 3.5 分数重算一致性（重算=均衡档，检查范围 + 三档关系）
 score_bad = []
@@ -184,10 +187,15 @@ for c, v in by_code.items():
     scores = {}
     for pname, pws in analysis["presets"].items():
         w = pws["A"] if typ != "股票" else pws["B"]
-        s = sum(fv["pct"] * wgt for k, (wgt, fv) in
-                ((k, (wgt, v["factors"][k])) for k, wgt in w.items()) if fv["pct"] is not None)
-        scores[pname] = s / sum(w.values())
-        if not (0 <= scores[pname] <= 100):
+        # N14：与 _gen_analysis/前端 scoreOf 同口径——只按存在因子的权重和归一
+        s = wsum = 0.0
+        for k, wgt in w.items():
+            fv = v["factors"].get(k)
+            if fv and fv["pct"] is not None:
+                s += fv["pct"] * wgt
+                wsum += wgt
+        scores[pname] = (s / wsum) if wsum else None
+        if scores[pname] is None or not (0 <= scores[pname] <= 100):
             score_bad.append((c, pname, scores[pname]))
 check("三档分数∈[0,100]", not score_bad, f"异常: {score_bad}")
 spread_bad = [c for c, v in by_code.items()
@@ -195,6 +203,7 @@ spread_bad = [c for c, v in by_code.items()
 check("因子差异上限", not spread_bad)
 # 3.6 band 边界
 from _gen_analysis import band_of
+
 edges = [(0, "买入区间"), (25, "买入区间"), (25.01, "逐步建仓"), (45, "逐步建仓"),
          (45.01, "持有"), (65, "持有"), (65.01, "逐步卖出"), (80, "逐步卖出"), (80.01, "卖出区间")]
 check("band 边界", all(band_of(s) == b for s, b in edges), [f"{s}->{band_of(s)}" for s, _ in edges if band_of(s) != dict(edges)[s]][:3])
@@ -310,6 +319,7 @@ print("  （留痕：000922 三档分数 " + "，".join(f"{p} {recalc_score(by_c
 # 锚重算（新口径）：买入锚 == 近5年价格10分位，卖出锚 == 近5年价格90分位（反推口径，与主图统一；
 # 反推 dy_t=D/close_t 的分位 ⇔ 价格分位，锚天然落在历史价格区间内）
 import numpy as _np
+
 bad = []
 for c, v in by_code.items():
     an = v["anchors"]
@@ -356,6 +366,7 @@ n_valid = sum(1 for r in bt["by_p"]["90"] if "skip" not in r)
 check("groups.n 之和==有效标的数", n_sum == n_valid, f"{n_sum} vs {n_valid}")
 # 抽查 1 只其他成份股：重跑 run_backtest 与 json 行一致
 import _backtest_analysis as bta
+
 sample = next(r for r in bt["by_p"]["90"] if r.get("group") == "其他成份股" and "skip" not in r)
 r2 = bta.run_backtest(sample["code"], dy_data[sample["code"]], p_buy=90)
 same = r2 and "skip" not in r2 and abs(r2["excess"]["12M"] - sample["ex12"]) < 0.01
@@ -364,6 +375,7 @@ check("其他成份股抽查一致", same, f"{sample['code']} 重跑{r2['excess'
 rep = open(os.path.join(BASE, "docs", "回测报告.md"), encoding="utf-8").read()
 s = bt["summary"]["90"]
 import re as _re
+
 seg90 = rep.split("### p90")[1].split("### p95")[0]
 m = _re.search(r"平均超额：6M ([+-][\d.]+)%\s*｜\s*12M ([+-][\d.]+)%", seg90)
 check("backtest.json 与 md 结论一致", m and abs(float(m.group(1)) - s["avg6"]) < 0.01 and abs(float(m.group(2)) - s["avg12"]) < 0.01,
@@ -412,6 +424,7 @@ bad = [(c, n) for c, n in cov.items() if n < 7]
 check("TOP20 因子覆盖率≥7/10", not bad, f"异常: {bad[:5]}")
 # 10.3 manifest.stocks 与 cache/股票_*.json 一一对应（孤儿缓存 / 缺失缓存都算回归）
 import glob as _glob
+
 mset = {s["code"] for s in load("web/data/manifest.json")["stocks"]}
 cset = {os.path.basename(p)[len("股票_"):-5] for p in _glob.glob(os.path.join(BASE, "cache", "股票_*.json"))}
 check("manifest.stocks==cache/股票_*", mset == cset, f"差异: {sorted(mset ^ cset)[:5]}")

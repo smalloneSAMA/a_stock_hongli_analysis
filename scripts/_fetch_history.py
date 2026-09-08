@@ -6,10 +6,25 @@
 - 缓存：cache/{类型}_{代码}.json，有缓存直接复用；--refresh 强制重新拉取
 - 输出：excel/指数历史.xlsx、excel/ETF历史.xlsx（每标的一个sheet）
 """
-import sys, io, os, json, time, argparse, urllib.request, requests, datetime
+import argparse
+import datetime
+import io
+import json
+import os
+import sys
+import time
+import urllib.request
+
 import pandas as pd
-from _common import (atomic_dump, export_workbook, encode_rows, decode_rows,   # 原子写/Excel + 列式编码（T17）
-                     UA, IDX_DIV)   # T23：UA / 指数单位除数唯一来源
+import requests
+from _common import (  # 原子写/Excel + 列式编码（T17）
+    IDX_DIV,
+    UA,  # T23：UA / 指数单位除数唯一来源
+    atomic_dump,
+    decode_rows,
+    encode_rows,
+    export_workbook,
+)
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -92,10 +107,8 @@ def fetch_tencent_kline(tcode, code, start=None):
     all_rows = []
     end = ""
     for _page in range(30):
-        if start and not end:
-            param = f"{tcode},day,{start},,800,qfq"
-        else:
-            param = f"{tcode},day,,{end},800,qfq"
+        param = (f"{tcode},day,{start},,800,qfq" if start and not end
+                 else f"{tcode},day,,{end},800,qfq")
         url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={param}"
         req = urllib.request.Request(url, headers={"User-Agent": UA})
         d = json.loads(urllib.request.urlopen(req, timeout=15).read().decode("utf-8"))

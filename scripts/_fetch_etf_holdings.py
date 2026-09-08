@@ -11,9 +11,14 @@
 - cache/成分_980092_股息率.json 980092 股息率估算（供 _gen_analysis 使用）
 用法: python scripts/_fetch_etf_holdings.py
 """
-import sys, os, re, time, datetime
+import datetime
+import os
+import re
+import sys
+import time
+
 import requests
-from _common import atomic_load, atomic_dump, em_secid   # 原子读写 + 东财 secid（T23）
+from _common import atomic_dump, atomic_load, em_secid  # 原子读写 + 东财 secid（T23）
 
 sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

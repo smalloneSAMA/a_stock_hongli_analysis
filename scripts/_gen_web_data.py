@@ -10,7 +10,10 @@
 用法: python scripts/_gen_web_data.py
 前置：先运行 update.py 相应选项生成缓存（指数1/ETF2/汇总表4/股票5）
 """
-import sys, os, json, time
+import json
+import os
+import sys
+import time
 from datetime import datetime
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -22,9 +25,15 @@ sys.path.insert(0, SCRIPTS)
 import _fetch_history as fh
 import _fetch_stock_data as fsd
 import _fetch_watchlist as watchlist
-from _common import (atomic_dump, STALE_LAG_DAYS, is_bj,   # T3 陈旧标记 + T6 北交所剔除
-                     encode_rows, decode_indicator, encode_sparse,   # T17 列式编码 + T18 稀疏列
-                     IDX_DIV)   # T23：指数单位除数唯一来源
+from _common import (  # T3 陈旧标记 + T6 北交所剔除
+    IDX_DIV,  # T23：指数单位除数唯一来源
+    STALE_LAG_DAYS,
+    atomic_dump,
+    decode_indicator,
+    encode_rows,  # T17 列式编码 + T18 稀疏列
+    encode_sparse,
+    is_bj,
+)
 
 WEB_DATA = os.path.join(BASE, "web", "data")
 os.makedirs(os.path.join(WEB_DATA, "stocks"), exist_ok=True)

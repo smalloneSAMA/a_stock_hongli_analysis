@@ -4,7 +4,10 @@
 只读分析池、跑两遍回测（p90），**不写任何默认产物**（docs/回测报告.md / web/data/backtest.json 保持不变）。
 用法: python scripts/_backtest_exec_compare.py
 """
-import os, sys, datetime
+import datetime
+import os
+import sys
+
 import numpy as np
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -52,6 +55,7 @@ def main():
     lines = []
     lines.append("# 回测执行日口径对比（t+1 vs t+2 收盘执行）")
     lines.append("")
+    lines.append("> 🤖 本文件由脚本自动生成，请勿手工编辑（重生成会覆盖改动）。")
     lines.append(f"> 生成日期：{datetime.date.today()} ｜ 分位：p90 ｜ 窗口：5 年滚动（数据不足用全部） ｜ 分析池 {n_pool} 标的")
     lines.append("> 口径：信号在 t 日收盘确认；**t+1 收盘执行**（现行默认）vs **t+2 收盘执行**（研究口径）；"
                  "收益为价格口径（不含分红再投），自执行日收盘起算")
@@ -131,7 +135,7 @@ def main():
     lines.append("")
     lines.append("| 判据 | 阈值 | 结果 |")
     lines.append("|---|---|---|")
-    lines.append(f"| ① 关键分组（指数/ETF/推荐20）12M 超额 \|Δ\| 且无符号反转 | < 0.5pp | {'✅ 通过' if c1 else '❌ 不通过'} |")
+    lines.append(f"| ① 关键分组（指数/ETF/推荐20）12M 超额 \\|Δ\\| 且无符号反转 | < 0.5pp | {'✅ 通过' if c1 else '❌ 不通过'} |")
     lines.append(f"| ② 关键分组 12M 正超额占比变化 | ≤ 2pp | {'✅ 通过' if c2 else '❌ 不通过'} |")
     lines.append(f"| ③ 关键分组胜率 12M 变化 | ≤ 1.1pp | {'✅ 通过' if c3 else '❌ 不通过'} |")
     lines.append("")

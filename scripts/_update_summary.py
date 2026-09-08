@@ -11,9 +11,22 @@
   · 股息率/分红：默认仅补新增股票；--force 全量重算（约6分钟）
   · 连续8次失败自动中止（防IP被封后空等）
 """
-import json, os, sys, re, time, datetime
-from _common import (em_get, tencent_quotes, atomic_load, atomic_dump, is_bj,   # 东财限流 + 腾讯批量 + 原子读 + 北交所判定
-                     save_workbook_if_changed, em_secid)   # T20 Excel 去噪 + T23 东财 secid
+import datetime
+import json
+import os
+import re
+import sys
+import time
+
+from _common import (  # 东财限流 + 腾讯批量 + 原子读 + 北交所判定
+    atomic_dump,
+    atomic_load,
+    em_get,
+    em_secid,
+    is_bj,
+    save_workbook_if_changed,  # T20 Excel 去噪 + T23 东财 secid
+    tencent_quotes,
+)
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(BASE, "cache")
@@ -165,7 +178,7 @@ def build_table():
         maxw = max([w for w in s["w"].values() if w], default=0)
         idx = sorted([(k, v) for k, v in s["w"].items() if v], key=lambda x: -x[1])[:8]
         if not idx:   # 权重全部未公开的（如980092/000151成分）
-            idx = [[k, None] for k in s["w"].keys()]
+            idx = [[k, None] for k in s["w"]]
         rows.append({
             "code": c, "name": s["name"], "ind3": s.get("industry", ""),
             "ind": map_ind(s.get("industry", "")), "n": s["n"], "maxw": round(maxw, 2),
@@ -177,12 +190,12 @@ def build_table():
         })
     rows.sort(key=lambda r: (r["ind"], -r["n"], -r["maxw"]))
     atomic_dump(TABLE_JSON, rows, indent=None, separators=(",", ":"))   # 紧凑写（与 web/data/summary.json 同款，避免 1.7 万行纯格式 diff）
-    print(f"  [归并] 汇总表缓存 {len(rows)} 只（{len(set(r['ind'] for r in rows))} 个一级行业）")
+    print(f"  [归并] 汇总表缓存 {len(rows)} 只（{len({r['ind'] for r in rows})} 个一级行业）")
 
 # ── 6. 生成 excel/红利成分股汇总.xlsx ─────────────────────────────────
 def gen_excel():
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
     table = json.load(open(TABLE_JSON, encoding="utf-8"))
     stock = json.load(open(SUMMARY_JSON, encoding="utf-8"))

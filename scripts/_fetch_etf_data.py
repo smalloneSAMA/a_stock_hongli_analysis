@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """抓取候选红利ETF的规模/成交额/收益率(腾讯源,不封IP)"""
-import json, urllib.request, time
-from _common import tencent_quotes, market_prefix, UA   # 腾讯批量行情 + 前缀/UA（T23）
+import json
+import time
+import urllib.request
+
+from _common import UA, market_prefix, tencent_quotes  # 腾讯批量行情 + 前缀/UA（T23）
 
 # 候选ETF: 代码 -> (名称, 类别)
 ETFS = {
@@ -69,22 +72,29 @@ def ret_1y_3y(closes):
     # 今年(YTD)
     return out
 
-quotes = tencent_quote(list(ETFS.keys()))
-print(f"{'代码':<8}{'名称':<26}{'类别':<18}{'规模亿':>9}{'成交亿':>8}  {'近1年%':>8}{'近3年%':>9}")
-rows = []
-for code, (name, cat) in ETFS.items():
-    q = quotes.get(code, {})
-    time.sleep(0.2)
-    try:
-        k = tencent_kline(code)
-    except Exception as e:
-        print(code, "kline err", e); continue
-    r = ret_1y_3y([c for _, c in k])
-    rows.append((code, name, cat, q.get("mcap_yi", 0), q.get("amount_yi", 0), r["近1年"], r["近3年"]))
-    print(f"{code:<8}{name:<26}{cat:<18}{q.get('mcap_yi',0):>9.1f}{q.get('amount_yi',0):>8.2f}  "
-          f"{(r['近1年'] if r['近1年'] is not None else float('nan')):>8.1f}{(r['近3年'] if r['近3年'] is not None else float('nan')):>9.1f}")
+def main():
+    """候选 ETF 规模/成交额/收益率扫描（原模块顶层代码，N12 收进 main：
+    update.py 只 import 本模块取 tencent_quote，不应触发扫描打印与网络请求）"""
+    quotes = tencent_quote(list(ETFS.keys()))
+    print(f"{'代码':<8}{'名称':<26}{'类别':<18}{'规模亿':>9}{'成交亿':>8}  {'近1年%':>8}{'近3年%':>9}")
+    rows = []
+    for code, (name, cat) in ETFS.items():
+        q = quotes.get(code, {})
+        time.sleep(0.2)
+        try:
+            k = tencent_kline(code)
+        except Exception as e:
+            print(code, "kline err", e); continue
+        r = ret_1y_3y([c for _, c in k])
+        rows.append((code, name, cat, q.get("mcap_yi", 0), q.get("amount_yi", 0), r["近1年"], r["近3年"]))
+        print(f"{code:<8}{name:<26}{cat:<18}{q.get('mcap_yi',0):>9.1f}{q.get('amount_yi',0):>8.2f}  "
+              f"{(r['近1年'] if r['近1年'] is not None else float('nan')):>8.1f}{(r['近3年'] if r['近3年'] is not None else float('nan')):>9.1f}")
 
-# 排序: 按规模
-print("\n=== 按规模排序 ===")
-for r in sorted(rows, key=lambda x: -x[3]):
-    print(f"{r[0]} {r[1]} 规模{r[3]:.1f}亿 成交{r[4]:.2f}亿 近1年{r[5] if r[5] is not None else 0:.1f}% 近3年{r[6] if r[6] is not None else 0:.1f}%")
+    # 排序: 按规模
+    print("\n=== 按规模排序 ===")
+    for r in sorted(rows, key=lambda x: -x[3]):
+        print(f"{r[0]} {r[1]} 规模{r[3]:.1f}亿 成交{r[4]:.2f}亿 近1年{r[5] if r[5] is not None else 0:.1f}% 近3年{r[6] if r[6] is not None else 0:.1f}%")
+
+
+if __name__ == "__main__":
+    main()

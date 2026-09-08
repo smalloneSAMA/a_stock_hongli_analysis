@@ -10,8 +10,13 @@
 产出：docs/回测报告.md + web/data/backtest.json + 控制台摘要
 用法: python scripts/_backtest_analysis.py [--only 000922] [--p 90]
 """
-import sys, os, json, argparse, datetime
+import argparse
+import datetime
+import json
+import os
+import sys
 from collections import Counter
+
 import numpy as np
 import pandas as pd
 
@@ -20,8 +25,12 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import (atomic_dump_if_changed, write_text_if_changed,   # N1：无变化不写盘
-                     decode_indicator, WINDOW)   # 指标解码 + 窗口（T23）
+from _common import (  # N1：无变化不写盘
+    WINDOW,
+    atomic_dump_if_changed,
+    decode_indicator,  # 指标解码 + 窗口（T23）
+    write_text_if_changed,
+)
 
 HORIZONS = (21, 63, 126, 252)       # 1/3/6/12 个月（交易日）
 H_LABEL = ("1M", "3M", "6M", "12M")
@@ -153,17 +162,18 @@ def pool_data_date(data):
     return max(dates) if dates else ""
 
 
-def build_report(results_by_p, order=(85, 90, 95), data_date=""):
+def build_report(results_by_p, order=(85, 90, 95), data_date="", n_pool=0):
     lines = []
     lines.append("# 股息率分位信号回测报告")
     lines.append("")
+    lines.append("> 🤖 本文件由脚本自动生成，请勿手工编辑（重生成会覆盖改动）。")
     # N1：写「数据日期」而非「运行日期」——否则无数据变化时跨日也会产生 diff（CI 会提交）
     lines.append(f"> 数据日期：{data_date or '—'} ｜ 窗口：5年滚动（数据不足用全部）")
     lines.append("> 口径：收益为**价格口径**（不含分红再投）；信号次一交易日收盘执行；基准=同区间每日买入平均收益")
     lines.append("> 执行日口径审计（T32）：t+1 vs t+2 对比见 docs/回测执行日对比.md —— "
                  "关键分组 12M 超额差 < 0.5pp 且无符号反转，**维持 t+1 默认口径**")
     lines.append("> 信号：dy 上穿 p 分位=买、下穿 (100-p) 分位=卖；ETF 用跟踪指数序列")
-    lines.append("> 范围：全量标的（指数/ETF/推荐20/其他成份股/自选股，约360只）")
+    lines.append(f"> 范围：全量标的（{n_pool} 只：指数/ETF/推荐20/其他成份股/自选股）")
     lines.append("")
 
     # 一、明细（第一档，全量含其他成份股；分组列）
@@ -306,7 +316,7 @@ def main(only=None, p_buy=None, exec_offset=1):
         print(f"\n⚠️ exec_offset={exec_offset}（研究口径）→ 不写默认产物；如需对比报告见 scripts/_backtest_exec_compare.py")
         return results_by_p
     data_date = pool_data_date(data)
-    report = build_report(results_by_p, order, data_date)
+    report = build_report(results_by_p, order, data_date, n_pool=len(data))
     os.makedirs(os.path.join(BASE, "docs"), exist_ok=True)
     path = os.path.join(BASE, "docs", "回测报告.md")
     changed = write_text_if_changed(path, report)   # N1：内容未变不写盘

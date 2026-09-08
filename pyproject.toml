@@ -1,20 +1,29 @@
 # -*- coding: utf-8 -*-
-# 工程化护栏配置（T28）：ruff 只开「能抓真问题」的规则集
-#   F  = Pyflakes（未用 import/变量、未定义名）
-#   E9 = 语法级错误（空 except 之外的严重问题）
-#   B  = flake8-bugbear（可变默认参数、循环内闭包捕获等常见坑）
-# 运行：ruff check .      （CI 见 .github/workflows/daily-update.yml）
+# 工程化护栏配置（T28 / N19）：ruff 只开「能抓真问题」的规则集
+#   F   = Pyflakes（未用 import/变量、未定义名）
+#   E9  = 语法级错误（空 except 之外的严重问题）
+#   B   = flake8-bugbear（可变默认参数、循环内闭包捕获等常见坑）
+#   I   = isort（import 排序；combine-as-imports 保留 "from _common import a as b" 合并写法）
+#   UP  = pyupgrade（忽略 UP009：项目约定保留 "# -*- coding: utf-8 -*-" 头）
+#   SIM = flake8-simplify（忽略 SIM115：json.load(open(...)) 等既有简写保留）
+#   C4  = flake8-comprehensions（冗余推导式）
+# 运行：ruff check .      （CI 见 .github/workflows/daily-update.yml，版本固定 0.16.6）
 [tool.ruff]
 line-length = 140          # 与现有代码风格一致（多为长单行）
 target-version = "py312"
 exclude = ["scripts/_archive", ".git", "__pycache__"]
 
 [tool.ruff.lint]
-select = ["F", "E9", "B"]
+select = ["F", "E9", "B", "I", "UP", "SIM", "C4"]
 ignore = [
-    "E501",   # 行宽交由 line-length 之外的既有风格决定（存量长行较多）
-    "B008",   # 函数调用作为默认值（本仓库无此用法，但保留容错）
+    "E501",    # 行宽交由 line-length 之外的既有风格决定（存量长行较多）
+    "B008",    # 函数调用作为默认值（本仓库无此用法，但保留容错）
+    "UP009",   # UTF-8 编码声明：项目约定保留 # -*- coding: utf-8 -*- 头（AGENTS.md）
+    "SIM115",  # 未用上下文管理器打开文件：json.load(open(...)) 简写保留（存量 41 处）
 ]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true   # 保留 from x import a as b, c 的合并写法（_common 别名约定）
 
 [tool.ruff.lint.per-file-ignores]
 "_test_analysis.py" = ["E402"]   # 测试脚本按段落 import，允许非顶部导入

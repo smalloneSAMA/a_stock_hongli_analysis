@@ -10,8 +10,11 @@
   python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry|excel|status [--yes]
 用法: python update.py [命令]
 """
-import sys, io, os, time
-from datetime import datetime, date
+import io
+import os
+import sys
+import time
+from datetime import date, datetime
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(BASE, "scripts")
@@ -19,9 +22,16 @@ sys.path.insert(0, SCRIPTS)
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import (STALE_LAG_DAYS as LAG_DAYS, find_stale, update_stale_report, STALE_GAP_DAYS,   # 陈旧阈值（T2/T3）
-                     IDX_DIV,   # T23：指数单位除数唯一来源
-                     atomic_load as load_json, atomic_dump as save_json, safe_export)   # T24：读写/Excel 包裹统一实现
+from _common import (
+    IDX_DIV,  # T23：指数单位除数唯一来源
+    STALE_GAP_DAYS,
+    STALE_LAG_DAYS as LAG_DAYS,  # 陈旧阈值（T2/T3）
+    atomic_dump as save_json,
+    atomic_load as load_json,  # T24：读写/Excel 包裹统一实现
+    find_stale,
+    safe_export,
+    update_stale_report,
+)
 
 # import后包装stdout（fh的包装对象仍被其模块引用，底层buffer不会被关闭）
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -321,8 +331,8 @@ def update_stocks():
 
 def export_excel():
     import pandas as pd
+    from _common import export_workbook  # 统一 Excel 导出（万手/亿元口径，含美化后处理）
     from _fetch_history import load_cache
-    from _common import export_workbook   # 统一 Excel 导出（万手/亿元口径，含美化后处理）
 
     # 展示口径：价格(点/元)、成交量(万手)、成交额(亿元)；单位净值/累计净值不加单位
     # 原始单位：腾讯 volume=手/amount=元(估算)；中证官网 tradingVol=股/tradingValue=亿元；国证 volume=万手/amount=亿元
@@ -412,22 +422,53 @@ def update_summary(force=False):
     _update_summary.run(force=force)
     collect_pool()   # 变更摘要采集
 
-def rebuild_web(with_rec=True):
-    """重算前端数据包（T24：原 5 处复制粘贴统一到此）
-    顺序：股票指标 → manifest → 区间分析（analysis_dy/analysis.json/dy_series.json）
-          → 推荐20评分 → 刷新进程内 STOCKS → manifest v2（rec 标记用本次评分产物）
-    with_rec=False 时只重算指标与分析（不重算评分/manifest v2）"""
-    import _gen_web_data as gwd
+# ── 前端数据包步骤序列（N13：唯一来源，update_web / rebuild_web 共用）──
+def _web_steps():
+    """返回 [(key, 描述, 函数)]——顺序即执行顺序。两条路径的差异只体现在传入的 keys。"""
+    import _fetch_cnindex_components as fcc
+    import _fetch_etf_holdings as feh
     import _gen_analysis as ga
-    gwd.build_stock_indicators()   # 先指标（manifest 的 last_dy 读指标文件末行）
-    gwd.build_manifest()
-    ga.main()
-    if not with_rec:
-        return
+    import _gen_web_data as gwd
     import _recommend_stocks as rs
-    rs.main()   # 推荐20量化评分（硬过滤+三组因子+组合约束 → cache/_推荐20.json）
-    fsd.refresh_stocks()   # 刷新进程内 STOCKS（模块 import 时仅求值一次）
-    gwd.build_manifest()   # rec 标记用本次评分产物（覆盖）
+    return [
+        ("指标", "股票逐日指标", gwd.build_stock_indicators),   # 先指标（manifest 的 last_dy 读指标文件末行）
+        ("manifest v1", "manifest v1", gwd.build_manifest),    # v1：元数据最新，rec=上次评分产物
+        ("components", "components", gwd.build_components),
+        ("summary", "summary", gwd.build_summary),
+        ("ETF持仓", "ETF季报持仓", feh.main),
+        ("区间分析", "S1反推+S3/S4打分", ga.main),              # analysis_dy/analysis.json/dy_series.json
+        ("推荐20评分", "推荐20评分", rs.main),                  # cache/_推荐20.json
+        ("刷新STOCKS", "刷新进程内 STOCKS", fsd.refresh_stocks),  # 模块 import 时仅求值一次
+        ("manifest v2", "manifest v2", gwd.build_manifest),    # rec 标记用本次评分产物（覆盖）
+        ("国证成分", "国证成分", fcc.main),
+    ]
+
+
+def _run_web_steps(keys, isolate=False):
+    """按 keys 执行步骤序列（N13：update_web 全序列 + 单步失败隔离；rebuild_web 子集 + 失败即抛）"""
+    steps = {k: (desc, fn) for k, desc, fn in _web_steps()}
+    fails = []
+    for k in keys:
+        desc, fn = steps[k]
+        if not isolate:
+            fn()
+            continue
+        try:
+            fn()
+        except Exception as e:
+            fails.append(desc)
+            print(f"  ❌ [{desc}] 失败: {repr(e)[:120]}（已跳过，其余步骤继续）")
+    return fails
+
+
+def rebuild_web(with_rec=True):
+    """重算前端数据包（T24/N13：与 update_web 共用同一步骤序列，差异只在 keys）
+    顺序：股票指标 → manifest → 区间分析 → [推荐20评分 → 刷新 STOCKS → manifest v2]
+    with_rec=False 时只重算指标与分析（不重算评分/manifest v2）"""
+    keys = ["指标", "manifest v1", "区间分析"]
+    if with_rec:
+        keys += ["推荐20评分", "刷新STOCKS", "manifest v2"]
+    _run_web_steps(keys)
 
 
 def update_web():
@@ -435,32 +476,8 @@ def update_web():
     轻量事务（P2.4）：每步 try/except 隔离，失败计数并继续，末尾汇总告警；
     单个文件均为原子写不会损坏，失败产物不覆盖旧文件。"""
     print("\n═══ 前端数据包更新（web/data/ + 区间分析 + 国证成分）═══")
-    fails = []
-
-    def step(desc, fn):
-        try:
-            fn()
-            return True
-        except Exception as e:
-            fails.append(desc)
-            print(f"  ❌ [{desc}] 失败: {repr(e)[:120]}（已跳过，其余步骤继续）")
-            return False
-
-    import _gen_web_data as gwd
-    step("股票逐日指标", gwd.build_stock_indicators)   # 先指标（manifest 的 last_dy 读指标文件末行）
-    step("manifest v1", gwd.build_manifest)           # v1：元数据最新，rec=上次评分产物
-    step("components", gwd.build_components)
-    step("summary", gwd.build_summary)
-    import _fetch_etf_holdings as feh
-    step("ETF季报持仓", feh.main)   # 980092 股息率估算、159201 持仓成分
-    import _gen_analysis as ga
-    step("S1反推+S3/S4打分", ga.main)   # analysis_dy.json → analysis.json
-    import _recommend_stocks as rs
-    step("推荐20评分", rs.main)   # cache/_推荐20.json
-    fsd.refresh_stocks()   # 评分产物刷新进程内 STOCKS（模块 import 时仅求值一次）
-    step("manifest v2", gwd.build_manifest)   # rec 标记用本次评分产物（覆盖，约1秒）
-    import _fetch_cnindex_components as fcc
-    step("国证成分", fcc.main)
+    # N13：与 rebuild_web 共用同一步骤序列（全序列 + 单步失败隔离）
+    fails = _run_web_steps([k for k, _d, _f in _web_steps()], isolate=True)
     collect_etfs()   # 变更摘要采集
     if fails:
         print(f"\n⚠️ 本次 web 包存在 {len(fails)} 个失败产物: {', '.join(fails)}")
@@ -531,6 +548,7 @@ def gc_orphans(auto=False):
     池 = 推荐20 + 其他成份股 + 自选股(展示=1)；默认只列清单，加 --yes 才删除。
     孤儿标的若日后重新入池，下次更新会全量重拉（删除自愈）。"""
     import glob
+
     import _gen_web_data as gwd
     pool = {c for c, _ in gwd.stock_pool()}
     codes = {os.path.basename(p)[len("股票_"):-5]
@@ -593,9 +611,8 @@ def clear_cache():
 
 def daily_update(auto=False):
     """日常：行情增量（指数/ETF/推荐20/其他/自选）→ Excel → 前端包 → 变更摘要"""
-    if not auto:
-        if not ask("日常更新（行情增量→Excel→前端包，约5分钟）是否执行？"):
-            return
+    if not auto and not ask("日常更新（行情增量→Excel→前端包，约5分钟）是否执行？"):
+        return
     t0 = time.time()
     print("\n" + "═" * 50 + "\n  日常更新（行情增量 → Excel → 前端包）\n" + "═" * 50)
     update_indices()
@@ -611,9 +628,8 @@ def daily_update(auto=False):
 
 def deep_update(auto=False):
     """深度：日常行情 + 成分重下→汇总表→分红检测→check-fin(询问)→回测(询问)"""
-    if not auto:
-        if not ask("深度更新（日常 + 成分重下载/汇总表/分红检测/check-fin，约20分钟）是否执行？"):
-            return
+    if not auto and not ask("深度更新（日常 + 成分重下载/汇总表/分红检测/check-fin，约20分钟）是否执行？"):
+        return
     t0 = time.time()
     print("\n" + "═" * 50 + "\n  深度更新（季度链路：3→4→8→check-fin→9→10→web）\n" + "═" * 50)
     update_indices()

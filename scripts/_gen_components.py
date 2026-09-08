@@ -6,8 +6,18 @@
 - 000151：东财成分表 + 腾讯名称
 用法: python _gen_components.py [--force]
 """
-import sys, io, os, json, re, time, glob, datetime, requests, pandas as pd
-from _common import tencent_quotes, atomic_load, UA   # 腾讯批量行情（批 50）+ 原子读 + UA（T23）
+import datetime
+import glob
+import io
+import json
+import os
+import re
+import sys
+import time
+
+import pandas as pd
+import requests
+from _common import UA, atomic_load, tencent_quotes  # 腾讯批量行情（批 50）+ 原子读 + UA（T23）
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
