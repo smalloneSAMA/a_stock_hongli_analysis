@@ -22,7 +22,8 @@ sys.path.insert(0, SCRIPTS)
 import _fetch_history as fh
 import _fetch_stock_data as fsd
 import _fetch_watchlist as watchlist
-from _common import atomic_dump, STALE_LAG_DAYS, is_bj, encode_rows, decode_rows   # T3 陈旧标记 + T6 北交所剔除 + T17 列式编码
+from _common import (atomic_dump, STALE_LAG_DAYS, is_bj,   # T3 陈旧标记 + T6 北交所剔除
+                     encode_rows, decode_indicator, encode_sparse)   # T17 列式编码 + T18 稀疏列
 
 WEB_DATA = os.path.join(BASE, "web", "data")
 os.makedirs(os.path.join(WEB_DATA, "stocks"), exist_ok=True)
@@ -172,7 +173,7 @@ def build_manifest():
         if os.path.exists(p):
             try:
                 obj = json.load(open(p, encoding="utf-8"))
-                irows = decode_rows(obj)          # T17：列式/旧格式统一解码
+                irows = decode_indicator(obj)     # T17/T18：列式 + 稀疏列填充
                 if irows:
                     s["last_dy"] = irows[-1].get("dy")
                     s["last_pr"] = irows[-1].get("pr")   # 市赚率 PR（PE-TTM ÷ 近5年TTM年化ROE）
@@ -264,6 +265,9 @@ def stock_pool():
     return [(c, n) for c, n in rec + other if not is_bj(c)]   # 北交所不进个股池（R2）
 
 
+SPARSE_KEYS = ("roe", "roa")   # T18：阶梯型列（仅报告期变化）→ 稀疏存储
+
+
 def build_stock_indicators():
     print("═══ [2/3] 股票逐日指标（复用 _fetch_stock_data calc_* 口径）═══")
     ok, skip = 0, 0
@@ -299,8 +303,10 @@ def build_stock_indicators():
         # T16(5a)：逐行日期与 K 线完全重复（376/376 长度+首末日期一致）→ 不再落盘，
         # 读取方按索引与 K 线对齐；仅保留末日期 last（manifest 的 ind_last 陈旧检测需要）
         # T17(5b)：行数据列式编码 {cols, rows}，读取方统一走 _common.decode_rows / data.js decodeRows
+        # T18(5c)：roe/roa 是阶梯型（仅报告期变化）→ 抽成变更点 sparse，读取时前向填充
         payload = {"last": rows[-1]["date"]}
-        payload.update(encode_rows(out))
+        payload.update(encode_rows([{k: v for k, v in r.items() if k not in SPARSE_KEYS} for r in out]))
+        payload["sparse"] = encode_sparse(out, SPARSE_KEYS)
         atomic_dump(os.path.join(WEB_DATA, "stocks", f"{code}.json"),
                     payload, indent=None, separators=(",", ":"))
         ok += 1

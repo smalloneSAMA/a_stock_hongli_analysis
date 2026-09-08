@@ -4,7 +4,7 @@
          内存缓存保证切换秒开 */
 
 import { el, renderTickerList, renderTable, skeleton, errorBox, emptyState, fmt2, fmtPct, dirOf, dailyChg, attachDatePicker, openTicker } from './common.js';
-import { loadJSON, klineUrl, indiUrl, decodeRows, COMPONENTS_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
+import { loadJSON, klineUrl, indiUrl, decodeRows, decodeIndicator, COMPONENTS_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
 import { createKlineChart, createDonut, disposeChart } from '../charts.js';
 import { scoreOf as anaScoreOf, bandOf, bandCls } from './analysis.js';   // 区间分析公共计算（P4.3 三合一）
 import { cssVar } from '../theme.js';
@@ -374,8 +374,8 @@ export function buildHistoryView(container, cfg) {
       if (cfg.subControl === 'indicator' || cfg.withIndicator) {
         try {
           const indFile = await loadJSON(indiUrl(item.code));
-          /* T16/T17：指标文件 {last, cols, rows}，逐行日期已去掉 → 解码后按索引与 K 线对齐 */
-          ind = decodeRows(indFile);
+          /* T16/T17/T18：指标文件 {last, cols, rows, sparse} → 解码（含 roe/roa 稀疏填充），按索引与 K 线对齐 */
+          ind = decodeIndicator(indFile);
         } catch { ind = null; }
         if (state.code !== item.code) return;
         if (!ind || !ind.length || ind.length !== rows.length) ind = null;

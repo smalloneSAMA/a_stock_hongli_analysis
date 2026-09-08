@@ -27,7 +27,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_stock_data as fsd
-from _common import atomic_dump, is_bj, decode_rows   # is_bj：北交所剔除（R2/T6）+ 列式解码（T17）
+from _common import atomic_dump, is_bj, decode_rows, decode_indicator   # 北交所剔除（R2/T6）+ 列式/稀疏解码（T17/T18）
 
 OUT = os.path.join(BASE, "cache", "_推荐20.json")
 DY_MIN = 3.0          # 股息率门槛（%）；dy∈[3.0,3.5) 为临界纳入（标记 near）
@@ -138,7 +138,7 @@ def build_factors(codes, meta):
     raw = {}
     for code in codes:
         m = meta[code]
-        ind = decode_rows(load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json")))   # T16/T17：{last, cols, rows}
+        ind = decode_indicator(load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json")))   # T16/T17/T18
         last = ind[-1] if ind else {}
         kline = load_json(os.path.join(BASE, "cache", f"股票_{code}.json"))
         rows = decode_rows(kline)   # T17：列式行解码

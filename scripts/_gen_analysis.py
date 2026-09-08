@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(BASE, "scripts"))
 
 import _fetch_history as fh
 import _fetch_stock_data as fsd
-from _common import atomic_dump, is_bj, decode_rows   # 原子写 + 北交所剔除（R2/T6）+ 列式解码（T17）
+from _common import atomic_dump, is_bj, decode_rows, decode_indicator   # 原子写 + 北交所剔除（R2/T6）+ 列式/稀疏解码（T17/T18）
 
 WINDOW = 1250   # 近5年交易日
 
@@ -113,7 +113,7 @@ def build_stock_factors(code):
     p = os.path.join(BASE, "web", "data", "stocks", f"{code}.json")
     if not os.path.exists(p):
         return {}
-    rows = decode_rows(json.load(open(p, encoding="utf-8")))   # T16/T17：{last, cols, rows}
+    rows = decode_indicator(json.load(open(p, encoding="utf-8")))   # T16/T17/T18：{last, cols, rows, sparse}
 
     def last_of(key):
         vals = [r[key] for r in rows if r.get(key) is not None]
@@ -355,7 +355,7 @@ def build_stock(code, name):
     p = os.path.join(BASE, "web", "data", "stocks", f"{code}.json")
     if not os.path.exists(p):
         return {"code": code, "name": name, "type": "股票", "dy0": None, "note": "无指标文件"}
-    ind = decode_rows(json.load(open(p, encoding="utf-8")))   # T16/T17：{last, cols, rows}
+    ind = decode_indicator(json.load(open(p, encoding="utf-8")))   # T16/T17/T18
     c = load_cache("股票", code)
     krows = (c or {}).get("rows", [])
     # T16(5a)：指标文件不再存日期列 → 按索引与 K 线缓存对齐（写入时逐行同源，长度一致）

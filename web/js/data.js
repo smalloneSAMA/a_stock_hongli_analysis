@@ -41,6 +41,26 @@ export function decodeRows(obj) {
   });
 }
 
+/* T18：阶梯型列按变更点前向填充（与 Python _common.decode_sparse 等价） */
+export function decodeSparse(rows, sparse) {
+  if (!sparse || typeof sparse !== 'object') return rows;
+  for (const k of Object.keys(sparse)) {
+    const pts = sparse[k];
+    if (!Array.isArray(pts)) continue;
+    let cur = null, j = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (j < pts.length && pts[j][0] === i) { cur = pts[j][1]; j++; }
+      rows[i][k] = cur;
+    }
+  }
+  return rows;
+}
+
+/* T16/T17/T18：指标文件解码 = 列式行 + 稀疏列前向填充 */
+export function decodeIndicator(obj) {
+  return decodeSparse(decodeRows(obj), obj && obj.sparse);
+}
+
 export const COMPONENTS_URL = '/web/data/components.json';
 export const ANALYSIS_URL = '/web/data/analysis.json';
 

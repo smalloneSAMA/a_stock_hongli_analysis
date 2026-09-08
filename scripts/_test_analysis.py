@@ -15,7 +15,7 @@ sys.stdout.reconfigure(encoding="utf-8")   # 不换对象，避免与 import 模
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _fetch_history as fh
-from _common import decode_rows   # T17：cache/指标文件行数据统一解码（列式 {cols,rows}）
+from _common import decode_rows, decode_indicator   # T17/T18：列式 + 稀疏列解码
 
 _ap = argparse.ArgumentParser()
 _ap.add_argument("--no-snapshot", action="store_true", help="跳过数值快照断言（CI 自动更新用；本地全量测试保持开启）")
@@ -103,7 +103,7 @@ bad = []
 for c, v in dy_data.items():
     if v.get("type") != "股票":
         continue
-    rows = decode_rows(load(f"web/data/stocks/{c}.json"))   # T16/T17：{last, cols, rows}
+    rows = decode_indicator(load(f"web/data/stocks/{c}.json"))   # T16/T17/T18
     last = next((r["dy"] for r in reversed(rows) if r.get("dy")), None)
     if last is not None and abs(v["dy_now"] - last) > 1e-6:
         bad.append((c, v["dy_now"], last))
@@ -361,7 +361,7 @@ bad = []
 for c, v in dy_data.items():
     if v.get("type") != "股票":
         continue
-    rows = decode_rows(json.load(open(os.path.join(BASE, "web", "data", "stocks", f"{c}.json"), encoding="utf-8")))   # T16/T17
+    rows = decode_indicator(json.load(open(os.path.join(BASE, "web", "data", "stocks", f"{c}.json"), encoding="utf-8")))   # T16/T17/T18
     n = sum(1 for r in rows if r.get("dy") is not None and r["dy"] > 0)
     if len(v["series"]) != n:
         bad.append((c, len(v["series"]), n))

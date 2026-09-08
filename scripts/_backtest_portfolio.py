@@ -21,7 +21,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "scripts"))
 import _recommend_stocks as rs   # 复用硬过滤/因子映射/约束（仅借用 QUADRANT/WEIGHTS 常量）
 import _fetch_stock_data as fsd
-from _common import atomic_dump, decode_rows   # 原子写 + 列式解码（T17）
+from _common import atomic_dump, decode_indicator   # 原子写 + 列式/稀疏解码（T17/T18）
 import _fetch_history as fh   # 统一缓存读取（T17：load_cache 内部已解码）
 
 WINDOW = 1250          # dy 滚动分位窗口（5年交易日）
@@ -286,7 +286,7 @@ def main(start=None):
     stocks = [(s["code"], s) for s in m.get("stocks", []) if s.get("ready")]
     data = {}
     for code, sm in stocks:
-        ind = decode_rows(load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json")))   # T16/T17：{last, cols, rows}
+        ind = decode_indicator(load_json(os.path.join(BASE, "web", "data", "stocks", f"{code}.json")))   # T16/T17/T18
         kc = fh.load_cache("股票", code)   # T17：load_cache 内部解码列式行
         dc = fh.load_cache("分红", code)
         fc = fh.load_cache("财报", code)

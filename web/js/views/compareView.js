@@ -1,7 +1,7 @@
 /* 视图：对比分析（同类对比：指数/ETF/股票各自内部多选，归一化净值同图观察趋势关系）
    数据全部来自现有缓存（klineUrl 直读 /cache/），零后端改动 */
 
-import { loadJSON, klineUrl, indiUrl, decodeRows, MANIFEST_URL, ANALYSIS_URL, DY_SERIES_URL } from '../data.js';
+import { loadJSON, klineUrl, indiUrl, decodeRows, decodeIndicator, MANIFEST_URL, ANALYSIS_URL, DY_SERIES_URL } from '../data.js';
 import { el, fmt2, fmtSigned, dirOf, fmtScale, skeleton, errorBox, emptyState, attachSearchHistory, favStar, isFav, bindFavDelegation } from './common.js';
 import { scoreOf, bandOf, bandCls } from './analysis.js';   // 区间分析公共计算（P4.3 三合一）
 import { cssVar } from '../theme.js';
@@ -271,7 +271,7 @@ export default {
           if (it.type === 'stock') {
             try {
               const indFile = await loadJSON(indiUrl(it.code));
-              const ind = decodeRows(indFile);   // T16/T17
+              const ind = decodeIndicator(indFile);   // T16/T17/T18
               /* T16(5a)：指标文件已无日期列 → 按索引取 K 线日期配对（长度不一致则放弃该序列） */
               dyPts = (ind.length === rows.length && rows.length > 0)
                 ? ind.map((r, i) => [rows[i].date, r.dy]).filter((p) => p[1] != null)

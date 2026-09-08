@@ -183,6 +183,45 @@ def decode_rows(obj):
     return rows
 
 
+# ── 阶梯型列稀疏化（T18/5c：roe/roa 仅报告期变化，存变更点 + 读取前向填充）──
+def encode_sparse(rows, keys):
+    """把阶梯型列（如 roe/roa）抽成变更点 [[行号, 值], …]（第 0 行必存，保证填充有初值）"""
+    out = {}
+    for k in keys:
+        pts, prev = [], None
+        for i, r in enumerate(rows):
+            v = r.get(k)
+            if i == 0 or v != prev:
+                pts.append([i, v])
+                prev = v
+        out[k] = pts
+    return out
+
+
+def decode_sparse(rows, sparse):
+    """按变更点前向填充回 rows（原地修改并返回）"""
+    if not isinstance(sparse, dict):
+        return rows
+    for k, pts in sparse.items():
+        if not isinstance(pts, list):
+            continue
+        cur, j = None, 0
+        for i, r in enumerate(rows):
+            if j < len(pts) and pts[j][0] == i:
+                cur = pts[j][1]
+                j += 1
+            r[k] = cur
+    return rows
+
+
+def decode_indicator(obj):
+    """指标文件解码：列式行 + 稀疏列前向填充 → 与逐行格式等价的 [{...},…]"""
+    rows = decode_rows(obj)
+    if isinstance(obj, dict):
+        decode_sparse(rows, obj.get("sparse"))
+    return rows
+
+
 # ── Excel 导出统一包裹（文件被占用不中断流程；源：update.py:60-67）──
 def safe_export(desc, fn):
     """执行 fn() 导出 Excel；PermissionError（文件被 Excel 占用）时告警并返回 False 不中断"""
@@ -332,5 +371,16 @@ if __name__ == "__main__":
     chk("decode_rows 空/异常输入", decode_rows({}) == [] and decode_rows(None) == []
         and decode_rows({"cols": ["a"], "rows": []}) == [])
     chk("encode_rows 空输入", encode_rows([]) == {"cols": [], "rows": []})
+    # ── 稀疏列（T18：roe/roa 变更点 + 前向填充）──
+    srows = [{"a": 1, "roe": None}, {"a": 2, "roe": 5.0}, {"a": 3, "roe": 5.0}, {"a": 4, "roe": 6.1}]
+    sp = encode_sparse(srows, ("roe",))
+    chk("encode_sparse 只存变更点", sp["roe"] == [[0, None], [1, 5.0], [3, 6.1]])
+    filled = decode_sparse([{k: v for k, v in r.items() if k != "roe"} for r in srows], sp)
+    chk("decode_sparse 前向填充等价", [r["roe"] for r in filled] == [None, 5.0, 5.0, 6.1])
+    chk("decode_indicator 列式+稀疏", decode_indicator({"cols": ["a"], "rows": [[1], [2]],
+                                                        "sparse": {"roe": [[0, 7.0]]}})
+        == [{"a": 1, "roe": 7.0}, {"a": 2, "roe": 7.0}])
+    chk("decode_indicator 无 sparse 时等同 decode_rows",
+        decode_indicator({"cols": ["a"], "rows": [[1]]}) == [{"a": 1}])
     print("═══ 汇总：%s ═══" % ("PASS" if fails == 0 else "FAIL %d" % fails))
     raise SystemExit(1 if fails else 0)
