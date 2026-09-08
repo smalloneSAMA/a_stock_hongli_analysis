@@ -32,6 +32,7 @@ export const ANALYSIS_URL = '/web/data/analysis.json';
 export const MANIFEST_URL = '/web/data/manifest.json';
 export const SUMMARY_URL = '/web/data/summary.json';
 export const BACKTEST_URL = '/web/data/backtest.json';
+export const DY_SERIES_URL = '/web/data/dy_series.json';   // 指数+ETF 的 dy 全量序列（T11 产出）
 export const PORTFOLIO_URL = '/web/data/portfolio_backtest.json';
 
 export function has(url) {

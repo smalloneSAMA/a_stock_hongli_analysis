@@ -1,7 +1,7 @@
 /* 视图：对比分析（同类对比：指数/ETF/股票各自内部多选，归一化净值同图观察趋势关系）
    数据全部来自现有缓存（klineUrl 直读 /cache/），零后端改动 */
 
-import { loadJSON, klineUrl, indiUrl, MANIFEST_URL, ANALYSIS_URL } from '../data.js';
+import { loadJSON, klineUrl, indiUrl, MANIFEST_URL, ANALYSIS_URL, DY_SERIES_URL } from '../data.js';
 import { el, fmt2, fmtSigned, dirOf, fmtScale, skeleton, errorBox, emptyState, attachSearchHistory, favStar, isFav, bindFavDelegation } from './common.js';
 import { scoreOf, bandOf, bandCls } from './analysis.js';   // 区间分析公共计算（P4.3 三合一）
 import { cssVar } from '../theme.js';
@@ -239,8 +239,9 @@ export default {
       mainEl.append(skeleton());      try {
         const items = order.map(code => selected.get(code));
         const series = [];
-        /* 股息率序列：指数/ETF 读 analysis_dy.json（series），股票读指标文件 dy 列 */
-        const dyAll = items.some(it => it.type !== 'stock') ? await loadJSON('/cache/analysis_dy.json') : null;
+        /* 股息率序列：指数/ETF 读 web/data/dy_series.json（T11 产出的 1.8MB，替代 30.7MB 的 analysis_dy.json），
+           股票读指标文件 dy 列 */
+        const dySeries = items.some(it => it.type !== 'stock') ? await loadJSON(DY_SERIES_URL) : null;
         const an = await loadAnalysis();   // 拿 ETF track（同跟踪偏离用）
         const tracks = new Map();          // track -> {rows, name}（ETF 同跟踪指数，参考线用）
         for (const it of items) {
@@ -273,8 +274,8 @@ export default {
               dyPts = (ind || []).filter(r => r.dy != null).map(r => [r.d, r.dy]);
             } catch { dyPts = null; }
           } else {
-            const e = dyAll ? dyAll[it.code] : null;
-            dyPts = (e && e.series) || null;
+            /* dy_series.json 的 by_code[code] 本身就是 [date, dy] 数组（原 analysis_dy 需再取 .series） */
+            dyPts = (dySeries && dySeries.by_code && dySeries.by_code[it.code]) || null;
           }
           series.push({ it, rows, divRows, dyPts, track });
         }
