@@ -1,7 +1,7 @@
 {
  "code": "980092",
  "name": "国证自由现金流",
- "sample_date": "2026-09-08",
+ "sample_date": "2026-09-10",
  "total": 100,
  "stocks": [
   {
@@ -14,55 +14,55 @@
    "code": "601728",
    "name": "中国电信",
    "ind": "电信业务",
-   "weight": 9.1
+   "weight": 8.92
   },
   {
    "code": "000651",
    "name": "格力电器",
    "ind": "可选消费",
-   "weight": 5.98
+   "weight": 6.08
   },
   {
    "code": "600104",
    "name": "上汽集团",
    "ind": "可选消费",
-   "weight": 5.41
+   "weight": 5.63
   },
   {
    "code": "601633",
    "name": "长城汽车",
    "ind": "可选消费",
-   "weight": 5.33
+   "weight": 5.16
   },
   {
    "code": "601600",
    "name": "中国铝业",
    "ind": "原材料",
-   "weight": 4.22
+   "weight": 4.3
   },
   {
    "code": "000100",
    "name": "TCL科技",
    "ind": "信息技术",
-   "weight": 3.94
+   "weight": 3.88
   },
   {
    "code": "600050",
    "name": "中国联通",
    "ind": "电信业务",
-   "weight": 3.45
+   "weight": 3.42
   },
   {
    "code": "601877",
    "name": "正泰电器",
    "ind": "工业",
-   "weight": 3.31
+   "weight": 3.28
   },
   {
    "code": "000338",
    "name": "潍柴动力",
    "ind": "工业",
-   "weight": 3.08
+   "weight": 3.11
   },
   {
    "code": "601225",
@@ -71,14 +71,14 @@
    "weight": null
   },
   {
-   "code": "601919",
-   "name": "中远海控",
+   "code": "600150",
+   "name": "中国船舶",
    "ind": "工业",
    "weight": null
   },
   {
-   "code": "600150",
-   "name": "中国船舶",
+   "code": "601919",
+   "name": "中远海控",
    "ind": "工业",
    "weight": null
   },
@@ -149,15 +149,15 @@
    "weight": null
   },
   {
-   "code": "600096",
-   "name": "云天化",
-   "ind": "原材料",
-   "weight": null
-  },
-  {
    "code": "600741",
    "name": "华域汽车",
    "ind": "可选消费",
+   "weight": null
+  },
+  {
+   "code": "600096",
+   "name": "云天化",
+   "ind": "原材料",
    "weight": null
   },
   {
@@ -173,15 +173,15 @@
    "weight": null
   },
   {
-   "code": "603233",
-   "name": "大参林",
-   "ind": "医药卫生",
-   "weight": null
-  },
-  {
    "code": "000921",
    "name": "海信家电",
    "ind": "可选消费",
+   "weight": null
+  },
+  {
+   "code": "603233",
+   "name": "大参林",
+   "ind": "医药卫生",
    "weight": null
   },
   {
@@ -197,27 +197,21 @@
    "weight": null
   },
   {
-   "code": "600295",
-   "name": "鄂尔多斯",
-   "ind": "原材料",
-   "weight": null
-  },
-  {
    "code": "600398",
    "name": "海澜之家",
    "ind": "可选消费",
    "weight": null
   },
   {
-   "code": "600352",
-   "name": "浙江龙盛",
+   "code": "600295",
+   "name": "鄂尔多斯",
    "ind": "原材料",
    "weight": null
   },
   {
-   "code": "603444",
-   "name": "吉比特",
-   "ind": "信息技术",
+   "code": "600352",
+   "name": "浙江龙盛",
+   "ind": "原材料",
    "weight": null
   },
   {
@@ -239,9 +233,9 @@
    "weight": null
   },
   {
-   "code": "603883",
-   "name": "老百姓",
-   "ind": "医药卫生",
+   "code": "603444",
+   "name": "吉比特",
+   "ind": "信息技术",
    "weight": null
   },
   {
@@ -251,21 +245,27 @@
    "weight": null
   },
   {
+   "code": "603883",
+   "name": "老百姓",
+   "ind": "医药卫生",
+   "weight": null
+  },
+  {
    "code": "600380",
    "name": "健康元",
    "ind": "医药卫生",
    "weight": null
   },
   {
-   "code": "600258",
-   "name": "首旅酒店",
-   "ind": "可选消费",
-   "weight": null
-  },
-  {
    "code": "600874",
    "name": "创业环保",
    "ind": "公用事业",
+   "weight": null
+  },
+  {
+   "code": "600258",
+   "name": "首旅酒店",
+   "ind": "可选消费",
    "weight": null
   },
   {
@@ -281,6 +281,12 @@
    "weight": null
   },
   {
+   "code": "601001",
+   "name": "晋控煤业",
+   "ind": "能源",
+   "weight": null
+  },
+  {
    "code": "603766",
    "name": "隆鑫通用",
    "ind": "可选消费",
@@ -290,12 +296,6 @@
    "code": "002761",
    "name": "浙江建投",
    "ind": "工业",
-   "weight": null
-  },
-  {
-   "code": "601001",
-   "name": "晋控煤业",
-   "ind": "能源",
    "weight": null
   },
   {
@@ -317,9 +317,21 @@
    "weight": null
   },
   {
+   "code": "002039",
+   "name": "黔源电力",
+   "ind": "公用事业",
+   "weight": null
+  },
+  {
    "code": "300244",
    "name": "迪安诊断",
    "ind": "医药卫生",
+   "weight": null
+  },
+  {
+   "code": "600004",
+   "name": "白云机场",
+   "ind": "工业",
    "weight": null
   },
   {
@@ -332,18 +344,6 @@
    "code": "002545",
    "name": "东方铁塔",
    "ind": "原材料",
-   "weight": null
-  },
-  {
-   "code": "002039",
-   "name": "黔源电力",
-   "ind": "公用事业",
-   "weight": null
-  },
-  {
-   "code": "600004",
-   "name": "白云机场",
-   "ind": "工业",
    "weight": null
   },
   {
@@ -377,21 +377,9 @@
    "weight": null
   },
   {
-   "code": "002416",
-   "name": "爱施德",
-   "ind": "可选消费",
-   "weight": null
-  },
-  {
    "code": "002727",
    "name": "一心堂",
    "ind": "医药卫生",
-   "weight": null
-  },
-  {
-   "code": "002061",
-   "name": "浙江交科",
-   "ind": "工业",
    "weight": null
   },
   {
@@ -401,15 +389,27 @@
    "weight": null
   },
   {
-   "code": "002170",
-   "name": "芭田股份",
-   "ind": "原材料",
+   "code": "002416",
+   "name": "爱施德",
+   "ind": "可选消费",
    "weight": null
   },
   {
-   "code": "002563",
-   "name": "森马服饰",
-   "ind": "可选消费",
+   "code": "002061",
+   "name": "浙江交科",
+   "ind": "工业",
+   "weight": null
+  },
+  {
+   "code": "002204",
+   "name": "大连重工",
+   "ind": "工业",
+   "weight": null
+  },
+  {
+   "code": "002170",
+   "name": "芭田股份",
+   "ind": "原材料",
    "weight": null
   },
   {
@@ -419,9 +419,9 @@
    "weight": null
   },
   {
-   "code": "002204",
-   "name": "大连重工",
-   "ind": "工业",
+   "code": "002563",
+   "name": "森马服饰",
+   "ind": "可选消费",
    "weight": null
   },
   {
@@ -437,15 +437,15 @@
    "weight": null
   },
   {
-   "code": "000915",
-   "name": "华特达因",
-   "ind": "医药卫生",
-   "weight": null
-  },
-  {
    "code": "301039",
    "name": "中集车辆",
    "ind": "工业",
+   "weight": null
+  },
+  {
+   "code": "000915",
+   "name": "华特达因",
+   "ind": "医药卫生",
    "weight": null
   },
   {
@@ -479,15 +479,15 @@
    "weight": null
   },
   {
-   "code": "603173",
-   "name": "福斯达",
-   "ind": "工业",
-   "weight": null
-  },
-  {
    "code": "603368",
    "name": "柳药集团",
    "ind": "医药卫生",
+   "weight": null
+  },
+  {
+   "code": "603173",
+   "name": "福斯达",
+   "ind": "工业",
    "weight": null
   },
   {
@@ -515,15 +515,15 @@
    "weight": null
   },
   {
-   "code": "605377",
-   "name": "华旺科技",
-   "ind": "原材料",
-   "weight": null
-  },
-  {
    "code": "603279",
    "name": "景津装备",
    "ind": "工业",
+   "weight": null
+  },
+  {
+   "code": "605377",
+   "name": "华旺科技",
+   "ind": "原材料",
    "weight": null
   },
   {
@@ -551,6 +551,12 @@
    "weight": null
   },
   {
+   "code": "002918",
+   "name": "蒙娜丽莎",
+   "ind": "工业",
+   "weight": null
+  },
+  {
    "code": "601002",
    "name": "晋亿实业",
    "ind": "工业",
@@ -563,21 +569,15 @@
    "weight": null
   },
   {
-   "code": "002918",
-   "name": "蒙娜丽莎",
-   "ind": "工业",
+   "code": "000026",
+   "name": "飞亚达",
+   "ind": "可选消费",
    "weight": null
   },
   {
    "code": "002081",
    "name": "金 螳 螂",
    "ind": "工业",
-   "weight": null
-  },
-  {
-   "code": "000026",
-   "name": "飞亚达",
-   "ind": "可选消费",
    "weight": null
   },
   {
@@ -616,55 +616,55 @@
    "code": "601728",
    "name": "中国电信",
    "ind": "电信业务",
-   "weight": 9.1
+   "weight": 8.92
   },
   {
    "code": "000651",
    "name": "格力电器",
    "ind": "可选消费",
-   "weight": 5.98
+   "weight": 6.08
   },
   {
    "code": "600104",
    "name": "上汽集团",
    "ind": "可选消费",
-   "weight": 5.41
+   "weight": 5.63
   },
   {
    "code": "601633",
    "name": "长城汽车",
    "ind": "可选消费",
-   "weight": 5.33
+   "weight": 5.16
   },
   {
    "code": "601600",
    "name": "中国铝业",
    "ind": "原材料",
-   "weight": 4.22
+   "weight": 4.3
   },
   {
    "code": "000100",
    "name": "TCL科技",
    "ind": "信息技术",
-   "weight": 3.94
+   "weight": 3.88
   },
   {
    "code": "600050",
    "name": "中国联通",
    "ind": "电信业务",
-   "weight": 3.45
+   "weight": 3.42
   },
   {
    "code": "601877",
    "name": "正泰电器",
    "ind": "工业",
-   "weight": 3.31
+   "weight": 3.28
   },
   {
    "code": "000338",
    "name": "潍柴动力",
    "ind": "工业",
-   "weight": 3.08
+   "weight": 3.11
   }
  ],
  "industry_dist": {
