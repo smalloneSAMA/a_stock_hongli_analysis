@@ -223,10 +223,15 @@ button { font-family: inherit; }
   font-family: var(--font-num); font-size: 9.5px; letter-spacing: 2.4px;
   color: var(--text-3); margin-left: 2px; margin-top: 1px;
 }
-.topnav { display: flex; gap: 2px; height: 100%; margin-left: 8px; }
+/* 11 个视图 → 两行网格（6 + 5，按 1~6 / 7~11 顺序分行）；
+   两行合计 ≤ --topbar-h（58px）= 每行 29px，顶栏不增高，粘性偏移/列表 max-height 全部无需改 */
+.topnav {
+  display: grid; grid-template-columns: repeat(6, auto); grid-auto-rows: 1fr;
+  align-content: center; column-gap: 2px; height: 100%; margin-left: 8px;
+}
 .nav-tab {
-  position: relative; display: flex; align-items: center; gap: 7px;
-  padding: 0 15px; color: var(--text-2); font-size: 13.5px; font-weight: 500;
+  position: relative; display: flex; align-items: center; gap: 6px;
+  padding: 0 13px; color: var(--text-2); font-size: 13px; font-weight: 500; white-space: nowrap;
   transition: color var(--t-fast) var(--ease);
 }
 .nav-tab svg { width: 15px; height: 15px; opacity: 0.85; }
@@ -764,6 +769,25 @@ table.data-table { border-collapse: separate; border-spacing: 0; width: 100%; fo
   .ana-dash { grid-template-columns: 1fr; }
   .chart { height: 420px; }
 }
+@media (max-width: 1200px) {
+  /* 导航两行在中窄屏靠"去图标 + 紧凑内边距"腾宽度，保持 6 列两行不折成三行 */
+  .nav-tab { padding: 0 10px; font-size: 12.5px; }
+  .nav-tab svg { display: none; }
+}
+@media (max-width: 980px) {
+  /* 900px 附近 品牌+两行导航+数据日期 会差几像素溢出：收紧顶栏间距并隐藏副标题 */
+  .topbar-inner { gap: var(--space-3); padding: 0 var(--space-3); }
+  .brand-sub { display: none; }
+}
+@media (max-width: 880px) {
+  /* 850px 附近仍差 20px：数据日期徽章让位（日期在页面数据日期列/图表里仍可见） */
+  .data-date { display: none; }
+}
+@media (max-width: 700px) {
+  /* 极窄窗口：导航块自身横向滚动（隐藏内部滚动条），避免整页出现横向滚动条 */
+  .topnav { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .topnav::-webkit-scrollbar { display: none; }
+}
 @media (max-width: 820px) {
   .topbar-inner { padding: 0 var(--space-3); gap: var(--space-3); }
   .brand-sub, .data-date { display: none; }
@@ -819,3 +843,22 @@ table.data-table { border-collapse: separate; border-spacing: 0; width: 100%; fo
 
 /* 智能推荐：完美徽标（三档共识） */
 .band-perfect { color: var(--brand); background: rgba(251, 191, 36, 0.14); border: 1px solid var(--brand); }
+
+/* 轮动回测（#/rotate）：参数条 + 说明行 + 网格表行点击 */
+.rt-params { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding: 2px 0; }
+.rt-params + .rt-params { margin-top: 8px; }
+.rt-field { display: inline-flex; align-items: center; gap: 6px; }
+.rt-lbl { font-size: 12px; color: var(--text-3); user-select: none; }
+.rt-num { width: 76px; padding: 4px 8px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); font-family: var(--font-num); font-size: 12.5px; text-align: right; }
+.rt-num:focus { outline: none; border-color: rgba(34, 211, 238, 0.6); }
+.rt-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-3); cursor: pointer; user-select: none; }
+.rt-note { font-size: 11.5px; line-height: 1.7; color: var(--text-3); margin: 6px 2px 0; }
+.rt-grid-tbl tbody tr { cursor: pointer; }
+/* 选择结论卡：推荐阈值 + 可信度指标 */
+.rt-conc { padding: 12px 14px; }
+.rt-conc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px 12px; }
+.rt-conc-cell { background: var(--card-soft); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.rt-conc-val { font-family: var(--font-num); font-size: 18px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; margin: 2px 0; }
+.rt-conc-sub { font-size: 10.5px; line-height: 1.6; color: var(--text-3); }
+.rt-rec-tag { color: var(--brand); font-weight: 700; }

@@ -4,7 +4,7 @@ import { loadJSON, MANIFEST_URL } from './data.js';
 import { mountThemeToggle, onThemeChange } from './theme.js';
 import { rethemeCharts } from './charts.js';
 
-const VIEWS = ['index', 'etf', 'stock', 'summary', 'backtest', 'portfolio', 'compare', 'scan', 'recommend', 'holdings'];
+const VIEWS = ['index', 'etf', 'stock', 'summary', 'backtest', 'portfolio', 'compare', 'rotate', 'scan', 'recommend', 'holdings'];
 
 const viewEl = document.getElementById('view');
 const dateEl = document.getElementById('data-date');

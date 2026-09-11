@@ -45,7 +45,7 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 ## 5. 前端架构约束
 
 - 纯 ES Module + 全局 `echarts`（`vendor/echarts.min.js`，charts.js 直接引用全局，无 import）
-- hash 路由 10 视图：`#/index|etf|stock|summary|backtest|portfolio|compare|scan|recommend|holdings`；**视图容器常驻不销毁**（切视图保留状态），收藏等跨视图状态靠事件同步
+- hash 路由 11 视图：`#/index|etf|stock|summary|backtest|portfolio|compare|rotate|scan|recommend|holdings`；**视图容器常驻不销毁**（切视图保留状态），收藏等跨视图状态靠事件同步
 - **ESM 语法验证必须转 `.mjs`**：`cp f.js /tmp/f.mjs && node --check /tmp/f.mjs`——普通 `.js` 的 `node --check` 按 CJS 解析会漏检（困难总结127）
 - **图表重建陷阱**：`setSubSeries` 用 `replaceMerge: ['series','legend']` 整体替换系列——按名字切片/查找系列（如 `cur.series.find(s => s.name === '成交量')`），**新增/改名系列后重建逻辑必须同步**（曾致指数板块 MA60/MA250 图例丢失，commit c65c520）
 - tooltip 自定义 formatter 逐行拼接 HTML；成交量/成交额单位：万手/亿元
@@ -70,7 +70,8 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 | _update_summary.py                                                        | 成分股汇总 / 汇总 Excel                                                                              |
 | _classify.py                                                              | 行业分类                                                                                             |
 | scripts/_archive/*.py                                                     | 无引用脚本归档（6 个，勿在链路中引用；见 `scripts/_archive/README.md`）                              |
-| web/js/views/*.js                                                         | 各视图（indexView/etfView/stockView/summaryView/backtestView/portfolioView/compareView/scanView/recommendView/holdingsView + historyLayout/reco/analysis 公共模块） |
+| web/js/views/*.js                                                         | 各视图（indexView/etfView/stockView/summaryView/backtestView/portfolioView/compareView/rotateView/scanView/recommendView/holdingsView + historyLayout/reco/analysis 公共模块） |
+| web/js/views/rotation.js                                                  | ★ 轮动回测引擎（纯函数：三只卖高买低切换 + Δ 网格胜率扫描；含分红/成本/t+1；单测 tests/frontend/rotation.test.mjs） |
 | web/js/charts.js                                                          | ECharts 工厂（K线/折线/环形/条形，图表重建逻辑）                                                     |
 | web/js/views/common.js                                                    | 通用：收藏(localStorage)、renderTable、列表渲染                                                      |
 

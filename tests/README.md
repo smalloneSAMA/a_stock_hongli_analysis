@@ -2,7 +2,7 @@
 
 | 目录 | 内容 | 运行方式 | 是否进 CI |
 | :--- | :--- | :--- | :--- |
-| `frontend/` | 前端纯函数单测（`analysis.js` / `reco.js` 权重表·分档·候选池·评分公式；`data.js` 内存 LRU + 并发去重） | `node --test --test-isolation=none "tests/frontend/*.test.mjs"` | ✅（CI 前置步骤） |
+| `frontend/` | 前端纯函数单测（`analysis.js` / `reco.js` 权重表·分档·候选池·评分公式；`data.js` 内存 LRU + 并发去重；`rotation.js` 轮动回测引擎：触发/执行/顺延/分红/胜率/区间/网格） | `node --test --test-isolation=none "tests/frontend/*.test.mjs"` | ✅（CI 前置步骤） |
 | `python/` | 后端关键函数单测（回测执行日口径 / 组合约束 / 因子取值，纯函数 + fixture，不触网） | `python -m unittest discover -s tests/python -t . -v` | ✅（CI 前置步骤） |
 | `browser/` | 浏览器端冒烟（陈旧角标渲染、三主视图不请求 `analysis_dy`、对比页改读 `dy_series`） | 见下 | ✅（N18 起：windows-latest 独立 job） |
 
@@ -26,9 +26,11 @@ $env:PW_PATH = Join-Path $env:TEMP "dsh-pw\node_modules\playwright-core"
 node tests/browser/smoke.mjs          # 端口默认 8125，可用 DSH_PORT 覆盖
 ```
 
-断言清单（15 项）：
+断言清单（27 项）：
 
 - **T4**：向 `manifest.json` 注入一条 `stale`（列表首项）→ 角标文本含日期 + K线图已渲染；**结束后自动还原 manifest**
 - **T12**：`#/scan`、`#/recommend`、`#/holdings` 各 0 次 `analysis_dy.json` 请求、已读 `analysis.json`、无错误框
 - **T13**：`#/compare` 选中 2 只指数后请求 `dy_series.json`、0 次 `analysis_dy.json`、图表 ≥2 条系列
+- **T14**：`#/rotate` 直读三只 `cache/股票_*.json`、0 次 `analysis_dy.json`、价格图与净值图各 5 条系列、胜率卡含 95%CI、Δ 网格表 ≥5 行、**选择结论卡（推荐Δ/出现次数/胜率/平衡胜率/真实边际）**、网格表标出 ★ 推荐档、切「近1年」后数值变化
+- **顶栏布局**：1680/1280/980/820px 四档下 11 个 tab 均为两行、顶栏仍高 58px、tab 不被裁切、整页无横向溢出
 - 全程无未捕获 JS 异常

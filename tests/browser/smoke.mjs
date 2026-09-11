@@ -12,6 +12,7 @@
      T4  K线页标题陈旧角标：注入 manifest 的一条 stale → 角标文本含日期（验证后自动还原 manifest）
      T12 信号扫描/智能推荐/我的持仓：0 次 analysis_dy.json 请求 + 已读 analysis.json + 无错误框
      T13 对比页：请求 dy_series.json + 0 次 analysis_dy.json + 图表 ≥2 条系列
+     T14 轮动回测页：三只K线直读 + 0 次 analysis_dy.json + 价格/净值图已渲染 + 改区间后重算
      全程无未捕获 JS 异常
 */
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -101,6 +102,65 @@ console.log('\n═══ C. T13 对比页改读 dy_series.json ═══');
   chk('T13 对比页：无 analysis_dy.json 请求', dy.length === 0, dy.length + ' 次');
   const series = await p.evaluate(() => { const el = document.querySelector('.chart'); const i = window.echarts.getInstanceByDom(el); return i ? i.getOption().series.length : -1; });
   chk('T13 对比图已渲染（≥2 条系列）', series >= 2, 'series=' + series);
+  await p.close();
+}
+
+console.log('\n═══ D. T14 轮动回测页（#/rotate）═══');
+{
+  const { p, reqs } = await newPage();
+  await p.goto(BASE + '#/rotate', { waitUntil: 'load' });
+  await p.waitForSelector('.rt-params', { timeout: 30000 });
+  await p.waitForTimeout(2500);
+  const dy = reqs.filter((u) => u.includes('analysis_dy.json'));
+  const kl = reqs.filter((u) => /\/cache\/[^/]*(000933|000807|002128)\.json/.test(decodeURIComponent(u)));
+  const errs = await p.locator('.error-box').count();
+  chk('T14 轮动回测：三只K线直读 /cache/', new Set(kl).size >= 3, new Set(kl).size + ' 个');
+  chk('T14 轮动回测：无 analysis_dy.json 请求', dy.length === 0, dy.length + ' 次');
+  const charts = await p.evaluate(() => [...document.querySelectorAll('.chart')]
+    .map((el) => { const i = window.echarts.getInstanceByDom(el); return i ? i.getOption().series.length : -1; }));
+  chk('T14 轮动回测：价格图 + 净值图已渲染', charts[0] >= 5 && charts[1] >= 5, JSON.stringify(charts));
+  const cards = (await p.locator('.stat-row').nth(1).innerText()).replace(/\s+/g, ' ');
+  chk('T14 轮动回测：胜率卡与超额卡渲染正常', /换仓胜率/.test(cards) && /95%CI/.test(cards) && errs === 0, 'err=' + errs);
+  const gridRows = await p.locator('.rt-grid-tbl tbody tr').count();
+  chk('T14 轮动回测：Δ 网格表已出数', gridRows >= 5, gridRows + ' 行');
+  const concTxt = (await p.locator('.rt-conc').innerText()).replace(/\s+/g, ' ');
+  chk('T14 轮动回测：选择结论卡（推荐Δ/出现次数/胜率/平衡胜率/真实边际）',
+    /推荐换仓差价/.test(concTxt) && /出现次数/.test(concTxt) && /换仓胜率/.test(concTxt) && /盈亏平衡胜率/.test(concTxt) && /真实边际/.test(concTxt),
+    concTxt.slice(0, 70));
+  const starRows = await p.locator('.rt-rec-tag').count();
+  chk('T14 轮动回测：网格表标出推荐档 ★', starRows >= 1, starRows + ' 行');
+  /* 改区间（近1年）→ 重算 */
+  const before = (await p.locator('.stat-row').nth(1).innerText()).replace(/\s+/g, ' ');
+  await p.locator('.seg-group .seg-btn', { hasText: '近1年' }).first().click();
+  await p.waitForTimeout(1500);
+  const after = (await p.locator('.stat-row').nth(1).innerText()).replace(/\s+/g, ' ');
+  chk('T14 轮动回测：改区间后重算（数值变化）', before !== after, '');
+  await p.close();
+}
+
+console.log('\n═══ E. 顶栏布局（11 视图两行导航）═══');
+{
+  const { p } = await newPage();
+  for (const w of [1680, 1280, 980, 820]) {
+    await p.setViewportSize({ width: w, height: 900 });
+    await p.goto(BASE + '#/index', { waitUntil: 'load' });
+    await p.waitForSelector('.nav-tab', { timeout: 30000 });
+    await p.waitForTimeout(200);
+    const r = await p.evaluate(() => {
+      const boxes = [...document.querySelectorAll('.nav-tab')].map((t) => { const b = t.getBoundingClientRect(); return { y: Math.round(b.y), bottom: Math.round(b.bottom) }; });
+      const bar = document.querySelector('.topbar').getBoundingClientRect();
+      return {
+        n: boxes.length,
+        rows: [...new Set(boxes.map((b) => b.y))].length,
+        barH: Math.round(bar.height),
+        clipped: boxes.some((b) => b.bottom > Math.round(bar.bottom) + 1),
+        pageOverflow: document.documentElement.scrollWidth > window.innerWidth,
+      };
+    });
+    chk(`布局 ${w}px：11 个 tab 两行且不撑高顶栏`,
+      r.n === 11 && r.rows === 2 && r.barH === 58 && !r.clipped && !r.pageOverflow,
+      `tab=${r.n} 行=${r.rows} 顶栏=${r.barH}px 裁切=${r.clipped} 溢出=${r.pageOverflow}`);
+  }
   await p.close();
 }
 
