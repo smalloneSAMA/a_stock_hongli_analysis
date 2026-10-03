@@ -862,3 +862,37 @@ table.data-table { border-collapse: separate; border-spacing: 0; width: 100%; fo
 .rt-conc-val { font-family: var(--font-num); font-size: 18px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; margin: 2px 0; }
 .rt-conc-sub { font-size: 10.5px; line-height: 1.6; color: var(--text-3); }
 .rt-rec-tag { color: var(--brand); font-weight: 700; }
+/* 轮动回测：A/B 双槽位选股（搜索 + 候选下拉） */
+.rt-pair { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rt-pair-vs { color: var(--text-3); font-size: 14px; }
+.rt-slot { position: relative; display: flex; align-items: center; gap: 8px; padding: 4px 10px;
+  background: var(--card-soft); border: 1px solid var(--border); border-radius: 8px; }
+.rt-slot.err { border-color: var(--down); }
+.rt-slot-tag { font-weight: 700; font-size: 13px; color: var(--brand); }
+.rt-slot-search { width: 170px; padding: 4px 8px; background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font-size: 12.5px; font-family: var(--font-num); }
+.rt-slot-search:focus { outline: none; border-color: rgba(34, 211, 238, 0.6); }
+.rt-slot-search::placeholder { color: var(--text-3); }
+.rt-slot-val { display: inline-flex; align-items: center; gap: 6px; min-width: 120px; font-size: 12.5px; }
+.rt-slot-name { color: var(--text); }
+.rt-slot-code { color: var(--text-3); font-family: var(--font-num); font-size: 11.5px; }
+.rt-slot-empty { color: var(--text-3); }
+.rt-slot-flash { color: var(--down); }
+.rt-slot-x { font-style: normal; cursor: pointer; color: var(--text-3); padding: 0 2px; }
+.rt-slot-x:hover { color: var(--down); }
+.rt-slot-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 200; min-width: 220px; max-height: 280px;
+  overflow: auto; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .35); padding: 4px; }
+.rt-slot-item { display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; font-size: 12.5px;
+  color: var(--text-2); cursor: pointer; border-radius: 5px; white-space: nowrap; }
+.rt-slot-item:hover { background: var(--input-bg); color: var(--text); }
+.rt-slot-item.dis { opacity: .45; cursor: not-allowed; }
+.rt-slot-item.dis:hover { background: transparent; color: var(--text-2); }
+.rt-slot-item.none { color: var(--text-3); cursor: default; }
+.rt-slot-item.none:hover { background: transparent; }
+/* 轮动回测：差价分布 / 样本外验证 */
+.rt-spread { padding: 12px 14px; }
+.rt-oos { padding: 10px 14px; }
+.rt-oos-tbl { font-size: 11.5px; }
+.rt-oos-tbl th, .rt-oos-tbl td { padding: 5px 6px; white-space: nowrap; text-align: center; }
+.rt-oos-tbl tbody tr.hl td { background: rgba(96, 165, 250, .10); }

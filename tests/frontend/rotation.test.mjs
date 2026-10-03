@@ -3,7 +3,7 @@
    约定（与项目测试一致）：关系/边界断言，禁止精确数值快照——行情或参数微调不应误报。 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMatrix, simulate, statsOf, sweep, wilson, benchmarks, shiftYears, matrixBounds, defaultGrid, gapAt, gapDayShare, conclusion, CONCLUSION_MIN_CLOSED, CONCLUSION_MIN_RECENT, CONCLUSION_MIN_STRONG } from '../../web/js/views/rotation.js';
+import { buildMatrix, simulate, statsOf, sweep, wilson, benchmarks, shiftYears, matrixBounds, defaultGrid, gapAt, gapDayShare, conclusion, pairError, gapArray, spreadStat, splitIndex, oosValidate, CONCLUSION_MIN_CLOSED, CONCLUSION_MIN_RECENT, CONCLUSION_MIN_STRONG } from '../../web/js/views/rotation.js';
 
 /* 合成行情：series = { 代码: [[日期, 收盘], ...] }；divs = { 代码: [[除权日, 每10股派息], ...] } */
 const DS = (n, day = 1) => Array.from({ length: n }, (_, i) => `2024-01-${String(day + i).padStart(2, '0')}`);
@@ -32,6 +32,12 @@ const f2 = () => mk({
   A: DS(10).map((d) => [d, 10]),
   B: DS(10).map((d, i) => [d, [10, 8, 8, 8, 12, 12, 12, 7, 7, 7][i]]),
   C: DS(10).map((d) => [d, 10]),
+});
+
+/* F3：两只配对（A/B），B 先低后高——最低价一侧交换两次 → Δ=0 时隔日各换一次 */
+const fPair = () => mk({
+  A: DS(8).map((d) => [d, 10]),
+  B: DS(8).map((d, i) => [d, [9, 9, 9, 9, 11, 11, 11, 11][i]]),
 });
 
 test('触发条件：最高价 − 最低价 ≥ Δ 才换仓，未达标不动', () => {
@@ -150,6 +156,51 @@ test('百分比口径：Δ% 用 (最高/最低 − 1) 判定', () => {
   const m = mk({ A: d.map((x) => [x, 10]), B: d.map((x) => [x, 8]) });   // 相对差 25%
   assert.equal(simulate(m, { ...OPTS, unit: '%', threshold: 30 }).trades.length, 1, 'Δ%=30 未达标');
   assert.equal(simulate(m, { ...OPTS, unit: '%', threshold: 20 }).trades.length, 2, 'Δ%=20 达标 → 换仓');
+});
+
+test('两只配对：Δ=0 时最低价一侧每换一次就换仓一次（理论换手）', () => {
+  const m = fPair();
+  assert.equal(m.codes.length, 2);
+  const z = statsOf(simulate(m, { ...OPTS, threshold: 0 }));
+  /* day0 B 更低 → 次一交易日买入 B；day4 A 更低 → 次一交易日买回 A */
+  assert.equal(z.nSwitch, 2, '最低价一侧变化 2 次 → 换仓 2 次');
+  assert.ok(z.nSwitch > statsOf(simulate(m, { ...OPTS, threshold: 2 })).nSwitch, 'Δ=2 时 1 元价差不触发 → 换仓更少');
+});
+
+test('两只配对：Δ=0 的换仓次数不少于任何正阈值档（关系断言）', () => {
+  const m = fPair();
+  const z = statsOf(simulate(m, { ...OPTS, threshold: 0 })).nSwitch;
+  for (const th of defaultGrid('元').filter((v) => v > 0)) {
+    assert.ok(z >= statsOf(simulate(m, { ...OPTS, threshold: th })).nSwitch, `Δ=${th} 不应多于 Δ=0`);
+  }
+});
+
+test('两只配对：A/B 数据完全相同 → 0 次换仓、胜率无值', () => {
+  const d = DS(6);
+  const m = mk({ A: d.map((x) => [x, 10]), B: d.map((x) => [x, 10]) });
+  const st = statsOf(simulate(m, { ...OPTS, threshold: 0 }));
+  assert.equal(st.nSwitch, 0, '同价无价差 → 不换仓');
+  assert.equal(st.nClosed, 0);
+  assert.equal(st.winRate, null);
+});
+
+test('两只配对：单只 / 空入参返回空结果而非抛错', () => {
+  const d = DS(4);
+  const one = mk({ A: d.map((x) => [x, 10]) });
+  assert.equal(one.codes.length, 1);
+  assert.equal(statsOf(simulate(one, { ...OPTS, threshold: 1 })).nSwitch, 0, '单只 → 无换仓');
+  const none = mk({});
+  assert.deepEqual(none.dates, []);
+  assert.doesNotThrow(() => statsOf(simulate(none, { ...OPTS })));
+  assert.equal(matrixBounds({}, []).minStart, null);
+});
+
+test('pairError：两只配对校验（缺一只 / 同代码 / 合法）', () => {
+  assert.match(pairError(['A']), /两只|槽位/);
+  assert.match(pairError(['A', 'A']), /同一只/);
+  assert.equal(pairError(['A', 'B']), null);
+  assert.equal(pairError(['', 'A']), pairError(['A']));
+  assert.equal(pairError(null), pairError(['A']));
 });
 
 test('含分红：除权派现计入持仓收益，且不影响信号路径（同路径下总收益 ≥ 纯价格）', () => {
@@ -357,5 +408,110 @@ test('推荐档随口径变化：成本提高后同一区间的边际下降（�
   const rowCheap = cheap.rows.find((r) => r.threshold === 2), rowPricey = pricey.rows.find((r) => r.threshold === 2);
   assert.ok(rowPricey.margin <= rowCheap.margin, '成本更高 → 真实边际不增');
   assert.ok(rowPricey.avgExc <= rowCheap.avgExc, '成本更高 → 平均超额不增');
+});
+
+/* ── 差价分布统计（gapArray / spreadStat）── */
+
+/* oosValidate 需要 raw/divRows/codes/names 入参（mk 返回的是矩阵） */
+function pairInput(series, opts = {}) {
+  const codes = Object.keys(series);
+  const raw = {}, divRows = {};
+  for (const c of codes) {
+    raw[c] = series[c].map(([date, close]) => ({ date, close }));
+    divRows[c] = ((opts.divs || {})[c] || []).map(([ex_date, bonus10]) => ({ ex_date, bonus10 }));
+  }
+  return { codes, names: opts.names || codes, raw, divRows };
+}
+
+test('差价分布：分位单调、分桶计数自洽、与 gapDayShare 同源', () => {
+  const d = DS(5);
+  const m = mk({ A: d.map((x) => [x, 10]), B: [[d[0], 9], [d[1], 8], [d[2], 10], [d[3], 12], [d[4], 7]] });
+  const ss = spreadStat(m, '元', 4);
+  assert.equal(ss.n, 5);
+  assert.equal(gapArray(m, '元').length, ss.n, 'gapArray 与 spreadStat 样本一致');
+  assert.equal(ss.total, ss.n, '两只都有行情 → 有效天数 = 总天数');
+  const keys = ['p10', 'p25', 'p50', 'p75', 'p90'];
+  for (let i = 1; i < keys.length; i++) assert.ok(ss.q[keys[i]] >= ss.q[keys[i - 1]], `${keys[i]} ≥ ${keys[i - 1]}`);
+  assert.equal(ss.bins.reduce((a, b) => a + b.n, 0), ss.n, '各桶计数之和 = 有效天数');
+  const th = 2;
+  const share = ss.arr.filter((x) => x.gap >= th).length / ss.n;
+  const gds = gapDayShare(m, th, '元');
+  assert.equal(gds.total, ss.n, 'gapArray 与 gapDayShare 的有效天数一致');
+  assert.ok(Math.abs(gds.share - share) < 1e-12, '与网格用的达标占比同源');
+  assert.equal(ss.cur.pct, 1, '当前差价 3 为区间最大 → 分位 100%');
+  assert.equal(ss.flips, 2, '价差符号 +,+ ,0,-,+ → 贵的一侧切换 2 次');
+  assert.ok(ss.signShare > 0 && ss.signShare < 1);
+});
+
+test('差价分布：A/B 相同 → 零价差；元/% 差分口径自洽', () => {
+  const d = DS(4);
+  const same = mk({ A: d.map((x) => [x, 10]), B: d.map((x) => [x, 10]) });
+  const s0 = spreadStat(same, '元');
+  assert.equal(s0.flips, 0);
+  assert.equal(s0.sd, 0);
+  assert.equal(s0.min, 0);
+  assert.equal(s0.max, 0);
+  const base = mk({ A: d.map((x) => [x, 10]), B: d.map((x) => [x, 9]) });
+  const scaled = mk({ A: d.map((x) => [x, 100]), B: d.map((x) => [x, 90]) });
+  const y1 = spreadStat(base, '元'), y10 = spreadStat(scaled, '元');
+  const p1 = spreadStat(base, '%'), p10 = spreadStat(scaled, '%');
+  assert.ok(Math.abs(y10.mean - y1.mean * 10) < 1e-9, '元差随价格等比放大');
+  assert.ok(Math.abs(p10.mean - p1.mean) < 1e-9, '相对差与价格水平无关');
+});
+
+test('切分点：按交易日轴比例，两侧各 ≥2 天；区间过短返回 null', () => {
+  const dates = DL(10);
+  const sp = splitIndex(dates, 0.7);
+  assert.equal(sp.idx, 7);
+  assert.equal(sp.date, dates[7]);
+  assert.equal(sp.trainEnd, dates[6]);
+  assert.ok(sp.trainEnd < sp.date, '训练段结束早于验证段开始');
+  assert.equal(splitIndex(DL(3), 0.7), null);
+});
+
+test('样本外验证：两段无缝不重叠；验证段无触发 → insufficient（非抛错）', () => {
+  const n = 300, quietFrom = 210;
+  const d = DL(n), rnd = lcg(7);
+  let b = 10;
+  const B = d.map((x, i) => {
+    if (i >= quietFrom) return [x, 10];
+    b = Math.max(6, Math.min(15, b + (rnd() < 0.5 ? -1 : 1) * (rnd() < 0.6 ? 1 : 2)));
+    return [x, b];
+  });
+  const input = pairInput({ A: d.map((x) => [x, 10]), B });
+  const r = oosValidate({ ...input, baseOpts: { ...OPTS }, start: '', end: '', ratio: 0.7 });
+  assert.equal(r.ok, true);
+  assert.equal(r.test.from, r.splitDate, '验证段从切分日开始');
+  assert.ok(r.train.to < r.test.from, '训练/验证不重叠');
+  assert.equal(r.train.nDays + r.test.nDays, n, '两段覆盖全区间');
+  assert.ok(defaultGrid('元').includes(r.chosen), '训练段选出的 Δ 来自网格');
+  assert.equal(r.test.stats.nSwitch, 0, '验证段同价 → 不触发换仓');
+  assert.equal(r.verdict, 'insufficient', '验证段样本不足 → 不下结论');
+  const sameTh = oosValidate({ ...input, baseOpts: { ...OPTS }, start: '', end: '', ratio: 0.7, extraThreshold: r.chosen });
+  assert.equal(sameTh.extra, null, '与推荐 Δ 相同 → 不重复算一行');
+  const other = oosValidate({ ...input, baseOpts: { ...OPTS }, start: '', end: '', ratio: 0.7, extraThreshold: 2.5 });
+  if (r.chosen !== 2.5) assert.equal(other.extra.threshold, 2.5, '当前 Δ 另算一行');
+});
+
+test('样本外验证：训练段零决策 → 退用最小 Δ（nodata），验证段照常打分', () => {
+  const d = DL(200);
+  const B = d.map((x, i) => [x, i < 140 ? 10 : (i % 2 === 0 ? 12 : 8)]);   // 前 70% 同价，后 30% 摆动
+  const input = pairInput({ A: d.map((x) => [x, 10]), B });
+  const r = oosValidate({ ...input, baseOpts: { ...OPTS }, start: '', end: '', ratio: 0.7 });
+  assert.equal(r.ok, true);
+  assert.equal(r.train.tier, 'nodata', '训练段无决策 → 标记 nodata');
+  assert.equal(r.train.stats.nSwitch, 0);
+  assert.equal(r.chosen, Math.min(...defaultGrid('元')), '无决策可依据 → 退用最小 Δ');
+  assert.ok(r.test.stats.nSwitch > 0, '验证段照常打分');
+  assert.ok(['pass', 'weak', 'fail', 'insufficient'].includes(r.verdict));
+});
+
+test('样本外验证：区间过短 → ok=false 且不抛错', () => {
+  const d = DS(3);
+  const input = pairInput({ A: d.map((x) => [x, 10]), B: d.map((x) => [x, 9]) });
+  let r;
+  assert.doesNotThrow(() => { r = oosValidate({ ...input, baseOpts: { ...OPTS }, start: '', end: '', ratio: 0.7 }); });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /区间过短|不足/);
 });
 

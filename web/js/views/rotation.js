@@ -11,12 +11,20 @@
      · 起点建仓同样扣一次单边成本；买入持有对照曲线亦扣一次，口径对称。
 */
 
-/* 固定三只（价格量级接近，元差口径才有意义） */
+/* 默认标的（价格量级接近，元差口径才有意义）；视图默认取前两只配对，可自选替换 */
 export const ROTATE_STOCKS = [
   { code: '000933', name: '神火股份' },
   { code: '000807', name: '云铝股份' },
   { code: '002128', name: '电投能源' },
 ];
+
+/* 两两配对入参校验（槽位 A/B）：返回提示文案，合法返回 null */
+export function pairError(codes) {
+  const list = (codes || []).filter(Boolean);
+  if (list.length < 2) return '请在两个槽位各选一只标的（A / B）';
+  if (new Set(list).size < list.length) return '两个槽位不能是同一只标的';
+  return null;
+}
 
 export const UNIT_DEFAULTS = {
   '元': [0.5, 1, 1.5, 2, 2.5, 3, 4, 5],
@@ -36,7 +44,7 @@ export function shiftYears(dateStr, n) {
   return `${dt.getUTCFullYear()}-${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())}`;
 }
 
-/* 三只标的的共同可用区间：起点取各只最早交易日的最晚者，终点取各只最晚交易日的最早者 */
+/* 各标的的共同可用区间：起点取各只最早交易日的最晚者，终点取各只最晚交易日的最早者 */
 export function matrixBounds(rawByCode, codes) {
   let minStart = null, maxEnd = null;
   for (const c of codes) {
@@ -134,6 +142,57 @@ export function gapDayShare(m, threshold, unit = '元') {
     if (g >= Number(threshold)) days++;
   }
   return { days, total, share: total ? days / total : null };
+}
+
+/* 逐日差价序列（固定前两只配对：diff = A − B，正 = A 贵；gap = |diff|）
+   只返回两只当日都有行情的交易日；口径跟随 signalMode（raw = 不复权真实价）与 unit */
+export function gapArray(m, unit = '元') {
+  const out = [];
+  if (!m || m.codes.length < 2) return out;
+  for (let i = 0; i < m.dates.length; i++) {
+    if (!m.has[0][i] || !m.has[1][i]) continue;
+    const a = m.sig[0][i], b = m.sig[1][i];
+    if (a == null || b == null) continue;
+    const diff = unit === '%' ? (a / b - 1) * 100 : a - b;
+    out.push({ i, date: m.dates[i], diff, gap: Math.abs(diff) });
+  }
+  return out;
+}
+
+/* 差价描述统计 + 直方图分桶 + 当前分位（分位用最近邻秩，确定性可测） */
+export function spreadStat(m, unit = '元', bins = 20) {
+  const arr = gapArray(m, unit);
+  const n = arr.length, total = m && Array.isArray(m.dates) ? m.dates.length : 0;
+  if (!n) return { n: 0, total, mean: null, sd: null, min: null, max: null, q: null, cur: null, signShare: null, flips: 0, bins: [], arr };
+  const gaps = arr.map((x) => x.gap);
+  const sum = gaps.reduce((s, v) => s + v, 0);
+  const mean = sum / n;
+  const sd = n > 1 ? Math.sqrt(gaps.reduce((s, v) => s + (v - mean) ** 2, 0) / (n - 1)) : 0;
+  const sorted = gaps.slice().sort((x, y) => x - y);
+  const at = (p) => sorted[Math.min(n - 1, Math.max(0, Math.round((n - 1) * p)))];
+  const q = { p10: at(0.1), p25: at(0.25), p50: at(0.5), p75: at(0.75), p90: at(0.9) };
+  const last = arr[n - 1];
+  const cur = { ...last, pct: gaps.filter((g) => g <= last.gap).length / n };
+  /* 符号翻转 = 贵的一侧切换次数（忽略 0 价差天） */
+  let flips = 0, prev = 0;
+  for (const x of arr) {
+    const s = x.diff > 0 ? 1 : x.diff < 0 ? -1 : 0;
+    if (s === 0) continue;
+    if (prev !== 0 && s !== prev) flips++;
+    prev = s;
+  }
+  const signShare = arr.filter((x) => x.diff > 0).length / n;
+  const lo = sorted[0], hi = sorted[n - 1];
+  const B = Math.max(1, Math.floor(Number(bins)) || 1);
+  const width = hi > lo ? (hi - lo) / B : 0;
+  const bk = width > 0
+    ? Array.from({ length: B }, (_, k) => ({ lo: lo + k * width, hi: lo + (k + 1) * width, n: 0 }))
+    : [{ lo, hi, n: 0 }];
+  for (const g of gaps) {
+    const k = width > 0 ? Math.min(B - 1, Math.floor((g - lo) / width)) : 0;
+    bk[k].n++;
+  }
+  return { n, total, mean, sd, min: lo, max: hi, q, cur, signShare, flips, bins: bk, arr };
 }
 
 /* 回测主循环 */
@@ -398,4 +457,69 @@ export function benchmarks(m, opts = {}) {
   for (const c of codes) totals[c] = (series.get(c)[N - 1] - 1) * 100;
   totals.equal = (equal[N - 1] - 1) * 100;
   return { series, equal, totals };
+}
+
+/* 按交易日轴比例切分：idx = floor(N × ratio)，两侧各保证 ≥2 交易日（区间过短返回 null） */
+export function splitIndex(dates, ratio = 0.7) {
+  const N = Array.isArray(dates) ? dates.length : 0;
+  if (N < 4) return null;
+  const r = Math.min(0.9, Math.max(0.1, Number(ratio) || 0.7));
+  const idx = Math.min(N - 2, Math.max(2, Math.floor(N * r)));
+  return { idx, date: dates[idx], trainEnd: dates[idx - 1] };
+}
+
+/* 样本外专用的训练段选档：
+   ① 优先沿用 conclusion 的正规规则（保守边际 + 已了结阈值）；
+   ② 训练段无合格档时（低频策略常见，甚至整段零换仓）→ 退用「已了结最多者，并列取更小 Δ」
+      （更易触发 = 验证段信息更多）；tier 标记 weak/nodata，页面对应提示
+   返回 { row, tier } | null */
+function pickTrainThreshold(conc) {
+  if (conc.best) return { row: conc.best, tier: conc.tier };
+  const rows = conc.rows || [];
+  if (!rows.length) return null;
+  const pick = rows.slice().sort((a, b) => b.nClosed - a.nClosed || a.threshold - b.threshold)[0];
+  return { row: pick, tier: pick.nSwitch > 0 ? 'sparse' : 'nodata' };
+}
+
+/* 样本外验证：训练段（前 ratio）选 Δ → 验证段（后 1−ratio）固定用该 Δ 打分
+   口径全部复用 conclusion / simulate / statsOf / benchmarks；
+   两侧必须重建矩阵（cumDiv 基准与停牌前向填充依赖窗口起点，不能切片） */
+export function oosValidate({ codes, names, raw, divRows, signalMode = 'raw', baseOpts = {}, start = '', end = '', ratio = 0.7, grid, extraThreshold = null }) {
+  const unit = baseOpts.unit === '%' ? '%' : '元';
+  const list = (grid || defaultGrid(unit)).slice();
+  const full = buildMatrix({ codes, names, raw, divRows, start, end, signalMode });
+  const sp = splitIndex(full.dates, ratio);
+  if (!sp) return { ok: false, reason: '区间过短，无法切分训练/验证' };
+  const train = buildMatrix({ codes, names, raw, divRows, start, end: sp.trainEnd, signalMode });
+  const test = buildMatrix({ codes, names, raw, divRows, start: sp.date, end, signalMode });
+  if (train.dates.length < 2 || test.dates.length < 2) return { ok: false, reason: '切分后某一侧交易日不足' };
+  const conc = conclusion(train, baseOpts, list);
+  const picked = pickTrainThreshold(conc);
+  if (!picked) return { ok: false, reason: '训练段没有可评估的档位' };
+  const chosen = picked.row.threshold;
+  const score = (matrix, threshold) => {
+    const stats = statsOf(simulate(matrix, { ...baseOpts, threshold }), baseOpts);
+    const base = benchmarks(matrix, { cost: baseOpts.cost, includeDiv: baseOpts.includeDiv }).totals.equal;
+    return { threshold, stats, base, excessVsEqual: stats.total - base };
+  };
+  const testScore = score(test, chosen);
+  const extra = (extraThreshold != null && Number(extraThreshold) !== Number(chosen)) ? score(test, extraThreshold) : null;
+  const st = testScore.stats;
+  let verdict = 'insufficient';
+  if (st.nClosed >= 3) {
+    const marginOk = st.margin != null && st.margin > 0;
+    const excessOk = testScore.excessVsEqual > 0;
+    verdict = marginOk && excessOk ? 'pass' : marginOk || excessOk ? 'weak' : 'fail';
+  }
+  return {
+    ok: true,
+    splitDate: sp.date,
+    ratio: sp.idx / full.dates.length,
+    train: { from: train.dates[0], to: train.dates[train.dates.length - 1], nDays: train.dates.length, tier: picked.tier, stats: picked.row },
+    test: { from: test.dates[0], to: test.dates[test.dates.length - 1], nDays: test.dates.length, ...testScore },
+    extra,
+    chosen,
+    strong: conc.strong ? conc.strong.threshold : null,
+    verdict,
+  };
 }

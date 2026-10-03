@@ -12,7 +12,7 @@
      T4  K线页标题陈旧角标：注入 manifest 的一条 stale → 角标文本含日期（验证后自动还原 manifest）
      T12 信号扫描/智能推荐/我的持仓：0 次 analysis_dy.json 请求 + 已读 analysis.json + 无错误框
      T13 对比页：请求 dy_series.json + 0 次 analysis_dy.json + 图表 ≥2 条系列
-     T14 轮动回测页：三只K线直读 + 0 次 analysis_dy.json + 价格/净值图已渲染 + 改区间后重算
+     T14 轮动回测页：A/B 双槽位选股 + 两只K线直读 + 0 次 analysis_dy.json + 价格/净值/差价分布图已渲染 + 样本外验证卡 + 改区间/切比例后重算
      全程无未捕获 JS 异常
 */
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -112,13 +112,20 @@ console.log('\n═══ D. T14 轮动回测页（#/rotate）═══');
   await p.waitForSelector('.rt-params', { timeout: 30000 });
   await p.waitForTimeout(2500);
   const dy = reqs.filter((u) => u.includes('analysis_dy.json'));
-  const kl = reqs.filter((u) => /\/cache\/[^/]*(000933|000807|002128)\.json/.test(decodeURIComponent(u)));
+  const kl = reqs.filter((u) => /\/cache\/[^/]*(000933|000807)\.json/.test(decodeURIComponent(u)));
   const errs = await p.locator('.error-box').count();
-  chk('T14 轮动回测：三只K线直读 /cache/', new Set(kl).size >= 3, new Set(kl).size + ' 个');
+  const slots = await p.locator('.rt-slot').count();
+  chk('T14 轮动回测：A/B 两个槽位', slots === 2, slots + ' 个');
+  chk('T14 轮动回测：两只K线直读 /cache/', new Set(kl).size >= 2, new Set(kl).size + ' 个');
   chk('T14 轮动回测：无 analysis_dy.json 请求', dy.length === 0, dy.length + ' 次');
-  const charts = await p.evaluate(() => [...document.querySelectorAll('.chart')]
-    .map((el) => { const i = window.echarts.getInstanceByDom(el); return i ? i.getOption().series.length : -1; }));
-  chk('T14 轮动回测：价格图 + 净值图已渲染', charts[0] >= 5 && charts[1] >= 5, JSON.stringify(charts));
+  const chartSeries = await p.evaluate((names) => names.map((n) => {
+    const el = document.querySelector('[data-chart="' + n + '"]');
+    const i = el && window.echarts.getInstanceByDom(el);
+    return i ? i.getOption().series.length : -1;
+  }), ['px', 'eq', 'hist']);
+  chk('T14 轮动回测：价格图（2标的+买卖标记）与净值图（策略+等权+2标的）', chartSeries[0] >= 4 && chartSeries[1] >= 4, JSON.stringify(chartSeries));
+  chk('T14 轮动回测：差价分布直方图已渲染', chartSeries[2] >= 1, 'hist series=' + chartSeries[2]);
+  chk('T14 轮动回测：差价分布卡（统计格子 ≥4）', await p.locator('.rt-spread .rt-conc-cell').count() >= 4, '');
   const cards = (await p.locator('.stat-row').nth(1).innerText()).replace(/\s+/g, ' ');
   chk('T14 轮动回测：胜率卡与超额卡渲染正常', /换仓胜率/.test(cards) && /95%CI/.test(cards) && errs === 0, 'err=' + errs);
   const gridRows = await p.locator('.rt-grid-tbl tbody tr').count();
@@ -129,6 +136,13 @@ console.log('\n═══ D. T14 轮动回测页（#/rotate）═══');
     concTxt.slice(0, 70));
   const starRows = await p.locator('.rt-rec-tag').count();
   chk('T14 轮动回测：网格表标出推荐档 ★', starRows >= 1, starRows + ' 行');
+  /* 样本外验证：卡存在 + 切比例后重算 */
+  const oosTxt = (await p.locator('.rt-oos').innerText()).replace(/\s+/g, ' ');
+  chk('T14 轮动回测：样本外验证卡（表格 + 结论）', (await p.locator('text=样本外验证').count()) >= 1 && /验证（用\s*(Δ\*|训练 Δ)）/.test(oosTxt) && /结论：/.test(oosTxt), oosTxt.slice(0, 80));
+  await p.locator('.rt-oos .seg-btn', { hasText: '60/40' }).click();
+  await p.waitForTimeout(1200);
+  const oosAfter = (await p.locator('.rt-oos').innerText()).replace(/\s+/g, ' ');
+  chk('T14 轮动回测：切样本外比例后重算', oosTxt !== oosAfter, '');
   /* 改区间（近1年）→ 重算 */
   const before = (await p.locator('.stat-row').nth(1).innerText()).replace(/\s+/g, ' ');
   await p.locator('.seg-group .seg-btn', { hasText: '近1年' }).first().click();

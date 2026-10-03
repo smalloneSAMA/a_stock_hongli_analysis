@@ -71,7 +71,7 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 | _classify.py                                                              | 行业分类                                                                                             |
 | scripts/_archive/*.py                                                     | 无引用脚本归档（6 个，勿在链路中引用；见 `scripts/_archive/README.md`）                              |
 | web/js/views/*.js                                                         | 各视图（indexView/etfView/stockView/summaryView/backtestView/portfolioView/compareView/rotateView/scanView/recommendView/holdingsView + historyLayout/reco/analysis 公共模块） |
-| web/js/views/rotation.js                                                  | ★ 轮动回测引擎（纯函数：三只卖高买低切换 + Δ 网格胜率扫描；含分红/成本/t+1；单测 tests/frontend/rotation.test.mjs） |
+| web/js/views/rotation.js                                                  | ★ 轮动回测引擎（纯函数：两只两两配对卖高买低切换 + Δ 网格胜率扫描 + pairError 配对校验 + 差价分布/spreadStat + 样本外切分/oosValidate；含分红/成本/t+1；单测 tests/frontend/rotation.test.mjs） |
 | web/js/charts.js                                                          | ECharts 工厂（K线/折线/环形/条形，图表重建逻辑）                                                     |
 | web/js/views/common.js                                                    | 通用：收藏(localStorage)、renderTable、列表渲染                                                      |
 
@@ -88,5 +88,5 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 
 - **"先不改代码"模式**：复杂需求（口径设计、方案取舍、UI 交互）先给方案/分析，用户明确确认后才编码
 - git 提交：**中文主题 + 要点分列**（每条含根因/修复/验证），如 `修复指数板块 MA60/MA250 图例丢失：...`
-- **困难总结.md 持续追加编号清单**（当前到 157），新坑必记：现象/根因/修复/教训
+- **困难总结.md 持续追加编号清单**（当前到 160），新坑必记：现象/根因/修复/教训
 - 前端文件用 ESM；Python 用 UTF-8 + `# -*- coding: utf-8 -*-` 头部
