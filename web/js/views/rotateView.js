@@ -8,7 +8,7 @@ import { el, renderTable, skeleton, errorBox, fmt2, dirOf, attachSearchHistory }
 import { loadJSON, decodeRows, klineUrl, MANIFEST_URL } from '../data.js';
 import { cssVar, onThemeChange } from '../theme.js';
 import { recolorOption } from '../charts.js';
-import { ROTATE_STOCKS, pairError, buildMatrix, matrixBounds, simulate, statsOf, conclusion, benchmarks, defaultGrid, shiftYears, spreadStat, oosValidate } from './rotation.js';
+import { ROTATE_STOCKS, pairError, buildMatrix, matrixBounds, simulate, statsOf, conclusion, benchmarks, defaultGrid, shiftYears, spreadStat, oosValidate, EVID_MIN_CLOSED, EVID_FAIR, EVID_GOOD, EXCESS_TIE_PP } from './rotation.js';
 
 const PALETTE = ['#60A5FA', '#FBBF24'];   // 槽位 A / B
 const EQ_COLOR = '#22D3EE';
@@ -248,9 +248,9 @@ export default {
           el('br'),
           '但胜率高不等于赚得多（赢的幅度通常小于输的幅度），所以同时给：盈亏平衡胜率 = 输均幅度 ÷（赢均幅度 + 输均幅度），**真实边际 = 胜率 − 盈亏平衡胜率**（>0 才算扣完成本后有正期望）；保守边际 = 95%CI 下界 − 盈亏平衡胜率。'),
         el('div', { class: 'g-step' }, el('b', {}, '推荐阈值怎么选出来的'), el('br'),
-          '对每档 Δ 统计：换仓次数 / 已了结次数 / 胜率(95%CI) / 盈亏平衡胜率 / 真实边际 / 平均每次超额 / 价差达标交易日占比 / 近1年触发次数。',
+          '对每档 Δ 统计：换仓次数 / 已了结次数 / 胜率(95%CI) / 盈亏平衡胜率 / 真实边际 / 平均每次超额 / 净超额 / 价差达标交易日占比 / 近1年触发次数。',
           el('br'),
-          '主推荐 = 「已了结 ≥ 12 次 且 近1年触发 ≥ 3 次」的档里保守边际最大者（样本够、且当下行情仍会触发）；没有满足者才退到「已了结 ≥ 8 次」，并在卡上标注"样本偏少"。高确信档 = 「已了结 ≥ 8 次且真实边际 > 0」的档里保守边际最大者（阈值更高、机会更少）。'),
+          '入选门槛 = 已了结 ≥ 5 次 且 平均每次超额 > 0（统一、低门槛，避免“只有最低档样本够”）；主推荐 = 入选集合里「净超额 = 策略收益 − 等权买入持有」最大者（±1pp 内视为平局 → 平均每次超额高者 → 换手少者）；高确信档 = 入选集合里平均每次超额最大者（通常阈值更高、机会更少）。'),
         el('div', { class: 'g-step' }, el('b', {}, '口径'), el('br'),
           '价格为不复权收盘价（真实盘面价，实盘可执行）；含分红 = 除权日派现给上一收盘持有者、现金留存、换仓时并入再投入；换仓扣双边成本（单边 cost 各一次），"不换仓"对照只是持有、不扣费；买入持有对照曲线同样扣一次建仓成本。'),
         el('div', { class: 'g-step' }, el('b', {}, '必须知道的三件事'), el('br'),
@@ -449,7 +449,7 @@ export default {
         extraLine.textContent = `除权日附近触发的换仓 ${st.exDivN} 次（其中已了结 ${st.exDivClosedN} 次 · 赢 ${st.exDivWins}）· 空仓 ${st.cashDays} 个交易日 · 单边成本 ${(params.cost * 100).toFixed(2)}% · ${params.includeDiv ? '含分红' : '纯价格'} · ${params.execOffset ? 't+1 收盘执行' : '当日收盘执行'}${params.onlyWhenHeldIsMax ? ' · 仅在持仓为最高价时换仓' : ''}`;
       };
 
-      /* 结论卡：本区间最合适的换仓差价（自动选择 + 可信度指标全摆出来） */
+      /* 结论卡：本区间净超额最大的换仓差价 + 证据强度 + 门槛敏感性 + 未入选说明 */
       const paintConclusion = (m, conc) => {
         concCard.innerHTML = '';
         const u = params.unit === '%' ? '%' : '元';
@@ -457,19 +457,21 @@ export default {
         const equiv = (th) => (u === '元' ? `≈相对差 ${(th / lastPx * 100).toFixed(1)}%` : `≈${(th / 100 * lastPx).toFixed(2)} 元 @现价`);
         const pct1 = (v) => (v == null ? '—' : (v * 100).toFixed(1) + '%');
         const pp1 = (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + 'pp');
+        const sgn1 = (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + '%');
+        const evid = (n) => (n >= EVID_GOOD ? '证据充分' : n >= EVID_FAIR ? '证据偏少' : '证据薄弱');
         if (!conc.best) {
-          concCard.append(el('div', { class: 'rt-note' }, '本区间换仓样本不足（没有「已了结 ≥ 8 次」的档位）→ 不给推荐阈值，请拉长区间、放开阈值或放宽口径。'));
+          concCard.append(el('div', { class: 'rt-note' },
+            `本区间没有任何档位满足「已了结 ≥ ${EVID_MIN_CLOSED} 次 且 平均每次超额 > 0」→ 不给推荐阈值，请拉长区间、放开阈值或放宽口径。`));
           return;
         }
         const b = conc.best;
         const cells = [
-          ['推荐换仓差价 Δ', `${b.threshold}${u}`, `${equiv(b.threshold)} · ${conc.tier === 'main' ? '样本充分且近1年仍在触发' : '样本偏少，仅作参考'}`],
-          ['出现次数', `换仓 ${b.nSwitch} 次`, `≈${b.tradesPerYear.toFixed(1)} 次/年 · 近1年 ${b.nRecent} 次 · 平均持有 ${b.avgHoldDays == null ? '—' : b.avgHoldDays.toFixed(0)} 交易日`],
-          [`价差 ≥${b.threshold}${u} 的交易日`, `${b.gapDays} / ${b.gapTotal} 天`, `占 ${(b.gapShare * 100).toFixed(0)}%（真正触发换仓需持仓不是最便宜的那只）`],
+          ['推荐换仓差价 Δ', `${b.threshold}${u}`, `${equiv(b.threshold)} · 按「净超额最大」选出`],
+          ['证据强度', evid(b.nClosed), `${b.nClosed < EVID_FAIR ? '⚠ ' : ''}已了结 ${b.nClosed} / 换仓 ${b.nSwitch} 次 · ≈${b.tradesPerYear.toFixed(1)} 次/年 · 近1年 ${b.nRecent} 次`],
+          ['净超额（策略 − 等权持有）', pp1(b.excess), `策略 ${sgn1(b.total)} vs 等权 ${sgn1(conc.eqTotal)}`],
           ['换仓胜率', pct1(b.winRate), `赢 ${b.wins}/${b.nClosed} 次 · 95%CI ${b.ci ? `${(b.ci[0] * 100).toFixed(0)}~${(b.ci[1] * 100).toFixed(0)}%` : '—'}`],
-          ['盈亏平衡胜率', pct1(b.breakEven), `赢均 ${b.avgWin == null ? '—' : '+' + b.avgWin.toFixed(1) + 'pp'} / 输均 ${b.avgLoss == null ? '—' : b.avgLoss.toFixed(1) + 'pp'}`],
-          ['真实边际', pp1(b.margin), '胜率 − 盈亏平衡胜率（>0 才有正期望）'],
-          ['平均每次超额', pp1(b.avgExc), `保守边际 ${pp1(b.consMargin)}（CI下界 − 平衡胜率${b.consMargin != null && b.consMargin < 0 ? '；为负 = 样本量不足以在 95% 置信下排除"零优势"' : ''}）`],
+          ['平均每次超额', pp1(b.avgExc), `Δ≥${b.threshold}${u} 交易日占 ${(b.gapShare * 100).toFixed(0)}% · 平均持有 ${b.avgHoldDays == null ? '—' : b.avgHoldDays.toFixed(0)} 交易日`],
+          ['平衡胜率 / 真实边际', `${pct1(b.breakEven)} / ${pp1(b.margin)}`, b.breakEven == null ? '本档未观察到亏损换仓 → 平衡胜率与边际无法估计（不代表差）' : `赢均 ${b.avgWin == null ? '—' : '+' + b.avgWin.toFixed(1) + 'pp'} / 输均 ${b.avgLoss == null ? '—' : b.avgLoss.toFixed(1) + 'pp'}`],
         ];
         concCard.append(el('div', { class: 'rt-conc-grid' }, cells.map(([label, val, sub]) => el('div', { class: 'rt-conc-cell' },
           el('div', { class: 'rt-lbl' }, label),
@@ -481,13 +483,25 @@ export default {
         if (conc.strong) {
           const s = conc.strong;
           concCard.append(el('div', { class: 'rt-note' },
-            el('b', {}, '高确信档（机会更少但优势最大）'),
-            `Δ = ${s.threshold}${u}（${equiv(s.threshold)}）：换仓 ${s.nSwitch} 次 · 胜率 ${pct1(s.winRate)}（赢 ${s.wins}/${s.nClosed}）· 平衡胜率 ${pct1(s.breakEven)} · 真实边际 ${pp1(s.margin)} · 平均超额 ${pp1(s.avgExc)} —— 出现即执行，但一年可能只有一两次机会`));
+            el('b', {}, '高确信档（机会更少、单次质量最高）'),
+            `Δ = ${s.threshold}${u}（${equiv(s.threshold)}）：换仓 ${s.nSwitch} 次 · 已了结 ${s.nClosed} · 胜率 ${pct1(s.winRate)} · 平均每次超额 ${pp1(s.avgExc)} · 净超额 ${pp1(s.excess)} —— 出现即执行，但机会更少`));
         }
         concCard.append(el('div', { class: 'rt-note' },
-          '选择规则（与计算同源）：主推荐 = 在「已了结 ≥ 12 次且近1年触发 ≥ 3 次」的档里取保守边际（95%CI 下界 − 平衡胜率）最大者，没有满足者才退到「已了结 ≥ 8 次」；高确信档 = 已了结 ≥ 8 次且真实边际 > 0 的档里保守边际最大者。',
+          el('b', {}, '门槛敏感性'), `（入选门槛取 3 / ${EVID_MIN_CLOSED} / ${EVID_FAIR} 时分别推荐）：`,
+          conc.sensitivity.map((s) => (s.threshold == null ? `≥${s.min}：无` : `≥${s.min}：Δ=${s.threshold}${u}（净超额 ${pp1(s.excess)}，${s.nClosed} 次）`)).join('　'),
           el('br'),
-          '局限：单一路径单一样本；阈值事后挑选必然高估（本卡用 CI 下界与保守边际抵消一部分）；胜率高不等于赚得多 —— 赢的幅度通常小于输的幅度，务必看「真实边际」是否为正值。'));
+          '门槛一改结论就变 = 这份数据证据本就不厚，别把推荐值当精确答案。'));
+        if (conc.excluded.length) {
+          concCard.append(el('div', { class: 'rt-note' },
+            el('b', {}, '未入选但净超额高的档'), '：',
+            conc.excluded.map((r) => `Δ=${r.threshold}${u}（净超额 ${pp1(r.excess)}，${r.reason}）`).join('　')));
+        }
+        concCard.append(el('div', { class: 'rt-note' },
+          `选择规则（与计算同源）：入选 = 已了结 ≥ ${EVID_MIN_CLOSED} 次且平均每次超额 > 0；主推荐 = 入选集合里净超额最大者（±${EXCESS_TIE_PP}pp 内视为平局 → 平均每次超额高者 → 换手少者）；高确信档 = 入选集合里平均每次超额最大者。`,
+          el('br'),
+          `净超额以「等权买入持有」为基准（两只各买一半、之后不动），而策略起点固定持有 A，故含一份"起点标的强弱"的常数偏移；档位之间比较不受影响，绝对值不等于"轮动贡献"。`,
+          el('br'),
+          '局限：单一路径单一样本；阈值事后挑选必然高估；证据薄弱时应以样本外验证为准。'));
       };
 
       const paintGrid = (grid, bestTh, strongTh) => {
@@ -498,7 +512,7 @@ export default {
           th: `${g.threshold}${params.unit === '%' ? '%' : '元'}`,
           n: g.nSwitch, nc: g.nClosed, rate: g.winRate, lcb: g.lcb,
           ci: g.ci ? `${(g.ci[0] * 100).toFixed(0)}~${(g.ci[1] * 100).toFixed(0)}%` : '—',
-          be: g.breakEven, mg: g.margin, cm: g.consMargin, exc: g.avgExc,
+          be: g.breakEven, mg: g.margin, cm: g.consMargin, exc: g.avgExc, netEx: g.excess,
           gd: g.gapDays, gs: g.gapShare, rn: g.nRecent,
           total: g.total, ann: g.ann, mdd: g.mdd,
           tag: g.threshold === bestTh ? '★推荐' : (g.threshold === strongTh ? '高确信' : ''),
@@ -508,10 +522,11 @@ export default {
           columns: [
             { key: 'th', label: '阈值 Δ', align: 'center', sortable: true,
               cmp: (a, b) => parseFloat(a) - parseFloat(b),
-              fmt: (v, row) => el('span', { class: row.tag ? 'rt-rec-tag' : (row.nc < 8 ? 'txt-3' : '') }, row.tag ? `${v} ${row.tag}` : v) },
+              fmt: (v, row) => el('span', { class: row.tag ? 'rt-rec-tag' : (row.nc < EVID_MIN_CLOSED ? 'txt-3' : '') }, row.tag ? `${v} ${row.tag}` : v) },
+            { key: 'netEx', label: '净超额', align: 'center', sortable: true, color: (v) => dirOf(v), fmt: pp1 },
             { key: 'n', label: '换仓次数', align: 'center', sortable: true },
             { key: 'nc', label: '已了结', align: 'center', sortable: true,
-              fmt: (v) => (v < 8 ? el('span', { class: 'txt-down', title: '已了结换仓不足 8 次，胜率不作依据' }, `${v} ⚠`) : String(v)) },
+              fmt: (v) => (v < EVID_FAIR ? el('span', { class: 'txt-down', title: `已了结换仓不足 ${EVID_FAIR} 次，胜率不作依据` }, `${v} ⚠`) : String(v)) },
             { key: 'rate', label: '胜率', align: 'center', sortable: true, fmt: pct1 },
             { key: 'ci', label: '95%CI', align: 'center', sortable: false },
             { key: 'be', label: '平衡胜率', align: 'center', sortable: true, fmt: pct1 },
@@ -662,7 +677,7 @@ export default {
       };
 
       const OOS_VERDICT = { pass: '样本外仍成立', weak: '仅部分成立', fail: '样本外不成立', insufficient: '验证段样本不足，不下结论' };
-      const TIER_TEXT = { main: '样本充分', fallback: '样本偏少', sparse: '训练段样本很少', nodata: '训练段无换仓决策' };
+      const TIER_TEXT = { main: '样本充分', sparse: '训练段样本很少', nodata: '训练段无换仓决策' };
 
       /* 样本外验证：训练段选 Δ* → 验证段固定用 Δ* 打分（复用 conclusion/simulate/statsOf/benchmarks） */
       const paintOos = (m) => {
@@ -685,14 +700,14 @@ export default {
         oosCard.append(el('div', { class: 'rt-note', style: 'margin-top:8px' },
           `切分日 ${o.splitDate} · 训练 ${o.train.from} ~ ${o.train.to}（${o.train.nDays} 天 · ${TIER_TEXT[o.train.tier] || o.train.tier}）· 验证 ${o.test.from} ~ ${o.test.to}（${o.test.nDays} 天）`));
         if (o.train.tier === 'nodata') oosCard.append(el('div', { class: 'rt-note' }, '训练段内该配对没有任何换仓决策（一直持有较便宜的那只）→ 无法从训练段“选”出 Δ；下表用最小阈值作为默认规则验证，仅供参考。'));
-        else if (o.train.tier === 'sparse') oosCard.append(el('div', { class: 'rt-note' }, `训练段已了结换仓仅 ${o.train.stats.nClosed} 次（不足 8 次）→ 选出的 Δ 证据很弱。`));
+        else if (o.train.tier === 'sparse') oosCard.append(el('div', { class: 'rt-note' }, `训练段已了结换仓仅 ${o.train.stats.nClosed} 次（不足 ${EVID_FAIR} 次）→ 选出的 Δ 证据很弱。`));
         const pct1 = (v) => (v == null ? '—' : (v * 100).toFixed(1) + '%');
         const pp1 = (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + 'pp');
         const sgn = (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + '%');
         const u = params.unit === '%' ? '%' : '元';
         const mkRow = (label, th, st, base, excE, hl) => ({ label, th: `${th}${u}`, n: st.nSwitch, nc: st.nClosed, rate: st.winRate, ci: st.ci, be: st.breakEven, mg: st.margin, exc: st.avgExc, total: st.total, base, excE, hl });
-        const trainLabel = o.train.tier === 'nodata' ? '训练（无决策→Δmin）' : (o.train.tier === 'sparse' || o.train.tier === 'weak') ? '训练（样本少，选 Δ）' : '训练（选 Δ*）';
-        const testLabel = (o.train.tier === 'main' || o.train.tier === 'fallback') ? '验证（用 Δ*）' : '验证（用训练 Δ）';
+        const trainLabel = o.train.tier === 'nodata' ? '训练（无决策→Δmin）' : o.train.tier === 'sparse' ? '训练（样本少，选 Δ）' : '训练（选 Δ*）';
+        const testLabel = o.train.tier === 'main' ? '验证（用 Δ*）' : '验证（用训练 Δ）';
         const rows = [
           mkRow(trainLabel, o.chosen, o.train.stats, null, null, false),
           mkRow(testLabel, o.test.threshold, o.test.stats, o.test.base, o.test.excessVsEqual, true),
@@ -713,7 +728,7 @@ export default {
           el('b', {}, `结论：${OOS_VERDICT[o.verdict]}`),
           o.verdict === 'insufficient' ? '（验证段已了结换仓 < 3 次）' : '',
           el('br'),
-          '口径：训练段用同一套「保守边际最大」规则选出 Δ*，再固定用 Δ* 在验证段打分（不再挑档）。单次切分只是一次过拟合体检，不等于未来有效；建议用 ≥3 年区间做验证。'));
+          '口径：训练段用同一套「净超额最大」规则选出 Δ*，再固定用 Δ* 在验证段打分（不再挑档）。单次切分只是一次过拟合体检，不等于未来有效；建议用 ≥3 年区间做验证。'));
       };
 
       const render = () => {

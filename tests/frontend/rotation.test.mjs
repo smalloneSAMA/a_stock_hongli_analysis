@@ -3,7 +3,7 @@
    约定（与项目测试一致）：关系/边界断言，禁止精确数值快照——行情或参数微调不应误报。 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMatrix, simulate, statsOf, sweep, wilson, benchmarks, shiftYears, matrixBounds, defaultGrid, gapAt, gapDayShare, conclusion, pairError, gapArray, spreadStat, splitIndex, oosValidate, CONCLUSION_MIN_CLOSED, CONCLUSION_MIN_RECENT, CONCLUSION_MIN_STRONG } from '../../web/js/views/rotation.js';
+import { buildMatrix, simulate, statsOf, sweep, wilson, benchmarks, shiftYears, matrixBounds, defaultGrid, gapAt, gapDayShare, conclusion, pairError, gapArray, spreadStat, splitIndex, oosValidate, rankRows, EVID_MIN_CLOSED, EVID_FAIR, EXCESS_TIE_PP } from '../../web/js/views/rotation.js';
 
 /* 合成行情：series = { 代码: [[日期, 收盘], ...] }；divs = { 代码: [[除权日, 每10股派息], ...] } */
 const DS = (n, day = 1) => Array.from({ length: n }, (_, i) => `2024-01-${String(day + i).padStart(2, '0')}`);
@@ -369,26 +369,78 @@ test('可信度指标：盈亏平衡胜率 / 真实边际 / 保守边际 / 近1�
   }
 });
 
-test('推荐档选择：主推荐 = 合格集合里保守边际最大者；规则阈值生效', () => {
+test('推荐档选择：净超额最大、门槛统一、字段齐备', () => {
   const m = oscFixture();
   const conc = conclusion(m, { ...OPTS });
   assert.equal(conc.rows.length, defaultGrid('元').length);
   for (const r of conc.rows) {
-    assert.ok('gapDays' in r && 'gapShare' in r && 'byYear' in r && 'nRecent' in r);
+    assert.ok('gapDays' in r && 'gapShare' in r && 'byYear' in r && 'nRecent' in r && 'excess' in r);
     assert.ok(r.gapShare == null || (r.gapShare >= 0 && r.gapShare <= 1));
+    assert.ok(Math.abs(r.excess - (r.total - conc.eqTotal)) < 1e-9, '净超额 = 策略总收益 − 等权基准');
   }
   for (let i = 1; i < conc.rows.length; i++) assert.ok(conc.rows[i].gapDays <= conc.rows[i - 1].gapDays, '达标天数随 Δ 单调不增');
-  const elig = conc.rows.filter((r) => r.nClosed >= CONCLUSION_MIN_CLOSED && r.nRecent >= CONCLUSION_MIN_RECENT && r.consMargin != null);
   if (conc.tier === 'main') {
-    assert.ok(elig.length > 0);
-    assert.equal(conc.best.threshold, elig.reduce((a, b) => (b.consMargin > a.consMargin ? b : a)).threshold);
+    assert.ok(conc.eligible.includes(conc.best));
+    for (const r of conc.eligible) assert.ok(conc.best.excess >= r.excess - EXCESS_TIE_PP, '推荐档净超额不低于任何合格档（含平局容差）');
+    assert.ok(conc.best.nClosed >= EVID_MIN_CLOSED && conc.best.avgExc > 0);
   } else {
-    assert.equal(elig.length, 0, '非主档时不应存在合格样本');
-    assert.ok(conc.best && conc.best.nClosed >= CONCLUSION_MIN_STRONG);
+    assert.equal(conc.eligible.length, 0);
+    assert.equal(conc.best, null);
   }
   if (conc.strong) {
-    assert.ok(conc.strong.nClosed >= CONCLUSION_MIN_STRONG && conc.strong.margin > 0);
     assert.notEqual(conc.strong.threshold, conc.best.threshold, '高确信档与主推荐不同档');
+    assert.ok(conc.eligible.includes(conc.strong));
+  }
+});
+
+/* ── 推荐排序规则（rankRows，喂合成行 → 确定性）── */
+const row = (o) => ({ threshold: 0.5, nSwitch: 10, nClosed: 10, avgExc: 5, excess: 100, ...o });
+
+test('推荐排序：净超额最大者胜出，不再“样本多的档赢”', () => {
+  const rows = [row({ threshold: 0.5, nClosed: 20, avgExc: 1, excess: 50, nSwitch: 20 }), row({ threshold: 2, nClosed: 6, avgExc: 10, excess: 200, nSwitch: 4 })];
+  const r = rankRows(rows);
+  assert.equal(r.best.threshold, 2);
+  assert.equal(r.eligible.length, 2);
+});
+
+test('推荐排序：全胜档（无亏损样本 → 无 consMargin）仍可入选', () => {
+  const allWin = row({ threshold: 1, nClosed: 7, avgExc: 11, excess: 180, nSwitch: 8 });   // 不提供 breakEven/consMargin
+  const oneLoss = row({ threshold: 0.5, nClosed: 9, avgExc: 4, excess: 100, nSwitch: 10, consMargin: 28, breakEven: 0.4 });
+  assert.equal(rankRows([allWin, oneLoss]).best.threshold, 1, '全胜档不再被 consMargin=null 过滤掉');
+});
+
+test('推荐排序：净超额最高但未达门槛 → 不入选', () => {
+  const lowSample = row({ threshold: 4, nClosed: EVID_MIN_CLOSED - 1, avgExc: 140, excess: 226, nSwitch: 2 });
+  const solid = row({ threshold: 1, nClosed: 7, avgExc: 11, excess: 180, nSwitch: 8 });
+  const r = rankRows([lowSample, solid]);
+  assert.equal(r.best.threshold, 1);
+  assert.ok(!r.eligible.includes(lowSample));
+});
+
+test('推荐排序：平均每次超额 ≤ 0 不入选；全为负 → best=null', () => {
+  const neg = row({ threshold: 0.5, nClosed: 20, avgExc: -2, excess: -10 });
+  const r = rankRows([neg]);
+  assert.equal(r.best, null);
+  assert.equal(r.eligible.length, 0);
+  assert.equal(r.strong, null);
+});
+
+test('推荐排序：±1pp 内平局 → avgExc 高者 → 换手少者', () => {
+  const a = row({ threshold: 0.5, nClosed: 9, avgExc: 5, excess: 100, nSwitch: 12 });
+  const b = row({ threshold: 1, nClosed: 9, avgExc: 5, excess: 100.5, nSwitch: 8 });
+  assert.equal(rankRows([a, b]).best.threshold, 1, '净超额接近且 avgExc 相同 → 取换手少者');
+  const c = row({ threshold: 2, nClosed: 9, avgExc: 9, excess: 100.5, nSwitch: 20 });
+  assert.equal(rankRows([a, c]).best.threshold, 2, '平局内 avgExc 高者胜');
+});
+
+test('门槛敏感性：3/5/8 三档分别给出推荐，门槛越高越严', () => {
+  const m = oscFixture();
+  const conc = conclusion(m, { ...OPTS });
+  assert.deepEqual(conc.sensitivity.map((s) => s.min), [3, EVID_MIN_CLOSED, EVID_FAIR]);
+  for (const s of conc.sensitivity) {
+    if (s.threshold == null) continue;
+    const r = conc.rows.find((x) => x.threshold === s.threshold);
+    assert.ok(r.nClosed >= s.min, `门槛 ${s.min} 的推荐档已了结不低于门槛`);
   }
 });
 

@@ -395,20 +395,40 @@ export function sweep(m, baseOpts, grid) {
   });
 }
 
-/* 阈值选择结论：在「样本充分 + 近期仍在触发」的档里挑保守边际最大者，并给出更激进的高确信档
+/* 阈值选择结论：在「证据够 + 平均每次超额为正」的档里挑净超额最大者，并给出更少但质量更高的高确信档
    选择规则（页面公示同一套）：
-     · 每档统计 已了结换仓数 / 胜率(95%CI) / 盈亏平衡胜率 / 真实边际 / 保守边际 / 达标频率 / 近1年触发数
-     · 主推荐 = 已了结 ≥ 12 次 且 近1年触发 ≥ 3 次的档中，保守边际最大者（样本不足则退到下一档规则）
-     · 保守边际 = 95%CI 下界 − 盈亏平衡胜率（比点估计更保守，避免"看着最漂亮但样本最少"的档胜出）
-     · 高确信档 = 已了结 ≥ 8 次且真实边际 > 0 的档中保守边际最大者（通常阈值更高、机会更少）
+     · 每档统计 换仓次数/已了结/胜率(95%CI)/平衡胜率/真实边际/平均每次超额/净超额/达标频率/近1年触发数
+     · 净超额 = 策略总收益 − 等权买入持有总收益（pp，已扣成本）
+     · 入选门槛 = 已了结 ≥ EVID_MIN_CLOSED 且 平均每次超额 > 0（统一、低门槛，防止只有最低档样本够）
+     · 主推荐 = 净超额最大者（±EXCESS_TIE_PP 内视为平局 → 平均每次超额高者 → 换手少者）
+     · 高确信档 = 入选集合里 平均每次超额最大者（通常阈值更高、机会更少；与主推荐同档则为空）
+   注：净超额以等权为基准，而策略起点固定持有 codes[0]，故含一份“起点标的强弱”的常数偏移；
+       档位之间对比不受影响，但绝对值不等于“轮动贡献”
 */
-export const CONCLUSION_MIN_CLOSED = 12;
-export const CONCLUSION_MIN_RECENT = 3;
-export const CONCLUSION_MIN_STRONG = 8;
+export const EVID_MIN_CLOSED = 5;   // 入选门槛（统一、低）
+export const EVID_FAIR = 8;         // 证据“偏少 / 充分”分界
+export const EVID_GOOD = 12;        // 证据“充分”推荐阀值
+export const EXCESS_TIE_PP = 1;     // 净超额平局容差（pp）
+
+/* 推荐排序（纯函数，便于确定性单测）：返回 { eligible, best, strong } */
+export function rankRows(rows, minClosed = EVID_MIN_CLOSED) {
+  const eligible = (rows || []).filter((r) => r.nClosed >= minClosed && r.avgExc != null && r.avgExc > 0);
+  if (!eligible.length) return { eligible, best: null, strong: null };
+  const maxEx = Math.max(...eligible.map((r) => (r.excess == null ? -Infinity : r.excess)));
+  const near = eligible.filter((r) => (r.excess == null ? -Infinity : r.excess) >= maxEx - EXCESS_TIE_PP);
+  const best = near.reduce((a, b) => {
+    if (!a) return b;
+    if (b.avgExc !== a.avgExc) return b.avgExc > a.avgExc ? b : a;
+    return b.nSwitch < a.nSwitch ? b : a;
+  }, null);
+  const maxAvg = eligible.reduce((a, b) => (!a || b.avgExc > a.avgExc ? b : a), null);
+  return { eligible, best, strong: maxAvg && maxAvg !== best ? maxAvg : null };
+}
 
 export function conclusion(m, baseOpts = {}, grid) {
   const unit = baseOpts.unit === '%' ? '%' : '元';
   const list = (grid || defaultGrid(unit)).slice();
+  const eqTotal = benchmarks(m, { cost: baseOpts.cost, includeDiv: baseOpts.includeDiv }).totals.equal;
   const rows = list.map((th) => {
     const res = simulate(m, { ...baseOpts, threshold: th });
     const st = statsOf(res, baseOpts);
@@ -419,13 +439,20 @@ export function conclusion(m, baseOpts = {}, grid) {
       const y = t.date.slice(0, 4);
       byYear[y] = (byYear[y] || 0) + 1;
     }
-    return { threshold: th, ...st, gapDays: days, gapTotal: total, gapShare: share, byYear };
+    return { threshold: th, ...st, gapDays: days, gapTotal: total, gapShare: share, byYear, excess: st.total - eqTotal };
   });
-  const pickBest = (arr) => arr.filter((r) => r.consMargin != null).reduce((a, b) => (a == null || b.consMargin > a.consMargin ? b : a), null);
-  const main = pickBest(rows.filter((r) => r.nClosed >= CONCLUSION_MIN_CLOSED && r.nRecent >= CONCLUSION_MIN_RECENT));
-  const best = main || pickBest(rows.filter((r) => r.nClosed >= CONCLUSION_MIN_STRONG));
-  const strong = pickBest(rows.filter((r) => r.nClosed >= CONCLUSION_MIN_STRONG && r.margin != null && r.margin > 0 && (!best || r.threshold !== best.threshold)));
-  return { rows, best, strong, tier: main ? 'main' : (best ? 'fallback' : 'none'), unit };
+  const { eligible, best, strong } = rankRows(rows);
+  /* 门槛敏感性：3 / 5 / 8 三档下分别推荐什么（只需对已算好的 rows 重排，无额外计算） */
+  const sensitivity = [3, EVID_MIN_CLOSED, EVID_FAIR].map((min) => {
+    const b = rankRows(rows, min).best;
+    return { min, threshold: b ? b.threshold : null, excess: b ? b.excess : null, nClosed: b ? b.nClosed : null };
+  });
+  /* 未入选但净超额最高的几档 —— 透明展示“为什么它没被推荐”，不静默丢弃 */
+  const excluded = rows.filter((r) => !eligible.includes(r))
+    .slice().sort((a, b) => (b.excess == null ? -Infinity : b.excess) - (a.excess == null ? -Infinity : a.excess)).slice(0, 3)
+    .map((r) => ({ threshold: r.threshold, nClosed: r.nClosed, avgExc: r.avgExc, excess: r.excess,
+      reason: r.nClosed < EVID_MIN_CLOSED ? `已了结 ${r.nClosed} 次（<${EVID_MIN_CLOSED}）` : '平均每次超额 ≤ 0' }));
+  return { rows, best, strong, eligible, excluded, sensitivity, tier: best ? 'main' : 'none', unit, eqTotal };
 }
 
 
@@ -474,7 +501,7 @@ export function splitIndex(dates, ratio = 0.7) {
       （更易触发 = 验证段信息更多）；tier 标记 weak/nodata，页面对应提示
    返回 { row, tier } | null */
 function pickTrainThreshold(conc) {
-  if (conc.best) return { row: conc.best, tier: conc.tier };
+  if (conc.best) return { row: conc.best, tier: conc.best.nClosed >= EVID_FAIR ? 'main' : 'sparse' };
   const rows = conc.rows || [];
   if (!rows.length) return null;
   const pick = rows.slice().sort((a, b) => b.nClosed - a.nClosed || a.threshold - b.threshold)[0];

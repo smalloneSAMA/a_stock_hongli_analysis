@@ -12,7 +12,7 @@
      T4  K线页标题陈旧角标：注入 manifest 的一条 stale → 角标文本含日期（验证后自动还原 manifest）
      T12 信号扫描/智能推荐/我的持仓：0 次 analysis_dy.json 请求 + 已读 analysis.json + 无错误框
      T13 对比页：请求 dy_series.json + 0 次 analysis_dy.json + 图表 ≥2 条系列
-     T14 轮动回测页：A/B 双槽位选股 + 两只K线直读 + 0 次 analysis_dy.json + 价格/净值/差价分布图已渲染 + 样本外验证卡 + 改区间/切比例后重算
+     T14 轮动回测页：A/B 双槽位选股 + 两只K线直读 + 0 次 analysis_dy.json + 价格/净值/差价分布图已渲染 + 结论卡（净超额/证据强度/门槛敏感性）+ 样本外验证卡 + 改区间/切比例后重算
      全程无未捕获 JS 异常
 */
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -130,9 +130,11 @@ console.log('\n═══ D. T14 轮动回测页（#/rotate）═══');
   chk('T14 轮动回测：胜率卡与超额卡渲染正常', /换仓胜率/.test(cards) && /95%CI/.test(cards) && errs === 0, 'err=' + errs);
   const gridRows = await p.locator('.rt-grid-tbl tbody tr').count();
   chk('T14 轮动回测：Δ 网格表已出数', gridRows >= 5, gridRows + ' 行');
+  const gridHead = (await p.locator('.rt-grid-tbl thead').innerText()).replace(/\s+/g, ' ');
+  chk('T14 轮动回测：网格表含「净超额」列', /净超额/.test(gridHead), gridHead.slice(0, 60));
   const concTxt = (await p.locator('.rt-conc').innerText()).replace(/\s+/g, ' ');
-  chk('T14 轮动回测：选择结论卡（推荐Δ/出现次数/胜率/平衡胜率/真实边际）',
-    /推荐换仓差价/.test(concTxt) && /出现次数/.test(concTxt) && /换仓胜率/.test(concTxt) && /盈亏平衡胜率/.test(concTxt) && /真实边际/.test(concTxt),
+  chk('T14 轮动回测：选择结论卡（推荐Δ/净超额/证据强度/门槛敏感性）',
+    /推荐换仓差价/.test(concTxt) && /净超额/.test(concTxt) && /证据强度/.test(concTxt) && /门槛敏感性/.test(concTxt) && /换仓胜率/.test(concTxt),
     concTxt.slice(0, 70));
   const starRows = await p.locator('.rt-rec-tag').count();
   chk('T14 轮动回测：网格表标出推荐档 ★', starRows >= 1, starRows + ' 行');
