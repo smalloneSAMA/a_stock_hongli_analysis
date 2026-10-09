@@ -7,7 +7,7 @@
   3. 单项操作   —— 只更新某一部分（子菜单）
   4. 维护工具   —— 回测重跑/失败重试/缓存清理/重导Excel
 快捷命令：
-  python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry|excel|status [--yes]
+  python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retr1y|excel|status [--yes]
 用法: python update.py [命令]
 """
 import io
