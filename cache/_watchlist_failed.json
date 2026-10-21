@@ -1,1 +1,18 @@
-{}
+{
+ "600160": {
+  "name": "巨化股份",
+  "err": "AttributeError: 'str' object has no attribute 'get'"
+ },
+ "600595": {
+  "name": "中孚实业",
+  "err": "AttributeError: 'str' object has no attribute 'get'"
+ },
+ "000933": {
+  "name": "神火股份",
+  "err": "AttributeError: 'str' object has no attribute 'get'"
+ },
+ "000960": {
+  "name": "锡业股份",
+  "err": "AttributeError: 'str' object has no attribute 'get'"
+ }
+}
