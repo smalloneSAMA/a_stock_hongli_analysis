@@ -7,14 +7,6 @@
   "name": "中孚实业",
   "err": "HTTPError: HTTP Error 501: Not Implemented"
  },
- "000933": {
-  "name": "神火股份",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "000960": {
-  "name": "锡业股份",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
  "600011": {
   "name": "华能国际",
   "err": "HTTPError: HTTP Error 501: Not Implemented"
@@ -113,94 +105,6 @@
  },
  "603260": {
   "name": "合盛硅业",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "603605": {
-  "name": "珀莱雅",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "603650": {
-  "name": "彤程新材",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "603799": {
-  "name": "华友钴业",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "603993": {
-  "name": "洛阳钼业",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "000333": {
-  "name": "美的集团",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "000539": {
-  "name": "粤电力Ａ",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "000543": {
-  "name": "皖能电力",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "000651": {
-  "name": "格力电器",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "000657": {
-  "name": "中钨高新",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "000807": {
-  "name": "云铝股份",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "002027": {
-  "name": "分众传媒",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "002032": {
-  "name": "苏 泊 尔",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "002460": {
-  "name": "赣锋锂业",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "002466": {
-  "name": "天齐锂业",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "002508": {
-  "name": "老板电器",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "002648": {
-  "name": "卫星化学",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "002714": {
-  "name": "牧原股份",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "300014": {
-  "name": "亿纬锂能",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "300121": {
-  "name": "阳谷华泰",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "300274": {
-  "name": "阳光电源",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "300498": {
-  "name": "温氏股份",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "300750": {
-  "name": "宁德时代",
   "err": "HTTPError: HTTP Error 501: Not Implemented"
  }
 }

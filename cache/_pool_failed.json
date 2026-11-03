@@ -1,27 +1,7 @@
 {
- "001872": {
-  "name": "招商港口",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
  "600897": {
   "name": "厦门空港",
   "err": "AttributeError: 'str' object has no attribute 'get'"
- },
- "002558": {
-  "name": "巨人网络",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "603444": {
-  "name": "吉比特",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "002555": {
-  "name": "三七互娱",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "000719": {
-  "name": "中原传媒",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
  },
  "000937": {
   "name": "冀中能源",
@@ -54,114 +34,6 @@
  "002507": {
   "name": "涪陵榨菜",
   "err": "AttributeError: 'str' object has no attribute 'get'"
- },
- "601006": {
-  "name": "大秦铁路",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "600350": {
-  "name": "山东高速",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "603565": {
-  "name": "中谷物流",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "600153": {
-  "name": "建发股份",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "600755": {
-  "name": "厦门国贸",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "000429": {
-  "name": "粤高速A",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "601598": {
-  "name": "中国外运",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "001965": {
-  "name": "招商公路",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "600012": {
-  "name": "皖通高速",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "600057": {
-  "name": "厦门象屿",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "601872": {
-  "name": "招商轮船",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "600428": {
-  "name": "中远海特",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "603128": {
-  "name": "华贸物流",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "601083": {
-  "name": "锦江航运",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "603967": {
-  "name": "中创物流",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "600018": {
-  "name": "上港集团",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "601298": {
-  "name": "青岛港",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "603871": {
-  "name": "嘉友国际",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "600004": {
-  "name": "白云机场",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "601156": {
-  "name": "东航物流",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "601880": {
-  "name": "辽港股份",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "600033": {
-  "name": "福建高速",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "601928": {
-  "name": "凤凰传媒",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "300770": {
-  "name": "新媒股份",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "600373": {
-  "name": "中文传媒",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "601019": {
-  "name": "山东出版",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
- },
- "601921": {
-  "name": "浙版传媒",
-  "err": "HTTPError: HTTP Error 501: Not Implemented"
  },
  "300373": {
   "name": "扬杰科技",
@@ -489,6 +361,158 @@
  },
  "600300": {
   "name": "维维股份",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "601002": {
+  "name": "晋亿实业",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "601633": {
+  "name": "长城汽车",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "000625": {
+  "name": "长安汽车",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "000589": {
+  "name": "贵州轮胎",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "603766": {
+  "name": "隆鑫通用",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "000957": {
+  "name": "中通客车",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "002454": {
+  "name": "松芝股份",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "301039": {
+  "name": "中集车辆",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "600686": {
+  "name": "金龙汽车",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "601225": {
+  "name": "陕西煤业",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "600546": {
+  "name": "山煤国际",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "601001": {
+  "name": "晋控煤业",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "600188": {
+  "name": "兖矿能源",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "600256": {
+  "name": "广汇能源",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "601699": {
+  "name": "潞安环能",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "600985": {
+  "name": "淮北矿业",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "601666": {
+  "name": "平煤股份",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "600971": {
+  "name": "恒源煤电",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "600123": {
+  "name": "兰花科创",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "600997": {
+  "name": "开滦股份",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "002128": {
+  "name": "电投能源",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "601101": {
+  "name": "昊华能源",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "601898": {
+  "name": "中煤能源",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "000983": {
+  "name": "山西焦煤",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "600348": {
+  "name": "华阳股份",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "600508": {
+  "name": "上海能源",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "601877": {
+  "name": "正泰电器",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "605117": {
+  "name": "德业股份",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "300693": {
+  "name": "盛弘股份",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "600482": {
+  "name": "中国动力",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "688819": {
+  "name": "天能股份",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "688330": {
+  "name": "宏力达",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "000100": {
+  "name": "TCL科技",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "600183": {
+  "name": "生益科技",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "688127": {
+  "name": "蓝特光学",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "603893": {
+  "name": "瑞芯微",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "300389": {
+  "name": "艾比森",
+  "err": "HTTPError: HTTP Error 501: Not Implemented"
+ },
+ "001316": {
+  "name": "润贝航科",
   "err": "HTTPError: HTTP Error 501: Not Implemented"
  }
 }
