@@ -7,7 +7,7 @@
       清单内股票若已在精选池（已有缓存），自动复用零成本。
 行业：东财 push2delay 增量补（仅新股票），写 cache/_自选股清单.json
       （供 manifest 展示；该文件仅存增强信息，股票列表始终以 xlsx 为准）。
-防封：节流 0.8s/只、失败清单 cache/_watchlist_failed.json（--retry-failed 只补失败）。
+防封：腾讯 K 线由 _common.tencent_json 全局限速 1.0s/只、失败清单 cache/_watchlist_failed.json（--retry-failed 只补失败）。
 
 用法:
   python scripts/_fetch_watchlist.py               # 增量：K线增量 + 缺失补齐（分钟级）
@@ -31,7 +31,6 @@ import _fetch_stock_data as fsd
 from _classify import map_ind
 from _common import (
     STALE_GAP_DAYS,
-    RateGate,  # N9 并发抓取（腾讯源线程池 + 全局限速）
     atomic_dump,
     atomic_load,
     em_secid,
@@ -49,8 +48,7 @@ META_PATH = os.path.join(BASE, "cache", "_自选股清单.json")   # 仅行业�
 METRICS_PATH = os.path.join(BASE, "cache", "_自选股指标.json")  # 指标缓存（总市值/PE-TTM/PB + 数据日期）
 FAIL_PATH = os.path.join(BASE, "cache", "_watchlist_failed.json")
 STALE_PATH = os.path.join(BASE, "cache", "_stale.json")   # 陈旧检测报告（T1，各池分段合并）
-CONCURRENCY = 3        # N9：腾讯 K 线并发（东财由 em_get 全局 1s 限流天然串行）
-GATE = RateGate(interval=0.8, max_interval=3.0)   # 全局限速 0.8s/请求（=原串行口径，防封）
+CONCURRENCY = 1        # 腾讯 K 线串行（并发即使全局限速也会更快触发 501，见困难总结 162）
 MELT_LIMIT = 5         # 连续失败熔断阈值
 MELT_PAUSE = 60        # 熔断暂停（秒）
 
@@ -260,6 +258,13 @@ def main(retry_failed=False, check_fin=False):
         return
 
     failed = load_failed()
+    # 剔除已从清单删除的失败项（同 _fetch_pool_data：否则条目永远留在清单里、status 一直报"可重试"）
+    list_set = {r["code"] for r in rows}
+    dropped = sorted(c for c in failed if c not in list_set)
+    if dropped:
+        print(f"  清理已不在自选清单内的失败项 {len(dropped)} 只：{'、'.join(dropped[:8])}")
+        failed = {c: v for c, v in failed.items() if c in list_set}
+        save_failed(failed)
     todo = rows
     if retry_failed:
         fset = set(failed)
@@ -293,7 +298,7 @@ def main(retry_failed=False, check_fin=False):
             print(f"  进度 {n}/{len(todo)}（成功 {ok_n}） 已用 {time.time() - t0:.0f}s")
 
     results = parallel_map(todo, lambda r: fetch_one(r["code"], r["name"], r["tcode"]),
-                           workers=CONCURRENCY, gate=GATE,
+                           workers=CONCURRENCY,
                            melt_limit=MELT_LIMIT, melt_pause=MELT_PAUSE, on_done=on_done)
     for r, ok_i, res in results:
         if ok_i:

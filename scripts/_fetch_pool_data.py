@@ -2,10 +2,11 @@
 """其他成份股（精选池 289 − 推荐 20）历史数据拉取 / 增量更新
 
 数据：K线（腾讯，2004 起，未上市自然从上市日起）+ 分红/财报/股本（东财）
-防封（N9 起）：腾讯源线程池 3 并发 + 全局限速 0.8s/请求（=原串行口径，并发只隐藏 RTT；
-      失败 ×1.5 加长、成功缓慢回落，连续失败熔断），
-      东财仍由 em_get 全局 1s/请求串行；指数退避重试、连续 5 次失败熔断暂停 60s、
-      断点续拉（缓存存在跳过）、失败清单 cache/_pool_failed.json（--retry-failed 只补失败）
+防封（N9/T162）：腾讯源**串行**，限速/封禁等待全部由 _common.tencent_json 统一（全局限速 1.0s/请求；
+      撞 501 时全局睡到解封再续，不逐只失败；成功后速率缓慢回落），
+      东财仍由 em_get 全局 1s/请求串行；连续 5 次失败熔断暂停 60s、
+      断点续拉（缓存存在跳过）、失败清单 cache/_pool_failed.json（--retry-failed 只补失败）；
+      整轮出现部分失败时自动补拉一轮
 成分股变动：每次运行自动 diff（目标 = 最新汇总表 − 推荐20），新调入的股票自动全量拉取
 
 用法:
@@ -30,15 +31,15 @@ import _fetch_stock_data as fsd
 
 FAIL_PATH = os.path.join(BASE, "cache", "_pool_failed.json")
 STALE_PATH = os.path.join(BASE, "cache", "_stale.json")   # 陈旧检测报告（T1，各池分段合并）
-CONCURRENCY = 3        # N9：腾讯 K 线并发（东财由 em_get 全局 1s 限流天然串行）
-GATE = None            # 全局限速闸门（在 import _common 之后初始化）
+CONCURRENCY = 1        # 腾讯 K 线串行：实测 3 并发即使全局限速 1s 也会在 ~130 个请求后触发 501，
+                       # 只有「串行 + 每只约 1s」的口径实测能连续拉完 308 只（见困难总结 162）
 MELT_LIMIT = 5         # 连续失败熔断阈值
 MELT_PAUSE = 60        # 熔断暂停（秒）
 
 
 from _common import (  # 唯一正确版本（92→bj 先于 9x；全名语义）
     STALE_GAP_DAYS,
-    RateGate,  # N9 并发抓取（腾讯源线程池 + 全局限速）
+    TENCENT_BAN_WAIT,  # 腾讯 501 封禁冷却（秒），补拉一轮前等待
     atomic_dump,
     find_stale,  # T1 陈旧检测
     is_bj,  # T6 北交所剔除（R2）
@@ -46,10 +47,6 @@ from _common import (  # 唯一正确版本（92→bj 先于 9x；全名语义�
     parallel_map,
     update_stale_report,
 )
-
-# 腾讯 K 线全局限速：0.8s/请求 = 原串行口径（实测超过该速率会触发 501 临时封禁，见困难总结 155）；
-# 并发只用于隐藏 RTT（腾讯 RTT 与东财请求重叠），不提高对腾讯的请求速率
-GATE = RateGate(interval=0.8, max_interval=3.0)
 
 
 def pool_codes():
@@ -98,6 +95,13 @@ def main(batch=0, retry_failed=False, check_fin=False):
         return
 
     failed = load_failed()
+    # 剔除已掉出池内的失败项：这些标的不会再被拉取，条目若不清会永远留在清单里（status 一直报"可重试"）
+    pool_set = {c for c, _, _ in pool}
+    dropped = sorted(c for c in failed if c not in pool_set)
+    if dropped:
+        print(f"  清理已不在池内的失败项 {len(dropped)} 只：{'、'.join(dropped[:8])}")
+        failed = {c: v for c, v in failed.items() if c in pool_set}
+        save_failed(failed)
     todo = pool
     if retry_failed:
         fset = set(failed)
@@ -122,31 +126,45 @@ def main(batch=0, retry_failed=False, check_fin=False):
     records = []          # [(code, last_date)] —— 陈旧检测（T1）
     t0 = time.time()
     plock = threading.Lock()
-    done = {"n": 0, "ok": 0}
 
-    def on_done(_idx, item, ok_i, res):
-        with plock:
-            done["n"] += 1
-            if ok_i:
-                done["ok"] += 1
-            n, ok_n = done["n"], done["ok"]
-        if not ok_i:
-            print(f"  ❌ [{n}/{len(todo)}] {item[0]} {item[1]} 拉取失败: {repr(res)[:80]}")
-        if n % 10 == 0 or n == len(todo):
-            print(f"  进度 {n}/{len(todo)}（成功 {ok_n}） 已用 {time.time() - t0:.0f}s")
+    def run_round(round_todo):
+        done = {"n": 0, "ok": 0}
 
-    results = parallel_map(todo, lambda it: fetch_one(*it), workers=CONCURRENCY, gate=GATE,
+        def on_done(_idx, item, ok_i, res):
+            with plock:
+                done["n"] += 1
+                if ok_i:
+                    done["ok"] += 1
+                n, ok_n = done["n"], done["ok"]
+            if not ok_i:
+                print(f"  ❌ [{n}/{len(round_todo)}] {item[0]} {item[1]} 拉取失败: {repr(res)[:80]}")
+            if n % 10 == 0 or n == len(round_todo):
+                print(f"  进度 {n}/{len(round_todo)}（成功 {ok_n}） 已用 {time.time() - t0:.0f}s")
+
+        res = parallel_map(round_todo, lambda it: fetch_one(*it), workers=CONCURRENCY,
                            melt_limit=MELT_LIMIT, melt_pause=MELT_PAUSE, on_done=on_done)
-    for (code, name, _), ok_i, res in results:
-        if ok_i:
-            records.append((code, res[2] if isinstance(res, tuple) else None))
-            new_failed.pop(code, None)
-        else:
-            new_failed[code] = {"name": name, "err": f"{type(res).__name__}: {str(res)[:70]}"}
-    save_failed(new_failed)
-    ok = sum(1 for _it, ok_i, _r in results if ok_i)
+        for (code, name, _), ok_i, r in res:
+            if ok_i:
+                records.append((code, r[2] if isinstance(r, tuple) else None))
+                new_failed.pop(code, None)
+            else:
+                new_failed[code] = {"name": name, "err": f"{type(r).__name__}: {str(r)[:70]}"}
+        save_failed(new_failed)
+        return sum(1 for _it, ok_i, _r in res if ok_i)
+
+    ok = run_round(todo)
     fail_n = len(todo) - ok
     print(f"✅ 完成：成功 {ok} / 失败 {fail_n}（失败明细 → cache/_pool_failed.json）")
+    # 封禁/抖动造成的部分失败：等封禁冷却过后自动补拉一轮（只一次，避免网络故障时空转两遍）
+    if fail_n and ok and not (retry_failed or batch):
+        retry_todo = [(c, n, t) for c, n, t in pool if c in new_failed]
+        if retry_todo:
+            print(f"⚠️  {len(retry_todo)} 只失败，等待 {TENCENT_BAN_WAIT + 15}s（封禁冷却）后自动补拉一轮…")
+            time.sleep(TENCENT_BAN_WAIT + 15)
+            ok2 = run_round(retry_todo)
+            print(f"   补拉完成：成功 {ok2} / 仍失败 {len(retry_todo) - ok2}")
+            ok += ok2
+            fail_n = len(todo) - ok
     if fail_n:
         print("   下次运行 --retry-failed 只补失败项")
     # ── 陈旧检测（T1）：抓取"成功"但数据没跟上的标的必须可见，不再静默 ──

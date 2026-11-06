@@ -35,7 +35,6 @@ import _fetch_history as fh
 from _common import (  # 东财限流请求（1s/请求防封，全局限流）
     STALE_GAP_DAYS,
     UA,
-    RateGate,  # N9 并发抓取（腾讯源线程池 + 全局限速）
     em_get,
     em_market,
     em_secucode,
@@ -43,12 +42,12 @@ from _common import (  # 东财限流请求（1s/请求防封，全局限流）
     is_bj,  # T6 北交所剔除（R2）
     market_prefix,  # T23：前缀/东财标识/UA 唯一来源
     parallel_map,
+    tencent_json,  # 腾讯 K 线唯一入口（全局限速 + 501 退避重试）
     update_stale_report,
 )
 
 STALE_PATH = os.path.join(BASE, "cache", "_stale.json")   # 陈旧检测报告（T1，各池分段合并）
-CONCURRENCY = 3        # N9：腾讯 K 线并发（东财由 em_get 全局 1s 限流天然串行）
-GATE = RateGate(interval=0.8, max_interval=3.0)   # 全局限速 0.8s/请求（=原串行口径，防封）
+CONCURRENCY = 1        # 腾讯 K 线串行（并发即使全局限速也会更快触发 501，见困难总结 162）
 MELT_LIMIT = 5         # 连续失败熔断阈值
 MELT_PAUSE = 60        # 熔断暂停（秒）
 
@@ -447,8 +446,7 @@ def fetch_kline(tcode, code, full=True):
         # 最后参数空=不复权；start 参数腾讯忽略，故翻页一律用 end（向前翻）
         param = f"{tcode},day,,{end},800," if end else f"{tcode},day,,,800,"
         url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={param}"
-        req = urllib.request.Request(url, headers={"User-Agent": UA})
-        d = json.loads(urllib.request.urlopen(req, timeout=15).read().decode("utf-8"))
+        d = tencent_json(url)   # 全局限速 + 501 退避重试（勿改回裸 urlopen）
         k = d.get("data", {}).get(tcode, {})
         days = k.get("day") or k.get("qfqday") or []
         if not days:
@@ -598,10 +596,10 @@ def update_all(refresh=False, refresh_fin=False):
             records.append((code, rows[-1]["date"] if rows else None))
             time.sleep(0.3)
     else:
-        # N9：增量更新并发（腾讯源 4 并发 + 全局限速；单只失败只记录，不影响其余）
+        # 增量更新并发（限速在 _common.tencent_json 内，单只失败只记录，不影响其余）
         res = parallel_map(list(STOCKS),
                            lambda s: fh.update_incremental("股票", s[0], s[1], make_fetcher(s[2], s[0])),
-                           workers=CONCURRENCY, gate=GATE,
+                           workers=CONCURRENCY,
                            melt_limit=MELT_LIMIT, melt_pause=MELT_PAUSE)
         for (code, name, _t), ok, out in res:
             if ok:

@@ -2,7 +2,7 @@
 """
 红利数据更新工具（交互式 + 命令行）
 场景：
-  1. 日常更新   —— 行情增量（指数/ETF/推荐20/其他成份/自选）→ 前端包 → Excel → 变更摘要，约5分钟
+  1. 日常更新   —— 行情增量（指数/ETF/推荐20/其他成份/自选）→ 前端包 → Excel → 变更摘要，约20分钟
   2. 深度更新   —— 日常 + 成分重下载→汇总表→分红检测→check-fin→回测(可选)，季度末推荐
   3. 单项操作   —— 只更新某一部分（子菜单）
   4. 维护工具   —— 回测重跑/失败重试/缓存清理/重导Excel
@@ -34,7 +34,8 @@ from _common import (
 )
 
 # import后包装stdout（fh的包装对象仍被其模块引用，底层buffer不会被关闭）
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+# write_through：不缓冲——否则重定向到文件/日志时几十行才落盘，卡住/等封禁时看起来像"没在跑"
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", write_through=True)
 
 INDICES = fh.INDICES
 ETFS = fh.ETFS
@@ -63,11 +64,15 @@ def ask(msg, default=True):
 
 def _record_changes(key, cur):
     """采集变更日志：旧值挪到 {key}_prev，新值写入 {key}。
-    T20：{key} 与 {key}_prev 都已是当前值时不写盘（否则每次运行都会因 time 字段产生噪声提交）"""
+    T20：{key} 与 {key}_prev 都已是当前值时不写盘（否则每次运行都会因 time 字段产生噪声提交）
+    T162：首次记录（log 里没有 {key}）不写 {key}_prev=None——否则 print_changes 会把 None 当字典用"""
     log = load_json(CHANGE_LOG) or {}
     if log.get(key) == cur and log.get(f"{key}_prev") == cur:
         return
-    log[f"{key}_prev"] = log.get(key)
+    if key in log:
+        log[f"{key}_prev"] = log[key]
+    else:
+        log.pop(f"{key}_prev", None)
     log[key] = cur
     log["time"] = time.strftime("%Y-%m-%d %H:%M")
     save_json(CHANGE_LOG, log)
@@ -92,7 +97,7 @@ def print_changes():
     log = load_json(CHANGE_LOG) or {}
     print("\n═══ 本次变更摘要 ═══")
     changes = []
-    if "indices" in log and "indices_prev" in log:
+    if isinstance(log.get("indices"), dict) and isinstance(log.get("indices_prev"), dict):
         cur, prev = log["indices"], log["indices_prev"]
         for c, x in cur.items():
             p = prev.get(c)
@@ -105,7 +110,7 @@ def print_changes():
         for c, p in prev.items():
             if c not in cur:
                 changes.append(f"移除指数 {c} {p['name']}")
-    if "etfs" in log and "etfs_prev" in log:
+    if isinstance(log.get("etfs"), dict) and isinstance(log.get("etfs_prev"), dict):
         cur, prev = log["etfs"], log["etfs_prev"]
         for c, x in cur.items():
             if c not in prev:
@@ -490,7 +495,7 @@ def update_web():
 
 def update_pool(rerun_web=True):
     """其他成份股（汇总表 − 推荐 20）：K线增量 + 缺失补齐 → 重算指标与区间分析"""
-    print("\n═══ 其他成份股更新（首次全量约 20-30 分钟，之后增量约 3 分钟）═══")
+    print("\n═══ 其他成份股更新（首次全量约 30-40 分钟，之后增量约 15 分钟）═══")
     import _fetch_pool_data as fpd
     fpd.main()
     if rerun_web:
@@ -611,7 +616,7 @@ def clear_cache():
 
 def daily_update(auto=False):
     """日常：行情增量（指数/ETF/推荐20/其他/自选）→ Excel → 前端包 → 变更摘要"""
-    if not auto and not ask("日常更新（行情增量→Excel→前端包，约5分钟）是否执行？"):
+    if not auto and not ask("日常更新（行情增量→Excel→前端包，约20分钟）是否执行？"):
         return
     t0 = time.time()
     print("\n" + "═" * 50 + "\n  日常更新（行情增量 → Excel → 前端包）\n" + "═" * 50)
@@ -732,7 +737,7 @@ def tools_menu():
 def main_menu():
     print("""
 请选择：
-  1. 日常更新   —— 行情增量（指数/ETF/推荐20/其他/自选）→ 前端包 → Excel → 变更摘要，约5分钟
+  1. 日常更新   —— 行情增量（指数/ETF/推荐20/其他/自选）→ 前端包 → Excel → 变更摘要，约20分钟
   2. 深度更新   —— 日常 + 成分重下载→汇总表→分红检测→check-fin→回测(可选)，季度末推荐
   3. 单项操作   —— 只更新某一部分（子菜单）
   4. 维护工具   —— 回测重跑/失败重试/缓存清理/重导Excel

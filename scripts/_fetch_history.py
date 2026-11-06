@@ -24,6 +24,7 @@ from _common import (  # 原子写/Excel + 列式编码（T17）
     decode_rows,
     encode_rows,
     export_workbook,
+    tencent_json,  # 腾讯 K 线唯一入口（全局限速 + 501 退避重试）
 )
 
 if __name__ == "__main__":
@@ -110,8 +111,7 @@ def fetch_tencent_kline(tcode, code, start=None):
         param = (f"{tcode},day,{start},,800,qfq" if start and not end
                  else f"{tcode},day,,{end},800,qfq")
         url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={param}"
-        req = urllib.request.Request(url, headers={"User-Agent": UA})
-        d = json.loads(urllib.request.urlopen(req, timeout=15).read().decode("utf-8"))
+        d = tencent_json(url)   # 全局限速 + 501 退避重试（勿改回裸 urlopen）
         k = d.get("data", {}).get(tcode, {})
         days = k.get("day") or k.get("qfqday") or []
         if not days:

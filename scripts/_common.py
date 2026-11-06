@@ -171,6 +171,67 @@ class RateGate:
             self.interval = max(self.min_interval, self.interval * 0.9)
 
 
+# ── 腾讯 K 线接口（全局限速 + 501 封禁冷却，全项目唯一入口）──
+# 背景：腾讯 ifzq K 线端点按「滑动窗口配额」而不是瞬时速率限流：2026-11-05 实测 1s/请求 与 1.25s/请求
+# 分别在约 130 / 77 个请求后整段 501（阈值 ≈ 130 请求/5 分钟 ≈ 26 次/分钟），封禁持续约 30 分钟，
+# 期间连串行请求一起被拒；qt.gtimg.cn 批量行情与同主机 minute 接口不受影响。
+# 此前只有「其他成份股」池更新走 RateGate，指数/ETF/推荐20 的串行拉取是无节流突发——
+# 一次日常更新先打出约 40 个快速请求把额度用完，随后的池更新整段 501
+# （148 只失败、其中 4 只表现为 AttributeError 的伪正常响应）。限速必须收在唯一入口。
+# 3.0s/请求 = 20 次/分钟（≈ 配额 77%），实测可连续拉完整池 308 只不触发封禁。
+TENCENT_GATE = RateGate(interval=3.0, max_interval=6.0)
+TENCENT_BAN_WAIT = 45      # 首次 501 冷却（秒），连续 501 时翻倍（上限见下）
+TENCENT_BAN_WAIT_MAX = 300  # 单次冷却上限（秒）
+TENCENT_MAX_WAIT = 7200    # 单个请求因封禁累计等待上限（秒）——实测封禁约 30 分钟，宁可等也不丢标的
+
+_BAN_LOCK = threading.Lock()
+_ban_until = [0.0]         # 全局封禁截止时间（进程内共享，所有线程/标的同一口径）
+_ban_wait = [0.0]          # 当前冷却长度（连续 501 时翻倍，成功一次归零）
+
+def tencent_json(url, timeout=15, retries=2):
+    """腾讯接口 GET → JSON dict（要求 data 为对象）：全局限速 1.0s/请求 + 封禁等待。
+
+    · 普通失败（网络抖动/结构异常）间隔 3/6s 重试，仍失败抛最后一次异常
+    · HTTP 501 = 接口封禁（实测可持续 30 分钟）：置全局冷却并**睡到冷却结束再试**（不是逐只快速失败），
+      串行调用时等价于「整条流水线暂停等解封」，不丢标的；单请求累计等待超过 TENCENT_MAX_WAIT 才判失败
+    · 结构校验：限流时腾讯会返回 data 为字符串的"伪正常"响应，调用处直接 .get 会抛
+      AttributeError: 'str' object has no attribute 'get'，在源头拦下按失败处理"""
+    attempt, waited = 0, 0.0
+    while True:
+        with _BAN_LOCK:
+            ban_left = _ban_until[0] - time.time()
+        if ban_left > 0:
+            if waited + ban_left > TENCENT_MAX_WAIT:
+                raise RuntimeError(f"腾讯 K 线封禁超过 {TENCENT_MAX_WAIT}s 未解除，本次请求放弃")
+            print(f"  ⏸ 腾讯 K 线封禁中，等待 {ban_left:.0f}s 后重试…")
+            time.sleep(ban_left)
+            waited += ban_left
+            continue
+        TENCENT_GATE.wait()
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA})
+            d = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8"))
+            if not isinstance(d.get("data"), dict):
+                raise ValueError(f"腾讯响应结构异常（疑似限流）: {str(d)[:60]}")
+        except Exception as e:
+            last = e
+            TENCENT_GATE.penalize()
+            if getattr(e, "code", None) == 501:      # 封禁：翻倍冷却，回循环顶部睡到解封再试
+                with _BAN_LOCK:
+                    _ban_wait[0] = min(_ban_wait[0] * 2 or TENCENT_BAN_WAIT, TENCENT_BAN_WAIT_MAX)
+                    _ban_until[0] = time.time() + _ban_wait[0]
+                continue
+            if attempt < retries:
+                attempt += 1
+                time.sleep(3 * 2 ** (attempt - 1) + random.uniform(0, 1))
+                continue
+            raise
+        TENCENT_GATE.relax()
+        with _BAN_LOCK:
+            _ban_wait[0] = 0.0
+        return d
+
+
 def parallel_map(items, fn, workers=4, gate=None, melt_limit=5, melt_pause=60, on_done=None):
     """线程池并发执行 fn(item) → 返回 [(item, ok, 结果或异常)]（顺序与输入一致）。
 

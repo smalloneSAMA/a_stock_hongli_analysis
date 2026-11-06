@@ -4,7 +4,7 @@ import json
 import time
 import urllib.request
 
-from _common import UA, market_prefix, tencent_quotes  # 腾讯批量行情 + 前缀/UA（T23）
+from _common import UA, market_prefix, tencent_json, tencent_quotes  # 腾讯批量行情/限速K线 + 前缀/UA（T23）
 
 # 候选ETF: 代码 -> (名称, 类别)
 ETFS = {
@@ -55,8 +55,7 @@ def tencent_kline(code, days=800):
     sym = market_prefix(code)   # T23：前缀唯一实现
     url = (f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?"
            f"param={sym},day,,,{days},qfq")
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    d = json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8"))
+    d = tencent_json(url, timeout=10)   # 全局限速 + 501 退避重试
     node = d["data"][sym]
     k = node.get("qfqday") or node.get("day") or []
     return [(r[0], float(r[2])) for r in k]
