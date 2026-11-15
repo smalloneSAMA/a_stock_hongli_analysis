@@ -104,10 +104,11 @@ export const SUMMARY_URL = '/web/data/summary.json';
 export const BACKTEST_URL = '/web/data/backtest.json';
 export const DY_SERIES_URL = '/web/data/dy_series.json';   // 指数+ETF 的 dy 全量序列（T11 产出）
 export const PORTFOLIO_URL = '/web/data/portfolio_backtest.json';
+export const STREAK_URL = '/web/data/reco_streak.json';   // 连续天数（scripts/_reco_streak.mjs 产物）
 
 /* N4：常驻白名单（体积小、每个视图都要用；淘汰后反复重拉反而更慢）与淘汰阈值 */
 const PINNED = new Set([
-  MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL, PORTFOLIO_URL, SUMMARY_URL, COMPONENTS_URL, DY_SERIES_URL,
+  MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL, PORTFOLIO_URL, SUMMARY_URL, COMPONENTS_URL, DY_SERIES_URL, STREAK_URL,
 ]);
 const MAX_ENTRIES = 200;                 // 非白名单最多缓存条数
 const MAX_BYTES = 48 * 1024 * 1024;      // 非白名单字节预算（≈100 只 K线 + 指标）

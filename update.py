@@ -428,6 +428,18 @@ def update_summary(force=False):
     collect_pool()   # 变更摘要采集
 
 # ── 前端数据包步骤序列（N13：唯一来源，update_web / rebuild_web 共用）──
+def run_reco_streak():
+    """连续天数：调 node 跑 scripts/_reco_streak.mjs（评分公式复用 web/js/views/reco.js，禁止在 Python 里复制）"""
+    import subprocess
+    from shutil import which
+    if which("node") is None:
+        raise RuntimeError("未找到 node —— 连续天数生成需要 Node（装好 Node 后重跑 python update.py web）")
+    cmd = ["node", os.path.join(SCRIPTS, "_reco_streak.mjs"), "--check"]
+    r = subprocess.run(cmd, cwd=BASE)
+    if r.returncode:
+        raise RuntimeError(f"node _reco_streak.mjs 退出码 {r.returncode}")
+
+
 def _web_steps():
     """返回 [(key, 描述, 函数)]——顺序即执行顺序。两条路径的差异只体现在传入的 keys。"""
     import _fetch_cnindex_components as fcc
@@ -445,6 +457,7 @@ def _web_steps():
         ("推荐20评分", "推荐20评分", rs.main),                  # cache/_推荐20.json
         ("刷新STOCKS", "刷新进程内 STOCKS", fsd.refresh_stocks),  # 模块 import 时仅求值一次
         ("manifest v2", "manifest v2", gwd.build_manifest),    # rec 标记用本次评分产物（覆盖）
+        ("推荐连续", "连续天数", run_reco_streak),              # web/data/reco_streak.json（依赖 analysis.json）
         ("国证成分", "国证成分", fcc.main),
     ]
 
@@ -472,7 +485,7 @@ def rebuild_web(with_rec=True):
     with_rec=False 时只重算指标与分析（不重算评分/manifest v2）"""
     keys = ["指标", "manifest v1", "区间分析"]
     if with_rec:
-        keys += ["推荐20评分", "刷新STOCKS", "manifest v2"]
+        keys += ["推荐20评分", "刷新STOCKS", "manifest v2", "推荐连续"]
     _run_web_steps(keys)
 
 

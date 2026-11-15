@@ -5,3 +5,4 @@ scripts/__pycache__/
 *.new.xlsx
 _cons_tmp/
 cache/_stale.json
+cache/_replay/

@@ -68,6 +68,7 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 | _gen_analysis.py / _gen_web_data.py                                       | 逐日指标预计算 / 前端数据包生成                                                                      |
 | _backtest_analysis.py / _backtest_portfolio.py                            | 回测分析（含基准6M/12M）/ 组合回测                                                                   |
 | _update_summary.py                                                        | 成分股汇总 / 汇总 Excel                                                                              |
+| _reco_streak.mjs / _reco_replay.py                                        | ★ 连续天数：历史评分 append-only（`cache/_推荐评分历史.json`）+ 4 档连续判定（峰值回撤 3.0）→ `web/data/reco_streak.json`。**评分直接 import `web/js/views/reco.js`（单一来源，禁止在 Python/JS 里复制公式）**；回放用 `_gen_analysis --asof` 截断重算（30 交易日约 15 分钟，产物在 gitignore 的 `cache/_replay/`） |
 | _classify.py                                                              | 行业分类                                                                                             |
 | scripts/_archive/*.py                                                     | 无引用脚本归档（6 个，勿在链路中引用；见 `scripts/_archive/README.md`）                              |
 | web/js/views/*.js                                                         | 各视图（indexView/etfView/stockView/summaryView/backtestView/portfolioView/compareView/rotateView/scanView/recommendView/holdingsView + historyLayout/reco/analysis 公共模块） |
@@ -88,5 +89,5 @@ python update.py daily|full|idx|etf|rec|pool|watch|web|comp|summary|fin|bt|retry
 
 - **"先不改代码"模式**：复杂需求（口径设计、方案取舍、UI 交互）先给方案/分析，用户明确确认后才编码
 - git 提交：**中文主题 + 要点分列**（每条含根因/修复/验证），如 `修复指数板块 MA60/MA250 图例丢失：...`
-- **困难总结.md 持续追加编号清单**（当前到 161），新坑必记：现象/根因/修复/教训
+- **困难总结.md 持续追加编号清单**（当前到 165），新坑必记：现象/根因/修复/教训
 - 前端文件用 ESM；Python 用 UTF-8 + `# -*- coding: utf-8 -*-` 头部

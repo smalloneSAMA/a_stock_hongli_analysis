@@ -47,6 +47,20 @@ FACTOR_CN = {"dy": "股息率", "price": "价格", "trend": "趋势", "sent": "�
              "pe": "PE-TTM", "pb": "PB", "peg": "PEG"}
 
 
+def _asof_cut(rows, asof, key="date"):
+    """--asof 回放：把行序列截断到 date <= asof（rows 为 dict 行或 (date, val) 元组）。
+
+    asof=None 时原样返回（生产路径零开销）；不对行序做假设，逐行过滤。"""
+    if not asof:
+        return rows
+    out = []
+    for r in rows:
+        d = r[key] if isinstance(r, dict) else r[0]
+        if d is not None and d <= asof:
+            out.append(r)
+    return out
+
+
 def band_of(score):
     if score is None:
         return "数据不足"
@@ -89,10 +103,11 @@ def build_sent_index(close_arr):
     return round(chg60 * 100, 2), round(pct_rank(chg60, win), 1)
 
 
-def build_sent_etf(code):
+def build_sent_etf(code, asof=None):
     """ETF情绪：返回 (v, pct) = (折溢价%, 分位)，>+1%→100 过热，<-1%→0 折价机会"""
     c = fh.load_cache("ETF", code) or {}   # T17：load_cache 内部解码列式行
     rows = [r for r in c.get("rows", []) if r.get("nav") and r.get("close") is not None]
+    rows = _asof_cut(rows, asof)
     if not rows:
         return 0.0, 50
     r = rows[-1]
@@ -114,12 +129,18 @@ def peg_pct(v):
     return round((v - 1) * 100, 1)
 
 
-def build_stock_factors(code):
+def build_stock_factors(code, asof=None):
     """股票 PE-TTM/PB 分位（正值窗口；当前<=0 取 100）+ PEG 阈值映射（当前值取最后非 None）"""
     p = os.path.join(BASE, "web", "data", "stocks", f"{code}.json")
     if not os.path.exists(p):
         return {}
     rows = decode_indicator(json.load(open(p, encoding="utf-8")))   # T16/T17/T18：{last, cols, rows, sparse}
+    if asof:
+        # 指标文件无日期列（T16 5a），按 K 线行数确定 asof 截断位置（两者逐行同源、长度一致）
+        krows = _asof_cut((fh.load_cache("股票", code) or {}).get("rows", []), asof)
+        rows = rows[:min(len(rows), len(krows))]
+        if not rows:
+            return {}
 
     def last_of(key):
         vals = [r[key] for r in rows if r.get(key) is not None]
@@ -142,15 +163,16 @@ def build_stock_factors(code):
             "peg": (cur_peg, peg_pct(cur_peg))}
 
 
-def get_close_arr(typ, code, info):
+def get_close_arr(typ, code, info, asof=None):
     """分析用 close 序列：ETF 用跟踪指数（S2 确立：ETF 区间=跟踪指数区间）"""
     if typ == "ETF":
         code, typ = info.get("track") or code, "指数"
     c = fh.load_cache(typ, code) or {}   # T17：内部解码
-    return np.array([r["close"] for r in c.get("rows", []) if r.get("close") is not None], dtype=float)
+    rows = _asof_cut([r for r in c.get("rows", []) if r.get("close") is not None], asof)
+    return np.array([r["close"] for r in rows], dtype=float)
 
 
-def price_percentile_anchor(info):
+def price_percentile_anchor(info, asof=None):
     """近5年反推口径锚：反推 dy_t = D/close_t 的 p90/p10 ⇔ 价格 p10/p90（单调反比）
     → 买入锚 = 近5年价格10分位（低），卖出锚 = 近5年价格90分位（高）
     与主图反推锚同构（主图缩放近5年时锚 = 窗口价格分位对应价）；ETF 用跟踪指数序列"""
@@ -159,18 +181,21 @@ def price_percentile_anchor(info):
         code = info.get("track") or code
         typ = "指数"
     c = fh.load_cache(typ, code) or {}   # T17：内部解码
-    closes = [r["close"] for r in c.get("rows", []) if r.get("close") is not None]
+    closes = [r["close"] for r in _asof_cut([r for r in c.get("rows", []) if r.get("close") is not None], asof)]
     if not closes:
         return None, None
     win = closes[-WINDOW:]
     return float(np.percentile(win, 10)), float(np.percentile(win, 90))
 
 
-def build_factors(dy_data=None):
+def build_factors(dy_data=None, asof=None, out_path=None, write_series=True):
     """S4：全因子分位 + 三档权重表 → web/data/analysis.json（数据层只存分位，分数前端本地算）
 
     N10：dy_data 可由调用方内存直传（main 里刚算出来的 out），避免「写 1.9MB → 立刻读回」；
-    省略时仍从 cache/analysis_dy.json 读取（供单独调试/其他入口调用）"""
+    省略时仍从 cache/analysis_dy.json 读取（供单独调试/其他入口调用）
+
+    --asof 回放（连续天数回溯）：asof 非空时把全部输入序列截断到该日重算分位，
+    out_path 指定产物（如 cache/_replay/an_<date>.json），write_series=False 时不写 dy_series.json。"""
     if dy_data is None:
         dy_data = json.load(open(os.path.join(BASE, "cache", "analysis_dy.json"), encoding="utf-8"))
     out = {"date": "", "presets": PRESETS, "by_code": {}}
@@ -179,7 +204,7 @@ def build_factors(dy_data=None):
         if info.get("dy0") is None:
             continue   # 无股息率 → 无法分析（如数据源缺成分股息率）
         typ = info["type"]
-        close = get_close_arr(typ, code, info)
+        close = get_close_arr(typ, code, info, asof)
         if len(close) < 60:
             continue
         # 统一因子结构 f[k] = (v, pct)，pct 统一口径：0=便宜，100=贵
@@ -190,9 +215,9 @@ def build_factors(dy_data=None):
         if typ == "指数":
             f["sent"] = build_sent_index(close)
         elif typ == "ETF":
-            f["sent"] = build_sent_etf(code)
+            f["sent"] = build_sent_etf(code, asof)
         if typ == "股票":
-            f.update(build_stock_factors(code))
+            f.update(build_stock_factors(code, asof))
         # 三档分数
         scores = {}
         for pname, pws in PRESETS.items():
@@ -212,7 +237,7 @@ def build_factors(dy_data=None):
         # 锚天然落在历史价格区间内，不会被真实TTM序列的除权断崖/低分红期污染
         anchors = None
         if info.get("close_now"):
-            p10, p90 = price_percentile_anchor(info)
+            p10, p90 = price_percentile_anchor(info, asof)
             if p10 and p90:
                 anchors = {"buy": round(p10, 2), "sell": round(p90, 2),
                            "dist_buy": round((p10 / info["close_now"] - 1) * 100, 1),
@@ -235,18 +260,21 @@ def build_factors(dy_data=None):
     # T19(5d)：股票 series 不再落盘 → 用写入时保留的 last_date 兜底；指数/ETF 仍有 series
     out["date"] = max((info["series"][-1][0] if info.get("series") else info.get("last_date") or ""
                        for info in dy_data.values()), default="")
-    path = os.path.join(BASE, "web", "data", "analysis.json")
+    path = out_path or os.path.join(BASE, "web", "data", "analysis.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)   # 回放产物目录（cache/_replay）首次自动创建
     atomic_dump(path, out, indent=None)
 
     # T11：指数/ETF 的 dy 全量序列单独成文件 —— 对比分析页画 dy 曲线只需这 1.6MB，
     # 不必再拉 30.7MB 的 cache/analysis_dy.json（股票曲线仍走指标文件 dy 列，故不纳入）
-    dy_series_out = {"date": out["date"],
-                     "by_code": {c: i["series"] for c, i in dy_data.items()
-                                 if i.get("type") in ("指数", "ETF") and i.get("series")}}
-    sp = os.path.join(BASE, "web", "data", "dy_series.json")
-    atomic_dump(sp, dy_series_out, indent=None)
-    print(f"  ✅ dy_series.json：{len(dy_series_out['by_code'])} 标的（指数+ETF），"
-          f"{os.path.getsize(sp) / 1024 / 1024:.2f} MB")
+    # --asof 回放不写（write_series=False）：只产出当天截面，不覆盖生产产物
+    if write_series:
+        dy_series_out = {"date": out["date"],
+                         "by_code": {c: i["series"] for c, i in dy_data.items()
+                                     if i.get("type") in ("指数", "ETF") and i.get("series")}}
+        sp = os.path.join(BASE, "web", "data", "dy_series.json")
+        atomic_dump(sp, dy_series_out, indent=None)
+        print(f"  ✅ dy_series.json：{len(dy_series_out['by_code'])} 标的（指数+ETF），"
+              f"{os.path.getsize(sp) / 1024 / 1024:.2f} MB")
 
     # 控制台表：三档分数 + 均衡档区间 + 点位锚
     print(f"\n═══ S4/S5 因子打分 + 点位锚（数据日期 {out['date']}）═══")
@@ -257,7 +285,7 @@ def build_factors(dy_data=None):
         a = (f"{an['buy']:.0f}({an['dist_buy']:+.0f}%)  {an['sell']:.0f}({an['dist_sell']:+.0f}%)"
              if an else "—")
         print(f"{code:<8}{name:<14}{typ:<4}{scores['稳健']:>7.1f}{scores['均衡']:>7.1f}{scores['进取']:>7.1f}  {band:<7}  {a}")
-    print(f"\n✅ web/data/analysis.json 已生成（{len(out['by_code'])} 标的，三档权重已内嵌）")
+    print(f"\n✅ {os.path.relpath(path, BASE)} 已生成（{len(out['by_code'])} 标的，三档权重已内嵌）")
 
 
 def load_cache(typ, code):
@@ -319,9 +347,10 @@ def load_est_dy0(code):
     return json.load(open(p, encoding="utf-8")).get("dy0")
 
 
-def build_index_etf(typ, code, name, stocks, index_info=None):
+def build_index_etf(typ, code, name, stocks, index_info=None, asof=None):
     """指数：加权 dy0 反推；ETF：跟踪指数序列优先（净值反推有分红增长漂移），
-    跟踪指数无数据时用 ETF 自身季报持仓估算（如 980092 由 159201 等季报持仓加权）"""
+    跟踪指数无数据时用 ETF 自身季报持仓估算（如 980092 由 159201 等季报持仓加权）
+    asof：回放用，把行情序列截断到该日（指数/ETF 与股票同口径）"""
     if typ == "ETF":
         if index_info is None or index_info.get("dy0") is None:
             est = load_etf_dy_est(code)
@@ -330,7 +359,7 @@ def build_index_etf(typ, code, name, stocks, index_info=None):
             c = load_cache("ETF", code)
             if c is None or not c.get("rows"):
                 return {"code": code, "name": name, "type": typ, "dy0": None, "note": "无行情缓存"}
-            rows = c["rows"]
+            rows = _asof_cut(c["rows"], asof)
             px_rows = [(r["date"], r.get("nav") or r["close"]) for r in rows]
             r = build_from_close("ETF", code, name, px_rows, est, 0)
             r["note"] = "股息率为ETF季报持仓加权估算"
@@ -349,21 +378,25 @@ def build_index_etf(typ, code, name, stocks, index_info=None):
             dy0, n_parts = est, 0
     if dy0 is None:
         return {"code": code, "name": name, "type": typ, "dy0": None, "note": "成分股息率缺失"}
-    rows = c["rows"]
+    rows = _asof_cut(c["rows"], asof)
     # 净值优先（贴近指数），缺失日期用场内收盘价兜底
     px_rows = ([(r["date"], r.get("nav") or r["close"]) for r in rows] if typ == "ETF"
                else [(r["date"], r["close"]) for r in rows])
     return build_from_close(typ, code, name, px_rows, dy0, n_parts)
 
 
-def build_stock(code, name):
-    """股票：直接取逐日 dy 序列（真实 TTM 股息率，无需 D 反推），close_now 从行情缓存读"""
+def build_stock(code, name, asof=None):
+    """股票：直接取逐日 dy 序列（真实 TTM 股息率，无需 D 反推），close_now 从行情缓存读
+    asof：回放用，指标行与 K 线行同步截断到该日（两者逐行同源）"""
     p = os.path.join(BASE, "web", "data", "stocks", f"{code}.json")
     if not os.path.exists(p):
         return {"code": code, "name": name, "type": "股票", "dy0": None, "note": "无指标文件"}
     ind = decode_indicator(json.load(open(p, encoding="utf-8")))   # T16/T17/T18
     c = load_cache("股票", code)
     krows = (c or {}).get("rows", [])
+    if asof:
+        krows = _asof_cut(krows, asof)
+        ind = ind[:min(len(ind), len(krows))]
     # T16(5a)：指标文件不再存日期列 → 按索引与 K 线缓存对齐（写入时逐行同源，长度一致）
     px_rows = [(krows[i]["date"], r["dy"]) for i, r in enumerate(ind)
                if i < len(krows) and r.get("dy") is not None and r["dy"] > 0]
@@ -372,9 +405,7 @@ def build_stock(code, name):
     dy0 = px_rows[-1][1]
     win = px_rows[-WINDOW:]
     vals = [v for _, v in win]
-    close_now = None
-    if c and c.get("rows"):
-        close_now = c["rows"][-1].get("close")
+    close_now = krows[-1].get("close") if krows else None
     return {
         "code": code, "name": name, "type": "股票",
         "dy0": round(dy0, 4), "dy_now": round(dy0, 4),
@@ -413,7 +444,10 @@ def official_check():
     return out
 
 
-def main(only=None):
+def main(only=None, asof=None, out_path=None):
+    """asof/out_path：--asof 回放模式（连续天数回溯用）——把全部输入序列截断到 asof 日重算，
+    产物写 out_path，不改写 cache/analysis_dy.json 与 web/data/dy_series.json；
+    asof=None 时为生产路径，行为与改动前完全一致。"""
     comp = json.load(open(os.path.join(BASE, "web", "data", "components.json"), encoding="utf-8"))
     official = official_check()
     out = {}
@@ -445,14 +479,14 @@ def main(only=None):
         if only and code != only:
             continue
         stocks = comp["by_index"].get(code, {}).get("stocks", [])
-        r = build_index_etf("指数", code, name, stocks)
+        r = build_index_etf("指数", code, name, stocks, asof=asof)
         idx_info[code] = r
         emit(r)
     for code, name, _tcode in fh.ETFS:
         if only and code != only:
             continue
         stocks = comp["by_etf"].get(code, {}).get("stocks", [])
-        r = build_index_etf("ETF", code, name, stocks, idx_info.get(ETF_TRACK.get(code)))
+        r = build_index_etf("ETF", code, name, stocks, idx_info.get(ETF_TRACK.get(code)), asof=asof)
         emit(r)
     # 股票：推荐20 + 其他成份股 + 自选股清单（web/data/stocks/*.json 有指标文件即分析）
     stk_names = {c: n for c, n, _ in fsd.STOCKS}
@@ -471,7 +505,7 @@ def main(only=None):
             continue   # 无池归属（清单展示=0 或不在任何来源）→ 跳过，保持与 manifest 池一致
         if only and code != only:
             continue
-        emit(build_stock(code, stk_names.get(code, code)))
+        emit(build_stock(code, stk_names.get(code, code), asof=asof))
 
     print("\n".join(rows))
     print("\n口径说明：dy0 为 TTM 口径（近12个月除权派息/现价），与成分股逐日 dy 同口径；")
@@ -499,20 +533,25 @@ def main(only=None):
     os.makedirs(os.path.join(BASE, "cache"), exist_ok=True)
     # T19(5d)：股票逐日 dy 序列不再落盘（回测/前端均已改读指标文件 dy 列），
     # 仅留末日期 last_date 供 analysis.date 计算；指数/ETF 序列保留
-    for r in out.values():
-        if r.get("type") == "股票" and r.get("series"):
-            r["last_date"] = r["series"][-1][0]
-            r.pop("series")
-    atomic_dump(os.path.join(BASE, "cache", "analysis_dy.json"), out, indent=None)
-    print(f"\n✅ cache/analysis_dy.json 已生成（{len(out)} 标的）")
+    # --asof 回放不落盘（series 保留给 build_factors 算 date，且不能覆盖生产产物）
+    if not out_path:
+        for r in out.values():
+            if r.get("type") == "股票" and r.get("series"):
+                r["last_date"] = r["series"][-1][0]
+                r.pop("series")
+        atomic_dump(os.path.join(BASE, "cache", "analysis_dy.json"), out, indent=None)
+        print(f"\n✅ cache/analysis_dy.json 已生成（{len(out)} 标的）")
 
     # S3：因子打分（全量）——N10：内存直传 out（不再从磁盘读回刚写的 analysis_dy.json）
     if not only:
-        build_factors(out)
+        build_factors(out, asof=asof, out_path=out_path, write_series=not out_path)
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="只处理单个代码（调试用）")
+    ap.add_argument("--asof", help="回放：把全部序列截断到该日期（YYYY-MM-DD）后重算，产物写 --out")
+    ap.add_argument("--out", help="回放产物路径（默认 web/data/analysis.json）")
     args = ap.parse_args()
-    main(only=args.only)
+    main(only=args.only, asof=args.asof,
+         out_path=args.out or (os.path.join(BASE, "cache", "_replay", f"an_{args.asof}.json") if args.asof else None))

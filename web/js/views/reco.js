@@ -16,6 +16,20 @@ export const RECO_W = {
 export const recoBandOf = (s) => (s >= 75 ? '强烈推荐' : s >= 60 ? '推荐' : s >= 45 ? '关注' : '回避');
 export const recoBandCls = (b) => ({ 强烈推荐: 'band-buy', 推荐: 'band-build', 关注: 'band-hold', 回避: 'band-sell2' }[b] || 'band-hold');
 
+/* 连续天数（streak）口径见 docs/智能推荐-连续天数-设计方案.md：
+   在榜 = 该档基准分 ≥75（完美 = 三档均 ≥75）；连续 = 在榜且未从期内峰值回落超过容差。
+   加成 0~+5，只抬升展示分与排序——n>0 已蕴含 base≥75，结构上不可能跨评级档位。
+   STREAK_TOL 仅为兜底，实际容差以 web/data/reco_streak.json 的 tol 为准。 */
+export const STREAK_TOL = 3.0;
+export function streakBonusOf(n) {
+  if (!(n > 2)) return 0;
+  if (n <= 4) return 1;
+  if (n <= 7) return 2;
+  if (n <= 12) return 3;
+  if (n <= 19) return 4;
+  return 5;
+}
+
 /* 三档打分说明（悬停提示 + 动态标签 + 底部对照表） */
 export const RECO_PRESET_DESC = {
   稳健: { w: 'dy 50% · 贵贱度 25% · 回测 25%', tip: '股息为王：股息率分位占一半，最看重“便宜”与分红确定性' },

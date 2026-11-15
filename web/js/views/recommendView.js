@@ -4,19 +4,24 @@
    样本可信 20 = 数量 10×min(1,n_buy/20) + 跨年覆盖 10×min(1,有信号年份数/4)（≥4年满分）；时效修正±5
    dy 分位 ≥90（信号触发中，与回测 p90 同口径）→ 推荐分 +5 并标记
    过滤：无回测覆盖（21只）或近5年从未触发买入信号（66只）的标的直接过滤 → 候选池 303
-   数据：web/data/analysis.json + web/data/backtest.json(by_p.90) + manifest
+   数据：web/data/analysis.json + web/data/backtest.json(by_p.90) + manifest + web/data/reco_streak.json（连续天数）
+   连续（streak）：在榜=该档基准分≥75、未从期内峰值回落超容差；加成 0~+5 只抬升排序/展示分，
+   口径见 docs/智能推荐-连续天数-设计方案.md（产物由 scripts/_reco_streak.mjs 生成）
    T12：不再请求 30.7MB 的 cache/analysis_dy.json */
 
-import { loadJSON, MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL } from '../data.js';
+import { loadJSON, MANIFEST_URL, ANALYSIS_URL, BACKTEST_URL, STREAK_URL } from '../data.js';
 import { el, fmt2, dirOf, skeleton, errorBox, renderTable, favStar, openTicker, signalYearsTitle, refreshHoldMeta, holdBadge } from './common.js';
-import { RECO_W, RECO_PRESET_DESC, recoBandOf, recoBandCls, buildRecoPool, recoScoreOf } from './reco.js';   // 智能推荐评分公共模块（与持仓决策同口径）
+import { RECO_W, RECO_PRESET_DESC, recoBandOf, recoBandCls, buildRecoPool, recoScoreOf, streakBonusOf, STREAK_TOL } from './reco.js';   // 智能推荐评分公共模块（与持仓决策同口径）
 
 export default {
   async mount(root) {
     root.innerHTML = '';
     root.append(skeleton());
     try {
-      const [an, bt, m] = await Promise.all([loadJSON(ANALYSIS_URL), loadJSON(BACKTEST_URL), loadJSON(MANIFEST_URL)]);
+      const [an, bt, m, st] = await Promise.all([
+        loadJSON(ANALYSIS_URL), loadJSON(BACKTEST_URL), loadJSON(MANIFEST_URL),
+        loadJSON(STREAK_URL).catch(() => null),   // 连续天数产物缺失时降级为"—"（不阻塞页面）
+      ]);
       await refreshHoldMeta();   // 持仓集合（角标用），失败静默
       root.innerHTML = '';
       const byCode = an.by_code || {};
@@ -55,6 +60,34 @@ export default {
         进取: recoScoreOf(r, '进取', byCode, an),
       });
 
+      /* ── 连续天数（streak）：产物 web/data/reco_streak.json，口径见 docs/智能推荐-连续天数-设计方案.md ──
+         在榜 = 该档基准分 ≥75（完美 = 三档均 ≥75）；连续 = 在榜且未从期内峰值回落超容差；
+         连续加成只抬升展示分与排序（n>0 已蕴含 base≥75，结构上不可能跨评级档位）。 */
+      const streakEnt = (code, tab) => (st && st.by_code && st.by_code[code] && st.by_code[code].d[tab]) || null;
+      const streakN = (code, tab) => { const e = streakEnt(code, tab); return (e && e.n) || 0; };
+      const streakOn = (code, tab) => ((st && st.by_code && st.by_code[code] && st.by_code[code].on && st.by_code[code].on[tab]) || 0);
+      const streakMax = (code, tab) => ((st && st.by_code && st.by_code[code] && st.by_code[code].max && st.by_code[code].max[tab]) || 0);
+      const STREAK_TOL_V = (st && st.tol) || STREAK_TOL;
+      const STREAK_BRK = { new: '今日新上榜', drop: '较期内峰值回落超容差', off: '跌出榜单', nodata: '缺数据' };
+      /* 十分位 → 分数文本 */
+      const pc = (v) => (v == null ? '—' : fmt2(v / 10));
+      const streakTitle = (code, tab) => {
+        const e = streakEnt(code, tab);
+        if (!st) return '连续天数数据缺失（请先运行 python scripts/_reco_replay.py 或 update.py web）';
+        if (!e) return `${tab}：无历史记录（今日不在榜或历史未覆盖）`;
+        const histDays = st.history_days || 0;
+        const L = [`${tab}连续 ${e.n} 个交易日${e.since ? '（' + e.since + ' 起）' : ''}${e.n >= histDays ? '——已到历史窗口上限' : ''}`];
+        if (e.peak != null && e.today != null) {
+          const gap = (e.today - e.peak) / 10;
+          L.push(`今日 ${pc(e.today)}｜期内峰值 ${pc(e.peak)}｜距峰值 ${gap >= 0 ? '+' : ''}${fmt2(gap)}（容差 ${fmt2(STREAK_TOL_V)}）`);
+        }
+        L.push(`在榜累计 ${streakOn(code, tab)} 天｜历史最长 ${streakMax(code, tab)} 天`);
+        L.push('各档：' + ['稳健', '均衡', '进取', '完美'].map((t) => `${t} ${streakN(code, t)}天`).join(' · '));
+        if (e.n <= 1 && e.brk && STREAK_BRK[e.brk]) L.push('中断原因：' + STREAK_BRK[e.brk]);
+        L.push(`口径：基准分 ≥75（不含连续加成）且未从峰值回落超 ${fmt2(STREAK_TOL_V)} 分`);
+        return L.join('\n');
+      };
+
 
       root.append(el('div', { class: 'view-head' },
         el('h1', {}, '智能推荐'),
@@ -78,6 +111,8 @@ export default {
           '档位对照：稳健 dy50%/贵贱度25%/回测25% —— 股息为王，便宜优先；均衡 35%/30%/35% —— 三分均衡（默认档）；进取 25%/25%/50% —— 回测弹性，历史超额驱动。切档只改变权重与排序，候选池与评级阈值不变。',
           '评级：≥75 强烈推荐 / ≥60 推荐 / ≥45 关注 / <45 回避。回测为历史统计（p90 信号次一交易日买入，价格口径不含分红再投），非投资建议。',
           '推荐分旁箭头 = 相比上一数据版本的变化（红升绿降，差值=分数差）；悬停推荐分可见变化原因（主要因哪个因子）。首次打开/同版本无对比。',
+          '连续 = 该档基准分连续在榜天数：在榜=基准分 ≥75（完美=三档均≥75），且当日分不得低于期内峰值 3.0 分以上（涨不限、跌超容差即断，断后从 1 重新计数）。四个标签各自独立计数。',
+          '连续加成 = 3~4天 +1 / 5~7天 +2 / 8~12天 +3 / 13~19天 +4 / ≥20天 +5（0~2 天未确认不给分）；只抬升排序与展示分——连续判定用的是「不含加成」的基准分，且 n>0 已蕴含基准分 ≥75，故不会跨评级档位。',
           '完美 = 稳健/均衡/进取三档权重下均为强烈推荐（≥75 分），代表估值、股息、回测三个视角的共识；悬停推荐分可见三档明细。'));
 
       /* ── 分数对比快照：相比“上一数据版本”的推荐分变化（localStorage）
@@ -92,31 +127,35 @@ export default {
       if (snapDate) {
         for (const r of all) {
           const sc = scoresOf(r);
-          curSnap.codes[r.code] = {
-            稳健: { s: sc['稳健'].s, dyPart: sc['稳健'].dyPart, cross: r.crossPct ?? 0, hist: r.pct, anaPart: sc['稳健'].anaPart, btPart: sc['稳健'].btPart, trig: sc['稳健'].trig, diverge: sc['稳健'].diverge },
-            均衡: { s: sc['均衡'].s, dyPart: sc['均衡'].dyPart, cross: r.crossPct ?? 0, hist: r.pct, anaPart: sc['均衡'].anaPart, btPart: sc['均衡'].btPart, trig: sc['均衡'].trig, diverge: sc['均衡'].diverge },
-            进取: { s: sc['进取'].s, dyPart: sc['进取'].dyPart, cross: r.crossPct ?? 0, hist: r.pct, anaPart: sc['进取'].anaPart, btPart: sc['进取'].btPart, trig: sc['进取'].trig, diverge: sc['进取'].diverge },
+          const sn = {
+            稳健: { s: sc['稳健'].s, sb: streakBonusOf(streakN(r.code, '稳健')), dyPart: sc['稳健'].dyPart, cross: r.crossPct ?? 0, hist: r.pct, anaPart: sc['稳健'].anaPart, btPart: sc['稳健'].btPart, trig: sc['稳健'].trig, diverge: sc['稳健'].diverge },
+            均衡: { s: sc['均衡'].s, sb: streakBonusOf(streakN(r.code, '均衡')), dyPart: sc['均衡'].dyPart, cross: r.crossPct ?? 0, hist: r.pct, anaPart: sc['均衡'].anaPart, btPart: sc['均衡'].btPart, trig: sc['均衡'].trig, diverge: sc['均衡'].diverge },
+            进取: { s: sc['进取'].s, sb: streakBonusOf(streakN(r.code, '进取')), dyPart: sc['进取'].dyPart, cross: r.crossPct ?? 0, hist: r.pct, anaPart: sc['进取'].anaPart, btPart: sc['进取'].btPart, trig: sc['进取'].trig, diverge: sc['进取'].diverge },
+            psb: streakBonusOf(streakN(r.code, '完美')),   // 完美档加成（三档均值用，非三档自身）
           };
+          curSnap.codes[r.code] = sn;
         }
         try { localStorage.setItem('pi_rec_scores', JSON.stringify(curSnap)); } catch { /* 忽略 */ }
       }
-      /* 归因一句话 + 差值（当前档）：Δ贡献 = w_dy%×Δdy + w_ana%×Δana + w_bt%×Δbt + Δ触发 − Δ背离 */
-      const LAB = { dy: 'dy', ana: '贵贱度', bt: '回测', trig: '触发', div: '背离' };
+      /* 归因一句话 + 差值（当前档）：Δ贡献 = w_dy%×Δdy + w_ana%×Δana + w_bt%×Δbt + Δ触发 − Δ背离 + Δ连续加成 */
+      const LAB = { dy: 'dy', ana: '贵贱度', bt: '回测', strk: '连续', trig: '触发', div: '背离' };
       const whyDelta = (code, 档) => {
         if (!hasBase) return null;
         const old = oldSnap.codes[code]?.[档], cur = curSnap.codes[code]?.[档];
         if (!old || !cur) return null;   // 新上榜/数据缺失 → 无对比
         const w = RECO_W[档];
         const dDy = cur.dyPart - old.dyPart, dAna = cur.anaPart - old.anaPart, dBt = cur.btPart - old.btPart;
+        const dStrk = (cur.sb || 0) - (old.sb || 0);
         const dTri = (cur.trig || 0) - (old.trig || 0), dDiv = (cur.diverge || 0) - (old.diverge || 0);
-        const contrib = { dy: w.dy / 100 * dDy, ana: w.ana / 100 * dAna, bt: w.bt / 100 * dBt, trig: dTri, div: -dDiv };
-        const total = contrib.dy + contrib.ana + contrib.bt + contrib.trig + contrib.div;
+        const contrib = { dy: w.dy / 100 * dDy, ana: w.ana / 100 * dAna, bt: w.bt / 100 * dBt, strk: dStrk, trig: dTri, div: -dDiv };
+        const total = contrib.dy + contrib.ana + contrib.bt + contrib.strk + contrib.trig + contrib.div;
         const arrow = total > 0.05 ? '↑' : total < -0.05 ? '↓' : '→';
         const [mk, mv] = Object.entries(contrib).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
         const desc = {
           dy: `股息率分位${dDy >= 0 ? '上升' : '下降'}（横截面 ${Math.round(old.cross)}→${Math.round(cur.cross)}）`,
           ana: dAna >= 0 ? '贵贱度改善（更便宜）' : '贵贱度转贵',
           bt: `回测分${dBt >= 0 ? '改善' : '下滑'}`,
+          strk: dStrk > 0 ? '连续天数晋级（加成提高）' : '连续中断或回落（加成减少）',
           trig: dTri > 0 ? '进入触发区（dy分位≥90）+5' : dTri < 0 ? '退出触发区 −5' : '',
           div: dDiv > 0 ? '背离惩罚 −5' : dDiv < 0 ? '背离解除 +5' : '',
         }[mk];
@@ -124,16 +163,16 @@ export default {
           .map(([k, v]) => `${LAB[k]} ${v >= 0 ? '+' : ''}${v.toFixed(1)}`).join(' · ');
         return { total, text: `${arrow} 总分 ${total >= 0 ? '+' : ''}${total.toFixed(1)}：主要因${desc}（贡献 ${mv >= 0 ? '+' : ''}${mv.toFixed(1)}）${others ? '；另 ' + others : ''}` };
       };
-      /* 完美模式：三档均值差 */
+      /* 完美模式：三档均值差（含完美档连续加成 psb） */
       const deltaMean = (code) => {
         if (!hasBase) return null;
         const old = oldSnap.codes[code], cur = curSnap.codes[code];
         if (!old || !cur) return null;
-        const om = (old['稳健'].s + old['均衡'].s + old['进取'].s) / 3;
-        const cm = (cur['稳健'].s + cur['均衡'].s + cur['进取'].s) / 3;
+        const om = (old['稳健'].s + old['均衡'].s + old['进取'].s) / 3 + (old.psb || 0);
+        const cm = (cur['稳健'].s + cur['均衡'].s + cur['进取'].s) / 3 + (cur.psb || 0);
         const total = cm - om;
         const arrow = total > 0.05 ? '↑' : total < -0.05 ? '↓' : '→';
-        return { total, text: `${arrow} 三档均值 ${om.toFixed(1)} → ${cm.toFixed(1)}（${total >= 0 ? '+' : ''}${total.toFixed(1)}）` };
+        return { total, text: `${arrow} 三档均值（含连续）${om.toFixed(1)} → ${cm.toFixed(1)}（${total >= 0 ? '+' : ''}${total.toFixed(1)}）` };
       };
 
       const paint = () => {
@@ -146,23 +185,30 @@ export default {
             onclick: () => { if (p === '完美') perfect = true; else { perfect = false; preset = p; } paint(); },
           }, p));
         }
-        presetNote.textContent = perfect ? '当前：完美 → 三档均≥75 共识（按三档均值排序）' : `当前：${preset} → ${RECO_PRESET_DESC[preset].w}`;
+        presetNote.textContent = perfect
+          ? '当前：完美 → 三档均≥75 共识（按三档均值+连续加成排序）'
+          : `当前：${preset} → ${RECO_PRESET_DESC[preset].w}（连续加成计入排序）`;
+        /* 连续加成：n>0 已蕴含 base≥75，故只会把 75+ 的分数抬得更高，不可能跨评级档位 */
+        const withStreak = (r, tab, base) => {
+          const n = streakN(r.code, tab);
+          const sb = streakBonusOf(n);
+          return { ...r, sBase: base, sb, streakN: n, s: Math.min(100, base + sb) };
+        };
         const rows = perfect
           ? all
             .filter((r) => (typeF === '全部' ? true : typeF === '个股' ? r.type === '股票' : r.type === typeF))
             .map((r) => ({ ...r, _sc: scoresOf(r) }))
             .filter((r) => r._sc['稳健'].s >= 75 && r._sc['均衡'].s >= 75 && r._sc['进取'].s >= 75)
-            .map((r) => ({
+            .map((r) => withStreak({
               ...r,
-              s: (r._sc['稳健'].s + r._sc['均衡'].s + r._sc['进取'].s) / 3,
               anaPart: r._sc['均衡'].anaPart,   // 贵贱度分列：均衡档代表值（悬停见三档明细）
               dyPart: r._sc['均衡'].dyPart, btPart: r._sc['均衡'].btPart,
               cross: r.crossPct ?? 0, hist: r.pct,
-            }))
+            }, '完美', (r._sc['稳健'].s + r._sc['均衡'].s + r._sc['进取'].s) / 3))
             .sort((a, b) => (b.s - a.s) || ((b.pct >= 90 ? 1 : 0) - (a.pct >= 90 ? 1 : 0)) || (b.pct - a.pct))
           : all
             .filter((r) => (typeF === '全部' ? true : typeF === '个股' ? r.type === '股票' : r.type === typeF))
-            .map((r) => ({ ...r, ...recOf(r) }))
+            .map((r) => { const b = recOf(r); return withStreak({ ...r, ...b }, preset, b.s); })
             .sort((a, b) => (b.s - a.s) || ((b.pct >= 90 ? 1 : 0) - (a.pct >= 90 ? 1 : 0)) || (b.pct - a.pct));
 
         sumEl.innerHTML = '';
@@ -171,7 +217,11 @@ export default {
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '候选池'), el('b', {}, rows.length)),
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, perfect ? '完美' : '强烈推荐'), el('b', { class: 'txt-up' }, rows.filter((r) => (perfect ? true : recoBandOf(r.s) === '强烈推荐')).length)),
           el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '推荐'), el('b', { class: 'txt-up' }, rows.filter((r) => recoBandOf(r.s) === '推荐').length)),
-          el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '触发中'), el('b', { class: 'txt-up' }, rows.filter((r) => r.pct >= 90).length)));
+          el('div', { class: 'bt-cell' }, el('span', { class: 'txt-3' }, '触发中'), el('b', { class: 'txt-up' }, rows.filter((r) => r.pct >= 90).length)),
+          el('div', { class: 'bt-cell', title: `当前档连续 ≥10 个交易日的标的数（口径：基准分≥75 且未从峰值回落超 ${fmt2(STREAK_TOL_V)} 分）` },
+            el('span', { class: 'txt-3' }, '连续≥10天'), el('b', { class: 'txt-up' }, rows.filter((r) => (r.streakN || 0) >= 10).length)),
+          el('div', { class: 'bt-cell', title: '当前档最长连续交易日数' },
+            el('span', { class: 'txt-3' }, '最长连续'), el('b', {}, (rows.reduce((m2, r) => Math.max(m2, r.streakN || 0), 0) || '—') + (rows.length ? '天' : ''))));
 
         const cols = [
           { key: 'fav', label: '★', align: 'center', sortable: false, filter: false, fmt: (_v, row) => favStar(row.code) },
@@ -185,9 +235,10 @@ export default {
             fmt: (v, row) => {
               const d = perfect ? deltaMean(row.code) : whyDelta(row.code, preset);
               const baseTitle = perfect
-                ? `稳健 ${fmt2(row._sc['稳健'].s)} · 均衡 ${fmt2(row._sc['均衡'].s)} · 进取 ${fmt2(row._sc['进取'].s)}（三档均≥75 入选，按均值排序）`
+                ? `稳健 ${fmt2(row._sc['稳健'].s)} · 均衡 ${fmt2(row._sc['均衡'].s)} · 进取 ${fmt2(row._sc['进取'].s)}（三档均≥75 入选，按均值+连续加成排序）`
                 : `dy 横截面 ${fmt2(row.cross)} ×50% + 历史 ${fmt2(row.hist)} ×50% = ${fmt2(row.dyPart)} × ${RECO_W[preset].dy}% + 贵贱度反向 ${fmt2(row.anaPart)} × ${RECO_W[preset].ana}% + 回测 ${fmt2(row.btPart)} × ${RECO_W[preset].bt}%${row.trig > 0 ? ' + 触发中 5' : row.trig < 0 ? ' − 卖出区 5' : ''}${row.diverge ? ' − 背离 5' : ''}`;
-              const title = baseTitle + (d ? '\n' + d.text : hasBase ? '' : '\n' + (hasAnySnap ? '本数据版本无变化' : '首次记录，暂无对比'));
+              const streakLine = `\n基准分 ${fmt2(row.sBase)}${row.sb ? ` + 连续 ${row.streakN}天 ${fmt2(row.sb)}` : '（无连续加成）'} = ${fmt2(row.s)}`;
+              const title = baseTitle + streakLine + (d ? '\n' + d.text : hasBase ? '' : '\n' + (hasAnySnap ? '本数据版本无变化' : '首次记录，暂无对比'));
               return el('span', { title },
                 fmt2(v),
                 d && Math.abs(d.total) > 0.05
@@ -197,8 +248,19 @@ export default {
             color: (v) => (v >= 75 ? 'up' : v >= 60 ? 'flat' : '') },
           { key: 'band', label: '评级', sortable: true, filter: false,
             fmt: (_v, row) => perfect
-              ? el('span', { class: 'band-pill band-perfect', title: '稳健/均衡/进取三档均 ≥75 的共识标的' }, '完美')
-              : el('span', { class: 'band-pill ' + recoBandCls(recoBandOf(row.s)) }, recoBandOf(row.s)) },
+              ? el('span', { class: 'band-pill band-perfect', title: '稳健/均衡/进取三档均 ≥75 的共识标的（评级按不含连续加成的基准分判定）' }, '完美')
+              : el('span', { class: 'band-pill ' + recoBandCls(recoBandOf(row.s)), title: '评级按不含连续加成的基准分判定（连续加成只抬升 75+ 的分数，不可能跨档）' }, recoBandOf(row.s)) },
+          { key: 'streakN', label: '连续', sortable: true, filter: false,
+            fmt: (v, row) => {
+              const n = v || 0;
+              const tt = streakTitle(row.code, perfect ? '完美' : preset);
+              if (!n) return el('span', { class: 'txt-3', title: tt }, '—');
+              return el('span', {
+                class: n >= 3 ? 'txt-up' : 'txt-3',
+                style: n >= 10 ? 'font-weight:700' : null,
+                title: tt,
+              }, n + '天');
+            } },
           { key: 'dy', label: '股息率(%)', sortable: true,
             fmt: (v, row) => (v == null ? '—' : el('span', { title: dyTitle(row) }, fmt2(v))) },
           { key: 'pct', label: 'dy分位', sortable: true, fmt: (v) => (v == null ? '—' : fmt2(v)), color: (v) => (v >= 90 ? 'up' : v <= 10 ? 'down' : '') },
